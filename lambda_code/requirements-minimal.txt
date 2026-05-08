@@ -1,0 +1,29 @@
+# Minimal Lambda Dependencies (< 250MB unzipped)
+# Removed: scipy, plotly, kaleido, reverse-geocoder, pytest
+
+# Web framework
+flask>=3.0.0
+flask-cors>=4.0.0
+mangum>=0.17.0
+
+# Database
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9
+
+# Core dependencies
+requests>=2.31.0
+pyyaml>=6.0.1
+python-dotenv>=1.0.0
+boto3>=1.28.0
+
+# REMOVED (too large for Lambda layer):
+# scipy>=1.17.0  # 143MB
+# plotly>=5.14.0  # 70MB
+# kaleido>=0.2.1  # included in plotly
+# numpy>=1.24.0  # 72MB (required by scipy)
+# reverse-geocoder>=1.5.1  # 7.6MB (depends on scipy)
+
+# These features will not work in Lambda:
+# - Map generation (plotly)
+# - Reverse geocoding (reverse-geocoder)
+# - Scientific computations (scipy, numpy)

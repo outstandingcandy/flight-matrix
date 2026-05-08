@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>抓取状态 - 飞机追踪系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { border: none; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .card-header { background-color: #0d6efd; color: white; }
+        .stats-card { border-left: 4px solid #0d6efd; }
+        .stats-card.pending { border-left-color: #ffc107; }
+        .stats-card.processing { border-left-color: #17a2b8; }
+        .stats-card.completed { border-left-color: #28a745; }
+        .stats-card.no-data { border-left-color: #6c757d; }
+        .stats-card.failed { border-left-color: #dc3545; }
+        .table th { background-color: #f8f9fa; }
+        .badge-active { background-color: #28a745; }
+        .badge-idle { background-color: #6c757d; }
+        .badge-stopped { background-color: #dc3545; }
+        .status-pending { color: #ffc107; }
+        .status-claimed, .status-processing { color: #17a2b8; }
+        .status-completed { color: #28a745; }
+        .status-no_data { color: #6c757d; }
+        .status-failed { color: #dc3545; }
+        .heartbeat-ok { color: #28a745; }
+        .heartbeat-warn { color: #ffc107; }
+        .heartbeat-stale { color: #dc3545; }
+        .type-badge { font-size: 0.75rem; padding: 0.25rem 0.5rem; }
+        .type-jetphotos { background-color: #3498db; }
+        .type-fr24_arrivals, .type-fr24_departures { background-color: #9b59b6; }
+        .auto-refresh { font-size: 0.875rem; }
+        .error-text { font-size: 0.75rem; color: #dc3545; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-3">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-plane"></i> 飞机追踪系统
+            </a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/admin/track">轨迹查询</a>
+                <a class="nav-link" href="/flight-schedules">航班计划</a>
+                <a class="nav-link" href="/admin/reports"><i class="fas fa-file-alt"></i> 报告</a>
+                <a class="nav-link" href="/admin/users"><i class="fas fa-users"></i> 用户</a>
+                <a class="nav-link active" href="/admin/scraper-status"><i class="fas fa-robot"></i> 抓取</a>
+            </div>
+            <div class="navbar-nav ms-auto">
+                {% if current_user %}
+                    <span class="navbar-text me-3">
+                        <i class="fas fa-user"></i> {{ current_user.email }}
+                    </span>
+                    <a class="nav-link" href="/logout">
+                        <i class="fas fa-sign-out-alt"></i> 退出
+                    </a>
+                {% else %}
+                    <a class="nav-link" href="/login">
+                        <i class="fas fa-sign-in-alt"></i> 登录
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <!-- Auto-refresh indicator -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4><i class="fas fa-robot"></i> 抓取系统状态</h4>
+            <div class="auto-refresh">
+                <span class="text-muted me-2">自动刷新:</span>
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" id="autoRefreshToggle" checked>
+                    <label class="form-check-label" for="autoRefreshToggle">30秒</label>
+                </div>
+                <button class="btn btn-sm btn-outline-primary ms-2" onclick="refreshAll()">
+                    <i class="fas fa-sync"></i> 立即刷新
+                </button>
+                <span class="text-muted ms-2" id="lastRefreshTime">-</span>
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="row mb-4">
+            <div class="col-md-2">
+                <div class="card stats-card pending">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted">待处理</h6>
+                        <h3 id="statPending" class="status-pending">-</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card stats-card processing">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted">处理中</h6>
+                        <h3 id="statProcessing" class="status-processing">-</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card stats-card completed">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted">已完成</h6>
+                        <h3 id="statCompleted" class="status-completed">-</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card stats-card no-data">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted">无数据</h6>
+                        <h3 id="statNoData" class="status-no_data">-</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card stats-card failed">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted">失败</h6>
+                        <h3 id="statFailed" class="status-failed">-</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card stats-card">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted">活跃 Worker</h6>
+                        <h3 id="statWorkers" class="text-primary">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Left Column: Workers and Task Distribution -->
+            <div class="col-md-4">
+                <!-- Worker Status -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-server"></i> Worker 状态</h5>
+                    </div>
+                    <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Worker ID</th>
+                                    <th>状态</th>
+                                    <th>心跳</th>
+                                    <th>完成</th>
+                                </tr>
+                            </thead>
+                            <tbody id="workersTableBody">
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted py-3">
+                                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                                        加载中...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Task Distribution -->
+                <div class="card">
+                    <div class="card-header bg-warning text-dark">
+                        <h5 class="mb-0"><i class="fas fa-chart-pie"></i> 待处理任务分布</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="taskDistribution">
+                            <div class="text-center text-muted py-3">
+                                <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                                加载中...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Recent Tasks -->
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-list"></i> 最近任务</h5>
+                        <select class="form-select form-select-sm" id="statusFilter" style="width: auto;">
+                            <option value="">全部状态</option>
+                            <option value="pending">待处理</option>
+                            <option value="claimed">已领取</option>
+                            <option value="processing">处理中</option>
+                            <option value="completed">已完成</option>
+                            <option value="no_data">无数据</option>
+                            <option value="failed">失败</option>
+                        </select>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>类型</th>
+                                        <th>任务键</th>
+                                        <th>状态</th>
+                                        <th>尝试</th>
+                                        <th>耗时</th>
+                                        <th>时间</th>
+                                        <th>错误</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tasksTableBody">
+                                    <tr>
+                                        <td colspan="7" class="text-center text-muted py-3">
+                                            <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                                            加载中...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination -->
+                        <nav class="d-flex justify-content-between align-items-center">
+                            <div class="text-muted" id="pageInfo">-</div>
+                            <ul class="pagination pagination-sm mb-0" id="paginationList"></ul>
+                        </nav>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let autoRefreshInterval = null;
+        let currentPage = 1;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshAll();
+            setupAutoRefresh();
+
+            document.getElementById('autoRefreshToggle').addEventListener('change', setupAutoRefresh);
+            document.getElementById('statusFilter').addEventListener('change', function() {
+                currentPage = 1;
+                loadTasks();
+            });
+        });
+
+        function setupAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+
+            if (document.getElementById('autoRefreshToggle').checked) {
+                autoRefreshInterval = setInterval(refreshAll, 30000);
+            }
+        }
+
+        function refreshAll() {
+            loadStats();
+            loadWorkers();
+            loadTasks();
+            document.getElementById('lastRefreshTime').textContent = new Date().toLocaleTimeString('zh-CN');
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/admin/scraper/stats');
+                const data = await response.json();
+
+                if (data.success) {
+                    const stats = data.stats;
+                    document.getElementById('statPending').textContent = formatNumber(stats.total_pending || 0);
+                    document.getElementById('statProcessing').textContent = formatNumber(stats.total_processing || 0);
+                    document.getElementById('statCompleted').textContent = formatNumber(stats.total_completed || 0);
+                    document.getElementById('statNoData').textContent = formatNumber(stats.total_no_data || 0);
+                    document.getElementById('statFailed').textContent = formatNumber(stats.total_failed || 0);
+                    document.getElementById('statWorkers').textContent = stats.active_workers || 0;
+
+                    // Update task distribution
+                    updateTaskDistribution(stats.pending_by_type || {});
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        function updateTaskDistribution(pendingByType) {
+            const container = document.getElementById('taskDistribution');
+
+            if (Object.keys(pendingByType).length === 0) {
+                container.innerHTML = '<div class="text-center text-muted py-2">暂无待处理任务</div>';
+                return;
+            }
+
+            const total = Object.values(pendingByType).reduce((a, b) => a + b, 0);
+            let html = '';
+
+            for (const [type, count] of Object.entries(pendingByType).sort((a, b) => b[1] - a[1])) {
+                const percentage = total > 0 ? (count / total * 100).toFixed(1) : 0;
+                const badgeClass = getTypeBadgeClass(type);
+
+                html += `
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="badge ${badgeClass} type-badge">${formatTaskType(type)}</span>
+                        <span class="text-muted">${count} (${percentage}%)</span>
+                    </div>
+                    <div class="progress mb-3" style="height: 6px;">
+                        <div class="progress-bar ${badgeClass}" role="progressbar" style="width: ${percentage}%"></div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+        }
+
+        async function loadWorkers() {
+            try {
+                const response = await fetch('/api/admin/scraper/workers');
+                const data = await response.json();
+
+                const tbody = document.getElementById('workersTableBody');
+
+                if (data.success && data.workers.length > 0) {
+                    tbody.innerHTML = data.workers.map(worker => {
+                        const heartbeatClass = getHeartbeatClass(worker.seconds_since_heartbeat);
+                        const heartbeatText = formatTimeAgo(worker.seconds_since_heartbeat);
+                        const statusBadge = getWorkerStatusBadge(worker.status, worker.seconds_since_heartbeat);
+
+                        return `
+                            <tr>
+                                <td title="${worker.worker_id}">${worker.worker_id.substring(0, 12)}...</td>
+                                <td>${statusBadge}</td>
+                                <td class="${heartbeatClass}">${heartbeatText}</td>
+                                <td>${worker.tasks_completed}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">暂无 Worker</td></tr>';
+                }
+            } catch (error) {
+                console.error('Error loading workers:', error);
+                document.getElementById('workersTableBody').innerHTML =
+                    '<tr><td colspan="4" class="text-center text-danger py-3">加载失败</td></tr>';
+            }
+        }
+
+        async function loadTasks(page = currentPage) {
+            currentPage = page;
+            const status = document.getElementById('statusFilter').value;
+
+            try {
+                let url = `/api/admin/scraper/recent-tasks?page=${page}&limit=15`;
+                if (status) url += `&status=${status}`;
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                const tbody = document.getElementById('tasksTableBody');
+
+                if (data.success && data.tasks.length > 0) {
+                    tbody.innerHTML = data.tasks.map(task => {
+                        const statusIcon = getStatusIcon(task.status);
+                        const badgeClass = getTypeBadgeClass(task.task_type);
+                        const timeText = task.completed_at
+                            ? formatDateTime(task.completed_at)
+                            : formatDateTime(task.created_at);
+                        const durationText = task.duration_seconds
+                            ? `${task.duration_seconds.toFixed(1)}s`
+                            : '-';
+
+                        return `
+                            <tr>
+                                <td><span class="badge ${badgeClass} type-badge">${formatTaskType(task.task_type)}</span></td>
+                                <td title="${task.task_key}">${task.task_key.substring(0, 15)}${task.task_key.length > 15 ? '...' : ''}</td>
+                                <td>${statusIcon}</td>
+                                <td>${task.attempts}/${task.max_attempts}</td>
+                                <td>${durationText}</td>
+                                <td><small class="text-muted">${timeText}</small></td>
+                                <td>
+                                    ${task.last_error
+                                        ? `<span class="error-text" title="${escapeHtml(task.last_error)}">${escapeHtml(task.last_error)}</span>`
+                                        : '-'}
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
+
+                    updatePagination(data.page, data.pages, data.total);
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">暂无任务</td></tr>';
+                    document.getElementById('pageInfo').textContent = '-';
+                    document.getElementById('paginationList').innerHTML = '';
+                }
+            } catch (error) {
+                console.error('Error loading tasks:', error);
+                document.getElementById('tasksTableBody').innerHTML =
+                    '<tr><td colspan="7" class="text-center text-danger py-3">加载失败</td></tr>';
+            }
+        }
+
+        function updatePagination(page, pages, total) {
+            document.getElementById('pageInfo').textContent = `第 ${page} 页，共 ${pages} 页 (${total} 条)`;
+
+            const paginationList = document.getElementById('paginationList');
+            if (pages <= 1) {
+                paginationList.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+            html += `<li class="page-item ${page <= 1 ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="loadTasks(${page - 1}); return false;">上一页</a>
+            </li>`;
+
+            const startPage = Math.max(1, page - 2);
+            const endPage = Math.min(pages, page + 2);
+
+            for (let i = startPage; i <= endPage; i++) {
+                html += `<li class="page-item ${i === page ? 'active' : ''}">
+                    <a class="page-link" href="#" onclick="loadTasks(${i}); return false;">${i}</a>
+                </li>`;
+            }
+
+            html += `<li class="page-item ${page >= pages ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="loadTasks(${page + 1}); return false;">下一页</a>
+            </li>`;
+
+            paginationList.innerHTML = html;
+        }
+
+        // Helper functions
+        function formatNumber(num) {
+            return num.toLocaleString('zh-CN');
+        }
+
+        function formatTaskType(type) {
+            const typeMap = {
+                'jetphotos': 'JetPhotos',
+                'fr24_arrivals': 'FR24 到达',
+                'fr24_departures': 'FR24 出发',
+                'planespotters': 'Planespotters'
+            };
+            return typeMap[type] || type;
+        }
+
+        function getTypeBadgeClass(type) {
+            if (type.includes('jetphotos')) return 'bg-info';
+            if (type.includes('fr24')) return 'bg-purple';
+            if (type.includes('planespotters')) return 'bg-success';
+            return 'bg-secondary';
+        }
+
+        function getStatusIcon(status) {
+            const icons = {
+                'pending': '<i class="fas fa-clock status-pending" title="待处理"></i>',
+                'claimed': '<i class="fas fa-hand-paper status-claimed" title="已领取"></i>',
+                'processing': '<i class="fas fa-spinner fa-spin status-processing" title="处理中"></i>',
+                'completed': '<i class="fas fa-check-circle status-completed" title="已完成"></i>',
+                'no_data': '<i class="fas fa-minus-circle status-no_data" title="无数据"></i>',
+                'failed': '<i class="fas fa-times-circle status-failed" title="失败"></i>'
+            };
+            return icons[status] || status;
+        }
+
+        function getHeartbeatClass(seconds) {
+            if (seconds === null || seconds === undefined) return 'text-muted';
+            if (seconds < 60) return 'heartbeat-ok';
+            if (seconds < 300) return 'heartbeat-warn';
+            return 'heartbeat-stale';
+        }
+
+        function getWorkerStatusBadge(status, secondsSinceHeartbeat) {
+            // If heartbeat is stale (>5 min), consider worker as effectively stopped
+            if (secondsSinceHeartbeat && secondsSinceHeartbeat > 300) {
+                return '<span class="badge badge-stopped">离线</span>';
+            }
+
+            const badges = {
+                'active': '<span class="badge badge-active">活跃</span>',
+                'idle': '<span class="badge badge-idle">空闲</span>',
+                'stopped': '<span class="badge badge-stopped">停止</span>'
+            };
+            return badges[status] || `<span class="badge bg-secondary">${status}</span>`;
+        }
+
+        function formatTimeAgo(seconds) {
+            if (seconds === null || seconds === undefined) return '-';
+            if (seconds < 60) return `${Math.floor(seconds)}秒前`;
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}分钟前`;
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)}小时前`;
+            return `${Math.floor(seconds / 86400)}天前`;
+        }
+
+        function formatDateTime(isoString) {
+            if (!isoString) return '-';
+            const date = new Date(isoString);
+            return date.toLocaleString('zh-CN', {
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+    <style>
+        .bg-purple { background-color: #9b59b6 !important; }
+    </style>
+
+    <!-- Token Refresh -->
+    {% include '_token_refresh.html' %}
+</body>
+</html>

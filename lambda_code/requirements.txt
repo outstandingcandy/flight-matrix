@@ -1,0 +1,31 @@
+# AWS Lambda Optimized Dependencies for Flight-Matrix
+# Minimal dependencies for Flask web API only
+
+# Web framework
+flask>=3.0.0
+flask-cors>=4.0.0
+mangum>=0.17.0  # WSGI-to-ASGI adapter for Lambda
+
+# Database
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9  # PostgreSQL adapter
+
+# Core dependencies
+pyyaml>=6.0.1
+python-dotenv>=1.0.0
+pytz>=2024.1  # Timezone support
+asgiref>=3.7.0  # WSGI-to-ASGI adapter for Mangum
+
+# Authentication
+python-jose[cryptography]>=3.3.0  # JWT verification for Cognito
+requests>=2.31.0  # For fetching Cognito JWKS
+
+# REMOVED for Lambda deployment (too large or not needed):
+# - boto3 (pre-installed in Lambda runtime)
+# - plotly>=5.14.0 (70MB - not needed for web API)
+# - kaleido>=0.2.1 (not needed for web API)
+# - numpy>=1.24.0 (45MB - not needed for web API)
+# - reverse-geocoder>=1.5.1 (needs numpy/scipy - not needed for web API)
+# - requests (use boto3/urllib3 instead if needed)
+# - selenium, undetected-chromedriver, webdriver-manager (not Lambda-compatible)
+# - tavily-python (no internet access in VPC without NAT Gateway)

@@ -1,0 +1,70 @@
+# =================================
+# Distributed Scraper Configuration - Base Settings
+# =================================
+scraper:
+  # Worker configuration
+  worker:
+    heartbeat_interval: 30              # Heartbeat interval (seconds)
+    task_timeout: 36000                 # Task execution timeout (seconds)
+
+  # Browser pool configuration
+  browser_pool:
+    size: 5                             # Number of browser instances per worker (supports parallel task types)
+    recycle_after: 20                   # Recycle browser after N tasks
+
+  # DrissionPage browser options
+  drission_page:
+    no_sandbox: true
+    disable_dev_shm: true
+    window_size: "1920,1080"
+    headless: false                     # Set true for completely headless (no Xvfb)
+
+  # Xvfb configuration (virtual display)
+  xvfb:
+    auto_start: true                    # Auto-start Xvfb if DISPLAY not set
+    display_base: 55                    # Display number (:55)
+
+  # Task queue configuration
+  task_queue:
+    poll_interval: 5                    # Queue poll interval (seconds)
+    max_attempts: 3                     # Maximum retry attempts per task
+    stale_task_timeout: 60              # Minutes before claimed task is considered stale (increased from 30 for long-running jetphotos tasks)
+
+  # Task Scheduler configuration (manages all task types)
+  scheduler:
+    check_interval: 60                  # Seconds between scheduler checks
+    min_cycle_gap: 1200                 # Default min_cycle_gap (can be overridden per scraper type)
+    orphan_cleanup_threshold: 120       # Seconds without heartbeat before worker is considered dead
+    auto_terminate_unhealthy: true      # Terminate EC2 instances for stale workers (ASG will replace)
+
+    # Auto-scaling configuration
+    auto_scale:
+      enabled: true                     # Enable auto-scaling based on task queue depth
+      asg_name: "FlightMatrix-WorkerASGE62D02B5-RXd9rWY4ua8U"  # ASG name to scale
+      min_instances: 8                  # Minimum number of instances
+      max_instances: 100                # Maximum number of instances
+      tasks_per_worker: 50              # Pending tasks per worker (50 tasks = 1 worker)
+      scale_down_cooldown: 5            # Number of cycles to wait before scaling down
+
+  # Scraper-specific configurations placeholder
+  # Actual scraper configs are in separate files
+  scrapers: {}
+
+  # AWS Deployment configuration
+  deployment:
+    # EC2 instance settings
+    instance_type: "t3.medium"            # Instance type for workers
+    min_workers: 2                        # Minimum workers in ASG
+    max_workers: 100                      # Maximum workers in ASG
+    desired_workers: 10                   # Desired worker count
+
+    # SSM Parameter paths (for secrets)
+    ssm_db_password: "/flight-matrix/scraper/db-password"
+
+    # Auto Scaling Group settings
+    asg_name: "flight-matrix-scraper-worker-asg"
+    health_check_grace_period: 600        # Seconds to wait before health check
+
+    # Rolling update settings
+    update_max_batch_size: 1              # Update 1 instance at a time
+    update_min_in_service: 1              # Keep at least 1 running during updates

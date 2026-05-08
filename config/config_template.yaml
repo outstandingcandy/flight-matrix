@@ -1,0 +1,213 @@
+# 飞机追踪系统配置文件模板
+# Aircraft Tracking System Configuration Template
+# 所有配置都在这一个文件中
+
+# =================================
+# AWS配置 (统一配置)
+# =================================
+aws:
+  region: "${AWS_REGION}"                        # AWS区域 (SES, Bedrock等服务共用)
+  access_key_id: "${AWS_ACCESS_KEY_ID}"          # 留空则使用IAM Role
+  secret_access_key: "${AWS_SECRET_ACCESS_KEY}"  # 留空则使用IAM Role
+
+# =================================
+# 数据库配置
+# =================================
+database:
+  url: "sqlite:///aircraft_data.db"    # 数据库连接URL
+  cleanup_interval_hours: 24           # 数据保留时间(小时)
+  max_connections: 10                  # 最大连接数
+
+# =================================
+# API配置
+# =================================
+api:
+  adsb_api_key: "${ADSB_API_KEY}"                                         # ADS-B Exchange API密钥
+  adsb_api_url: "https://adsbexchange-com1.p.rapidapi.com/v2"           # API基础URL
+  update_interval: 300                                                    # 更新间隔(秒)
+  timeout: 30                                                             # 请求超时(秒)
+
+# =================================
+# 邮件配置
+# =================================
+email:
+  provider: "aws_ses"                   # smtp | aws_ses
+  
+  # SMTP配置 (使用163邮箱)
+  smtp:
+    server: "smtp.163.com"
+    port: 465
+    sender: "${SENDER_EMAIL}"
+    password: "${EMAIL_PASSWORD}"
+  
+  # AWS SES配置 (推荐用于生产环境)
+  # 注意: 使用顶层 aws.region 配置
+  aws_ses:
+    sender: "${AWS_SES_SENDER_EMAIL}"
+  
+  # 收件人 (多个邮箱用逗号分隔)
+  recipients: "${RECIPIENTS}"
+  
+  # 邮件功能开关
+  features:
+    enable_maps: true                   # 包含地图
+    enable_aircraft_images: false       # 包含飞机图片
+    enable_flight_analysis: true        # 启用AI分析
+    enable_tavily_search: true          # 启用网络搜索
+
+# =================================
+# AI服务配置 (用于飞机分析)
+# =================================
+llm:
+  provider: "aws_bedrock"              # anthropic | openai | aws_bedrock
+
+  # AWS Bedrock模型配置 (使用顶层 aws.region)
+  # 可用模型:
+  #   - anthropic.claude-sonnet-4-20250514-v1:0 (Claude Sonnet 4)
+  #   - anthropic.claude-opus-4-20250514-v1:0 (Claude Opus 4)
+  #   - us.anthropic.claude-opus-4-5-20251101-v1:0 (Claude Opus 4.5)
+  bedrock_model_id: "anthropic.claude-sonnet-4-20250514-v1:0"
+
+  # Anthropic/OpenAI API密钥 (如果使用对应provider)
+  anthropic_api_key: "${ANTHROPIC_API_KEY}"
+  openai_api_key: "${OPENAI_API_KEY}"
+
+  # Tavily搜索API密钥
+  tavily_api_key: "${TAVILY_API_KEY}"
+
+# =================================
+# 召回配置 - 决定从哪些源获取飞机数据
+# =================================
+recall:
+  sources:
+    # 特定飞机召回
+    specific_flights: []                # 特定航班号
+    specific_registrations:             # 特定注册号
+      - "YU-RSB"                        # 塞尔维亚政府
+      - "86-0022"                       # 美国军用
+      - "N757AF"                        # 美国注册
+    
+    # 类型召回
+    military_global: true               # 全球军用飞机
+    # 注意: aircraft_types 不能作为召回源 (API不支持按机型查询)
+    # 请在下方 filters.custom_sql 中使用: aircraft_type IN ('B742', 'IL76')
+    aircraft_types: []                  # 已弃用，请使用 filters.custom_sql
+    
+    # 区域召回
+    regional_scan:                      # 区域扫描国家
+      - "United States"
+      - "China"
+      - "Russia"
+    global_scan: false                  # 全球扫描(慎用，消耗API配额)
+  
+  # 召回策略
+  strategy:
+    update_interval: 300                # 召回间隔(秒)
+    max_aircraft_per_call: 1000         # 每次最大获取数量
+    parallel_requests: true             # 并行请求
+    cache_duration: 60                  # 缓存持续时间(秒)
+
+# =================================
+# 过滤配置 - 决定哪些召回的飞机需要报告
+# =================================
+filters:
+  mode: "custom_sql"                    # 仅支持 custom_sql 模式
+
+  # 自定义SQL过滤配置
+  # 可用字段:
+  #   - registration: 注册号 (如 'N12345', 'B-1234')
+  #   - aircraft_type: 机型代码 (如 'B742', 'IL76', 'A320')
+  #   - current_country: 当前所在国家 (如 'China', 'United States', 'Russia')
+  #   - country_of_registration: 注册国 (如 'China', 'United States')
+  #   - is_military: 是否军用 (1=是, 0=否)
+  #   - flight_number: 航班号 (如 'CA123')
+  #   - squawk: 应答机代码 (如 '7700'=紧急)
+  #
+  # SQL语法示例:
+  #   - 等于: field = 'value'
+  #   - 包含: field IN ('val1', 'val2')
+  #   - 模糊匹配: field LIKE 'N1%' (以N1开头)
+  #   - 组合条件: AND, OR, ()
+
+  custom_sql: |
+    (is_military = 1 AND current_country = 'China') OR
+    aircraft_type IN ('B742', 'AN124', 'IL76') OR
+    registration IN ('YU-RSB', '86-0022', 'N757AF') OR
+    registration LIKE 'B-100%' OR
+    current_country IN ('North Korea', 'Iran')
+
+# =================================
+# 通知设置
+# =================================
+notification:
+  notify_all_military: true             # 通知所有军用飞机
+  notify_watchlist_only: false          # 仅通知观察列表飞机
+  
+  # 区域跟踪设置 (当前禁用)
+  area_tracking:
+    enabled: false
+    name: "My Home"
+    latitude: 40.0801
+    longitude: 116.5845
+    radius_km: 5000
+
+# =================================
+# 报告配置
+# =================================
+reporting:
+  enable_report_cooldown: true          # 启用报告冷却
+  cooldown_hours: 1.0                   # 冷却时间(小时)
+  min_move_distance_km: 1.0             # 最小移动距离(公里)，飞机移动超过此距离才生成新报告
+  cleanup_interval_cycles: 12           # 清理间隔(周期数)
+  max_reports_per_aircraft: 24          # 每架飞机最大报告数
+
+# =================================
+# 机场看板配置
+# =================================
+airport_board:
+  default_radius_km: 100            # 默认搜索半径 (公里)
+  max_radius_km: 500                # 最大允许半径 (公里)
+  refresh_interval_seconds: 60      # 前端自动刷新间隔 (秒)
+  highlight_special: true           # 高亮特殊飞机
+
+# =================================
+# 搜索追踪配置
+# =================================
+search_track:
+  enable_live_tracking: true        # 启用实时追踪
+  live_update_interval_ms: 5000     # 实时更新间隔 (毫秒)
+  max_historical_days: 30           # 历史轨迹最大天数
+
+# =================================
+# 飞机状态判断阈值
+# =================================
+flight_status:
+  approach_altitude_ft: 10000       # 进近判断高度阈值 (英尺)
+  approach_vertical_rate: -500      # 进近判断垂直速度 (fpm, 负数)
+  departure_vertical_rate: 500      # 离场判断垂直速度 (fpm, 正数)
+
+# =================================
+# 使用说明
+# =================================
+# 1. 复制此文件为 config.yaml
+# 2. 设置环境变量或直接替换 ${变量名} 为实际值
+# 3. 根据需求修改各种参数
+# 4. 启动命令: python -m src.main --config config.yaml
+# 5. 敏感信息(API密钥等)需要填入实际值
+
+# =================================
+# 环境变量说明
+# =================================
+# 需要设置的环境变量:
+# - ADSB_API_KEY: ADS-B Exchange API密钥
+# - SENDER_EMAIL: 发件人邮箱地址
+# - EMAIL_PASSWORD: 邮箱密码(如果使用SMTP)
+# - AWS_REGION: AWS区域
+# - AWS_SES_SENDER_EMAIL: AWS SES发件人邮箱
+# - AWS_ACCESS_KEY_ID: AWS访问密钥ID
+# - AWS_SECRET_ACCESS_KEY: AWS秘密访问密钥
+# - RECIPIENT_EMAIL_1: 收件人邮箱1
+# - RECIPIENT_EMAIL_2: 收件人邮箱2
+# - ANTHROPIC_API_KEY: Anthropic API密钥
+# - OPENAI_API_KEY: OpenAI API密钥(可选)
+# - TAVILY_API_KEY: Tavily搜索API密钥

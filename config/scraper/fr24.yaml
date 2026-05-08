@@ -1,0 +1,184 @@
+# =================================
+# FR24 Scraper Configuration
+# =================================
+scraper:
+  scrapers:
+    # FR24 Airport Flights Scraper (Combined arrivals + departures)
+    fr24_airport:
+      enabled: true
+      max_load_more_clicks: 50        # Maximum clicks for "Load later" button (future flights)
+      max_load_earlier_clicks: 10     # Maximum clicks for "Load earlier" button (past flights)
+      load_more_delay: 10.0           # Delay between clicks (seconds) - 20s for full page load
+      sync_to_database: true          # Save flights to flight_schedules table
+
+      # Default settings (for backwards compatibility, use airport_groups for per-group settings)
+      default_priority: 0             # Default priority for airports not in any group
+      default_min_cycle_gap: 1800     # Default cycle gap: 30 minutes
+
+      # Airport groups with different priorities and scraping intervals
+      # Higher priority = processed first; lower min_cycle_gap = more frequent scraping
+      airport_groups:
+        # Tier 1: First-tier hub airports - Highest priority, scrape every 5 minutes
+        - name: tier1_hubs
+          priority: 100
+          min_cycle_gap: 300          # 5 minutes
+          airports:
+            - PEK     # Beijing Capital
+            - PKX     # Beijing Daxing
+            - SHA     # Shanghai Hongqiao
+            - PVG     # Shanghai Pudong
+            - CAN     # Guangzhou Baiyun
+            - SZX     # Shenzhen Bao'an
+            - CTU     # Chengdu Shuangliu
+            - TFU     # Chengdu Tianfu
+
+        # Tier 2: Important provincial capitals/regional hubs - Medium priority, scrape every 15 minutes
+        - name: tier2_major
+          priority: 50
+          min_cycle_gap: 900          # 15 minutes
+          airports:
+            - NKG     # Nanjing Lukou
+            - HGH     # Hangzhou Xiaoshan
+            - WUH     # Wuhan Tianhe
+            - XIY     # Xi'an Xianyang
+            - CKG     # Chongqing Jiangbei
+            - KMG     # Kunming Changshui
+            - XMN     # Xiamen Gaoqi
+            - TAO     # Qingdao Jiaodong
+            - SHE     # Shenyang Taoxian
+            - DLC     # Dalian Zhoushuizi
+            - CSX     # Changsha Huanghua
+            - CGO     # Zhengzhou Xinzheng
+            - HAK     # Haikou Meilan
+            - SYX     # Sanya Phoenix
+            - HRB     # Harbin Taiping
+            - TSN     # Tianjin Binhai
+
+        # Tier 3: Provincial capitals/important cities - Lower priority, scrape every 30 minutes
+        - name: tier3_provincial
+          priority: 20
+          min_cycle_gap: 1800         # 30 minutes
+          airports:
+            - NNG     # Nanning Wuxu
+            - KWE     # Guiyang Longdongbao
+            - LHW     # Lanzhou Zhongchuan
+            - URC     # Urumqi Diwopu
+            - CGQ     # Changchun Longjia
+            - KHN     # Nanchang Changbei
+            - HFE     # Hefei Xinqiao
+            - FOC     # Fuzhou Changle
+            - TNA     # Jinan Yaoqiang
+            - SJW     # Shijiazhuang Zhengding
+            - TYN     # Taiyuan Wusu
+            - HET     # Hohhot Baita
+            - INC     # Yinchuan Hedong
+            - XNN     # Xining Caojiabao
+            - LXA     # Lhasa Gonggar
+            - KWL     # Guilin Liangjiang
+
+        # Tier 4: Regional airports - Lowest priority, scrape every 60 minutes
+        - name: tier4_regional
+          priority: 10
+          min_cycle_gap: 3600         # 60 minutes
+          airports:
+            - NGB     # Ningbo Lishe
+            - WNZ     # Wenzhou Longwan
+            - JJN     # Quanzhou Jinjiang
+            - YNT     # Yantai Penglai
+            - WEH     # Weihai Dashuibo
+            - WUX     # Wuxi Shuofang
+            - CZX     # Changzhou Benniu
+            - NTG     # Nantong Xingdong
+            - YNZ     # Yancheng Nanyang
+            - XUZ     # Xuzhou Guanyin
+            - LYG     # Lianyungang Baita埠
+            - YIW     # Yiwu
+            - ZUH     # Zhuhai Jinwan
+            - SWA     # Jieyang Chaoshan
+            - BHY     # Beihai Fucheng
+            - ZHA     # Zhanjiang Wuchuan
+            - MXZ     # Meizhou Meixian
+            - XFN     # Xiangyang Liuji
+            - ENH     # Enshi Xujiaping
+            - YIH     # Yichang Sanxia
+            - KOW     # Ganzhou Huangjin
+            - JDZ     # Jingdezhen Luojia
+            - JIU     # Jiujiang Lushan
+            - LJG     # Lijiang Sanyi
+            - DLU     # Dali
+            - SYM     # Xishuangbanna Gasa
+            - JZH     # Jiuzhai Huanglong
+            - YNJ     # Yanji Chaoyangchuan
+            - MDG     # Mudanjiang Hailang
+
+    # FR24 Map Scraper - Real-time aircraft positions
+    fr24_map:
+      enabled: true
+      min_cycle_gap: 10               # Minimum seconds between scrapes per region
+      sync_to_database: true          # Save positions to aircraft_realtime_positions table
+      priority: 5                     # Task priority
+
+      # Global coverage mode (50+ predefined regions worldwide)
+      # Set to true to enable global tracking instead of custom regions below
+      global_coverage: true           # Enabled for global coverage
+      max_priority: 5                 # Only scrape regions with priority <= this (1=highest, 5=lowest)
+      include_oceans: true            # Include ocean/remote area regions
+
+      # Custom regions to track (used when global_coverage: false)
+      # zoom span = 180 / 2^zoom: zoom 2=45, zoom 3=22.5, zoom 4=11.25, zoom 5=5.6
+      # NOTE: FR24 API limits ~1500 aircraft per request, use smaller regions for full coverage
+      regions:
+        # 7 regions to fully cover China airspace (zoom 3 = 22.5 degree span)
+        # Northeast (covers Heilongjiang, Jilin, eastern Liaoning)
+        - name: "northeast"
+          lat: 45
+          lon: 128
+          zoom: 3
+        # North (covers Beijing, Tianjin, Hebei, Shandong, western Liaoning)
+        - name: "north"
+          lat: 38
+          lon: 117
+          zoom: 3
+        # East (covers Shanghai, Zhejiang, Fujian, Jiangxi, Anhui, southern Jiangsu)
+        - name: "east"
+          lat: 28
+          lon: 118
+          zoom: 3
+        # South (covers Guangdong, Guangxi, Hainan, Taiwan)
+        - name: "south"
+          lat: 22
+          lon: 112
+          zoom: 3
+        # Southwest (covers Sichuan, Chongqing, Yunnan, Guizhou, eastern Tibet)
+        - name: "southwest"
+          lat: 28
+          lon: 100
+          zoom: 3
+        # Northwest/Inner Mongolia (covers Shaanxi, Gansu, Ningxia, Inner Mongolia, Qinghai)
+        - name: "northwest"
+          lat: 40
+          lon: 105
+          zoom: 3
+        # Xinjiang/Tibet (covers Xinjiang, western Tibet)
+        - name: "xinjiang_tibet"
+          lat: 38
+          lon: 82
+          zoom: 3
+
+    # FR24 Aircraft Flight History Scraper
+    # Automatically creates flight history scraping tasks for high-attention aircraft
+    fr24_aircraft:
+      enabled: true
+      priority: 30                    # Task priority (lower than airports)
+      top_count: 1000                 # Scrape top 1000 high-attention aircraft
+      min_cycle_gap: 86400            # Don't re-scrape same aircraft within 24 hours
+      max_load_earlier_clicks: 0      # No pagination, only scrape currently displayed flights
+      load_more_delay: 2.0            # Load delay (seconds)
+
+    # Legacy FR24 Arrivals-only Scraper (deprecated, use fr24_airport instead)
+    fr24_arrivals:
+      enabled: false                  # Deprecated - use fr24_airport instead
+
+    # Legacy FR24 Departures-only Scraper (deprecated, use fr24_airport instead)
+    fr24_departures:
+      enabled: false                  # Deprecated - use fr24_airport instead

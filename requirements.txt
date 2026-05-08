@@ -1,0 +1,47 @@
+# Kept for legacy `pip install -r requirements.txt` workflows and for the
+# Lambda / scraper Docker builds that read it directly.
+#
+# The canonical source of dependencies is pyproject.toml. If you add or remove
+# a dependency, update both files.
+
+# Core
+requests>=2.31.0
+pyyaml>=6.0.1
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+
+# Web
+flask>=3.0.0
+flask-cors>=4.0.0
+werkzeug>=3.0.0
+mangum>=0.17.0
+asgiref>=3.7.0
+
+# Auth
+python-jose[cryptography]>=3.3.0
+
+# Database
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+
+# AWS
+boto3>=1.28.0
+botocore>=1.31.0
+
+# Geocoding + timezone
+reverse-geocoder>=1.5.1
+pytz>=2023.3
+
+# Map generation
+plotly>=5.14.0
+kaleido>=0.2.1
+numpy>=1.24.0
+
+# AI search (optional, lazy-loaded)
+tavily-python>=0.3.0
+
+# Browser automation (scraper only)
+DrissionPage>=4.0.0
+
+# Development (install with `pip install -r requirements.txt -r requirements-dev.txt`)
+# See pyproject.toml [project.optional-dependencies].dev

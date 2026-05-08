@@ -1,0 +1,14 @@
+# Minimal dependencies for core functionality
+# 核心功能的最小依赖
+
+# Essential packages
+requests>=2.31.0
+pyyaml>=6.0.1
+python-dotenv>=1.0.0
+sqlalchemy>=2.0.0
+
+# Required for email functionality
+boto3>=1.28.0
+
+# Required for location services
+reverse-geocoder>=1.5.1

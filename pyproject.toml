@@ -1,0 +1,228 @@
+[project]
+name = "flight-matrix"
+version = "0.1.0"
+description = "Real-time aircraft tracking and analysis system"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Flight Matrix contributors" }]
+keywords = ["aviation", "ads-b", "flight-tracking", "scraper"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+    "Topic :: Scientific/Engineering :: GIS",
+]
+
+dependencies = [
+    # Core
+    "requests>=2.31.0",
+    "pyyaml>=6.0.1",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+    # Web
+    "flask>=3.0.0",
+    "flask-cors>=4.0.0",
+    "werkzeug>=3.0.0",
+    "mangum>=0.17.0",
+    "asgiref>=3.7.0",
+    # Auth
+    "python-jose[cryptography]>=3.3.0",
+    # Database
+    "sqlalchemy>=2.0.0",
+    "psycopg2-binary>=2.9.0",
+    # AWS
+    "boto3>=1.28.0",
+    "botocore>=1.31.0",
+    # Geocoding
+    "reverse-geocoder>=1.5.1",
+    # Timezone
+    "pytz>=2023.3",
+    # Map generation
+    "plotly>=5.14.0",
+    "kaleido>=0.2.1",
+    "numpy>=1.24.0",
+    # AI search
+    "tavily-python>=0.3.0",
+    # Browser automation
+    "DrissionPage>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "mypy>=1.8.0",
+    "ruff>=0.4.0",
+    "types-requests",
+    "types-pyyaml",
+    "types-python-jose",
+    "types-pytz",
+    "boto3-stubs",
+    "livereload>=2.6.3",
+]
+cdk = [
+    "aws-cdk-lib>=2.100.0",
+    "constructs>=10.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/outstandingcandy/flight-matrix"
+Issues = "https://github.com/outstandingcandy/flight-matrix/issues"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+# ---------------------------------------------------------------------------
+# Ruff — lint and format
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [
+    ".venv",
+    ".venv-cdk",
+    "cdk.out",
+    "lambda_code",
+    "lib/resilient-scraper",
+    "layers",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "T20",  # flake8-print (catches print() in src/)
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",   # line-too-long — handled by formatter
+    "B008",   # function call in default argument (common Flask pattern)
+    "SIM108", # ternary-vs-if-else — cosmetic
+    # The following are enabled locally but ignored in CI until the Phase
+    # 4/5 refactors that fix them. Drop each as the cleanup lands.
+    "RUF013", # implicit Optional — blocked on mypy cleanup (docs/type-checking.md)
+    "RUF001", # ambiguous unicode — fixed during Phase 5.4 flight_agent split
+    "RUF002", # ambiguous unicode in docstring — Phase 5.4
+    "RUF003", # ambiguous unicode in comment — Phase 5.4
+    # E722 (bare except) is NOT ignored — bare excepts were fixed in Phase 4.2.
+    "B904",   # raise-from — tracked by Phase 4.2
+    "B905",   # zip without strict= — mechanical fix, batched later
+    "B007",   # unused loop variable
+    "SIM105", # contextlib.suppress — cosmetic
+    "SIM116", # dict instead of if/elif — cosmetic
+    "SIM103", # direct-return — cosmetic
+    "SIM102", # single if instead of nested — cosmetic
+    "F841",   # unused local — deferred
+    "F401",   # unused import — ruff's auto-fix already removed the safe ones
+    "RUF012", # mutable-class-attribute — review case-by-case, not mechanical
+    "RUF059", # unused-unpacked-variable — tracked alongside Phase 5 cleanups
+    "UP042",  # str-enum — str-mixin pattern is intentional (pre-3.11 StrEnum)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# CLI entry points legitimately use print() for user-facing output
+"src/*_main.py" = ["T20"]
+"src/analysis/flight_agent.py" = ["T20", "E402"] # E402: module split pending (Phase 5.4)
+"web_app.py" = ["E402"] # E402: blueprint migration in progress (Phase 5.3)
+"src/scraper/task_scheduler.py" = ["T20"]
+"src/scraper/xiaohongshu_cycle_scheduler.py" = ["T20"]
+"src/services/aircraft_analysis_service.py" = ["T20"]
+"src/services/note_analysis_service.py" = ["T20"]
+"src/utils/jetphotos_simple.py" = ["T20"]
+"scripts/*" = ["T20"]
+"tests/*" = ["T20", "B", "SIM117"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ---------------------------------------------------------------------------
+# Mypy — type checking
+# ---------------------------------------------------------------------------
+# Strict mode is the target but the current codebase has ~670 errors concentrated
+# in files scheduled for refactor (see docs/refactor-plan or CHANGELOG).
+# We run non-strict by default in CI; --strict is run per-directory for files
+# that have been cleaned up. Add directories to strict_dirs as they're fixed.
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+disallow_any_unimported = false
+no_implicit_optional = true
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+show_error_codes = true
+exclude = [
+    "^lambda_code/",
+    "^lib/",
+    "^cdk\\.out/",
+    "^\\.venv",
+    "^layers/",
+]
+
+# Per-module strict overrides — a directory lands here once it's
+# clean under `mypy --strict`. As of v0.1.0 only src.core is strict-clean;
+# the rest is being cleaned up as part of the Phase 5 module splits.
+[[tool.mypy.overrides]]
+module = "src.core.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_return_any = true
+strict_equality = true
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests that require external services",
+]
+
+# ---------------------------------------------------------------------------
+# Coverage
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["src"]
+branch = true
+omit = [
+    "src/*_main.py",
+    "*/test_*.py",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+skip_covered = false
+show_missing = true

@@ -1,0 +1,69 @@
+# Docker Compose for local scraper testing
+# Usage: docker-compose -f docker-compose.scraper.yml up --build
+
+version: '3.8'
+
+services:
+  scraper-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.scraper
+    container_name: flight-matrix-scraper
+    restart: unless-stopped
+    environment:
+      - DISPLAY=:99
+      - PYTHONUNBUFFERED=1
+      # Database connection (override via .env file or command line)
+      - DB_HOST=${DB_HOST:-localhost}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-flight_matrix}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-}
+      # AWS credentials (for S3 uploads)
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-west-2}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+    volumes:
+      # Mount config for easy updates (optional)
+      - ./config.yaml:/app/config.yaml:ro
+      # Mount logs directory
+      - ./logs/scraper:/var/log/scraper
+    # Shared memory size for Chromium
+    shm_size: '2gb'
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "scraper_main"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # Optional: Local PostgreSQL for testing
+  postgres:
+    image: postgres:15-alpine
+    container_name: flight-matrix-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=flight_matrix
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    profiles:
+      - with-db
+
+volumes:
+  postgres_data:

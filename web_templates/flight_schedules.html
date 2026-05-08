@@ -1,0 +1,3443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{% if airport_code %}{{ airport_code }} 航班{% else %}航班计划表{% endif %} - FlightMatrix</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <!-- Leaflet CSS for Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+    <style>
+        /* Base styles */
+        :root {
+            --primary-color: #0d6efd;
+            --success-color: #28a745;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --info-color: #17a2b8;
+            {% if airport_code %}
+            /* Dark theme for airport detail mode */
+            --bg-dark: #1a1a2e;
+            --bg-dark-secondary: #16213e;
+            --card-bg: rgba(255, 255, 255, 0.95);
+            --text-light: #ffffff;
+            {% endif %}
+        }
+
+        body {
+            {% if airport_code %}
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-secondary) 100%);
+            min-height: 100vh;
+            {% else %}
+            background-color: #f5f5f5;
+            {% endif %}
+            padding-bottom: env(safe-area-inset-bottom);
+            overflow-x: hidden;
+        }
+
+        /* Prevent horizontal overflow */
+        html {
+            overflow-x: hidden;
+        }
+
+        .container-fluid {
+            max-width: 100vw;
+            overflow-x: hidden;
+        }
+
+        /* Navbar - standalone style */
+        .navbar {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
+            padding: 0.5rem 1rem;
+        }
+
+        .navbar-brand {
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        {% if airport_code %}
+        /* Airport detail mode styles */
+        .airport-header {
+            text-align: center;
+            padding: 20px 20px 15px;
+            color: var(--text-light);
+        }
+
+        .airport-header .airport-code {
+            font-size: 2.5rem;
+            font-weight: 700;
+            letter-spacing: 4px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+
+        .airport-header .airport-name {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            margin-top: 3px;
+        }
+
+        .main-content .card {
+            background: var(--card-bg);
+            border: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+
+        .stats-card {
+            background: rgba(255,255,255,0.1) !important;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2) !important;
+        }
+
+        .stats-card .stat-number,
+        .stats-card .stat-item,
+        .stats-card i {
+            color: var(--text-light) !important;
+        }
+        {% endif %}
+
+        /* Horizontal filter bar */
+        .filter-bar {
+            {% if airport_code %}
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            {% else %}
+            background: white;
+            border: 1px solid #dee2e6;
+            {% endif %}
+            border-radius: 0.5rem;
+            padding: 0.75rem 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .filter-bar .filter-group {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+
+        .filter-bar .filter-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .filter-bar .filter-label {
+            {% if airport_code %}
+            color: rgba(255,255,255,0.8);
+            {% else %}
+            color: #6c757d;
+            {% endif %}
+            font-size: 0.8rem;
+            white-space: nowrap;
+        }
+
+        .filter-bar .form-select,
+        .filter-bar .form-control {
+            width: auto;
+            min-width: 120px;
+            font-size: 0.85rem;
+            {% if airport_code %}
+            background-color: rgba(255,255,255,0.9);
+            {% endif %}
+        }
+
+        .filter-bar .btn-group-sm .btn {
+            padding: 0.25rem 0.75rem;
+            font-size: 0.85rem;
+        }
+
+        /* Flight type buttons in filter bar */
+        .flight-type-group {
+            display: flex;
+        }
+
+        .flight-type-group .btn {
+            border-radius: 0;
+        }
+
+        .flight-type-group .btn:first-child {
+            border-radius: 0.25rem 0 0 0.25rem;
+        }
+
+        .flight-type-group .btn:last-child {
+            border-radius: 0 0.25rem 0.25rem 0;
+        }
+
+        /* Flight type indicators */
+        .flight-row-arrival {
+            border-left: 4px solid var(--success-color) !important;
+        }
+
+        .flight-row-departure {
+            border-left: 4px solid var(--warning-color) !important;
+        }
+
+        .flight-row {
+            transition: background-color 0.15s ease;
+        }
+
+        .flight-row:hover {
+            background-color: #f8f9fa;
+        }
+
+        /* Badges */
+        .livery-badge {
+            font-size: 0.65rem;
+            vertical-align: middle;
+            padding: 0.2em 0.5em;
+            white-space: normal;
+            word-break: break-word;
+        }
+
+        /* Livery cell styling */
+        .livery-cell {
+            max-width: 120px;
+            word-break: break-word;
+        }
+
+        .livery-cell .livery-type {
+            font-size: 0.7rem;
+            line-height: 1.2;
+            word-break: break-word;
+        }
+
+        .has-images-icon {
+            color: #6c757d;
+            margin-left: 4px;
+        }
+
+        .has-images-icon.active {
+            color: var(--success-color);
+        }
+
+        .status-badge {
+            font-size: 0.7rem;
+            white-space: nowrap;
+        }
+
+        .status-landed { background-color: var(--success-color); }
+        .status-scheduled { background-color: #6c757d; }
+        .status-en-route { background-color: var(--info-color); }
+        .status-delayed { background-color: var(--warning-color); color: #212529; }
+        .status-canceled { background-color: var(--danger-color); }
+        .status-estimated { background-color: #17a2b8; }
+
+        /* Time/Status cell - desktop: inline, mobile: newline */
+        .status-newline {
+            display: none;
+        }
+
+        .quick-airport-btn {
+            margin: 2px;
+            font-size: 0.8rem;
+            padding: 0.25rem 0.5rem;
+        }
+
+        /* Schedule table */
+        .schedule-table th {
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 10;
+            font-size: 0.85rem;
+            white-space: nowrap;
+        }
+
+        .schedule-table td {
+            font-size: 0.85rem;
+            vertical-align: middle;
+        }
+
+        /* Stats summary */
+        .stats-summary {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .stats-summary .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .stats-summary .stat-number {
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        /* Airport search */
+        #airportSearchResults {
+            position: absolute;
+            z-index: 1050;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            width: 100%;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .airport-search-result {
+            cursor: pointer;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .airport-search-result:hover {
+            background-color: #f8f9fa;
+        }
+
+        /* Aircraft images */
+        .aircraft-image-carousel {
+            max-height: 300px;
+        }
+
+        .aircraft-image-carousel img {
+            max-height: 300px;
+            object-fit: contain;
+        }
+
+        /* Aircraft cell with image and registration */
+        .aircraft-cell {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+        }
+
+        .aircraft-thumb {
+            width: 120px;
+            height: 78px;
+            object-fit: cover;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .aircraft-thumb:hover {
+            transform: scale(1.05);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        .aircraft-thumb-placeholder {
+            width: 120px;
+            height: 78px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f0f0f0;
+            border-radius: 4px;
+            color: #6c757d;
+            cursor: pointer;
+        }
+
+        .aircraft-thumb-placeholder:hover {
+            background: #e0e0e0;
+        }
+
+        .aircraft-thumb-placeholder.no-image {
+            cursor: default;
+            color: #adb5bd;
+        }
+
+        .aircraft-reg {
+            font-size: 0.7rem;
+            white-space: nowrap;
+        }
+
+        .aircraft-reg a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+
+        .aircraft-reg a:hover {
+            text-decoration: underline;
+        }
+
+        /* Mobile responsive styles */
+        @media (max-width: 991.98px) {
+            .filter-bar .filter-group {
+                gap: 0.5rem;
+            }
+
+            .filter-bar .filter-item {
+                flex: 1 1 auto;
+                min-width: 140px;
+            }
+
+            .filter-bar .filter-label {
+                display: none;
+            }
+
+            .filter-bar .form-select,
+            .filter-bar .form-control {
+                width: 100%;
+                min-width: unset;
+            }
+        }
+
+        @media (max-width: 767.98px) {
+            .navbar {
+                padding: 0.4rem 0.75rem;
+            }
+
+            .navbar-brand {
+                font-size: 1rem;
+            }
+
+            {% if airport_code %}
+            .airport-header {
+                padding: 15px 15px 10px;
+            }
+
+            .airport-header .airport-code {
+                font-size: 2rem;
+            }
+
+            .airport-header .airport-name {
+                font-size: 0.95rem;
+            }
+            {% endif %}
+
+            /* Hide less important columns on mobile */
+            .schedule-table .hide-mobile {
+                display: none;
+            }
+
+            .schedule-table th,
+            .schedule-table td {
+                font-size: 0.75rem;
+                padding: 0.4rem 0.3rem;
+            }
+
+            /* Smaller aircraft thumbnail on tablet */
+            .aircraft-thumb,
+            .aircraft-thumb-placeholder {
+                width: 100px;
+                height: 65px;
+            }
+
+            .aircraft-reg {
+                font-size: 0.65rem;
+            }
+
+            /* Livery cell on tablet */
+            .livery-cell {
+                max-width: 80px;
+            }
+
+            .livery-cell .livery-badge {
+                font-size: 0.55rem;
+            }
+
+            .livery-cell .livery-type {
+                font-size: 0.6rem;
+            }
+
+            /* Compact stats */
+            .stats-summary {
+                gap: 8px;
+                font-size: 0.85rem;
+            }
+
+            .stats-summary .stat-number {
+                font-size: 1rem;
+            }
+
+            /* Modal adjustments */
+            .modal-dialog {
+                margin: 0.5rem;
+            }
+
+            .modal-body {
+                padding: 0.75rem;
+            }
+
+            /* Filter bar mobile */
+            .filter-bar {
+                padding: 0.5rem;
+            }
+
+            .filter-bar .filter-group {
+                gap: 0.4rem;
+            }
+
+            .filter-bar .filter-item {
+                min-width: 100px;
+            }
+
+            .filter-bar .form-select {
+                font-size: 0.75rem;
+                padding: 0.25rem 0.5rem;
+            }
+
+            .filter-bar .btn-group-sm .btn {
+                padding: 0.2rem 0.5rem;
+                font-size: 0.75rem;
+            }
+        }
+
+        @media (max-width: 575.98px) {
+            .container-fluid {
+                padding-left: 4px;
+                padding-right: 4px;
+                overflow-x: hidden;
+            }
+
+            .main-content {
+                overflow-x: hidden;
+            }
+
+            .card-body {
+                padding: 0.5rem;
+            }
+
+            /* Ensure table doesn't overflow screen */
+            .table-responsive {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            /* Even more compact table */
+            .schedule-table th,
+            .schedule-table td {
+                font-size: 0.65rem;
+                padding: 0.25rem 0.15rem;
+                white-space: nowrap;
+            }
+
+            /* Livery cell on small mobile */
+            .livery-cell {
+                max-width: 60px;
+            }
+
+            .livery-cell .livery-badge {
+                font-size: 0.5rem;
+                padding: 0.1em 0.3em;
+            }
+
+            .livery-cell .livery-type {
+                font-size: 0.5rem;
+                white-space: normal;
+            }
+
+            /* Even smaller aircraft thumbnail on small mobile */
+            .aircraft-thumb,
+            .aircraft-thumb-placeholder {
+                width: 70px;
+                height: 45px;
+            }
+
+            .aircraft-reg {
+                font-size: 0.55rem;
+            }
+
+            /* Compact status badge */
+            .status-badge {
+                font-size: 0.55rem;
+                padding: 0.15em 0.3em;
+            }
+
+            /* Status on new line for mobile */
+            .status-inline {
+                display: none;
+            }
+
+            .status-newline {
+                display: block;
+                margin-top: 2px;
+            }
+
+            /* Filter bar extra small */
+            .filter-bar .filter-item {
+                min-width: 80px;
+                flex: 1 1 45%;
+            }
+        }
+
+        /* Pull to refresh indicator */
+        .refresh-indicator {
+            text-align: center;
+            padding: 10px;
+            display: none;
+        }
+
+        .refresh-indicator.active {
+            display: block;
+        }
+
+        /* Flight type icons */
+        .flight-type-icon {
+            font-size: 0.9rem;
+        }
+
+        /* Touch-friendly buttons */
+        @media (hover: none) and (pointer: coarse) {
+            .btn {
+                min-height: 44px;
+                min-width: 44px;
+            }
+
+            .quick-airport-btn {
+                min-height: 36px;
+                padding: 0.4rem 0.6rem;
+            }
+
+            .filter-bar .btn-group-sm .btn {
+                min-height: 36px;
+            }
+        }
+
+        /* Bottom padding for mobile browsers */
+        .main-content {
+            padding-bottom: 20px;
+        }
+
+        /* Realtime Aircraft Map */
+        {% if airport_code %}
+        .realtime-map-container {
+            margin-bottom: 1rem;
+        }
+
+        .realtime-map-card {
+            background: rgba(255,255,255,0.95);
+            border: none;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            overflow: hidden;
+        }
+
+        .realtime-map-header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            padding: 0.75rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .realtime-map-header h6 {
+            margin: 0;
+            font-weight: 600;
+        }
+
+        .map-stats {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.85rem;
+        }
+
+        .map-stat-item {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .map-stat-item .count {
+            font-weight: 700;
+        }
+
+        #realtimeMap {
+            height: 400px;
+            width: 100%;
+        }
+
+        /* Airport marker icon */
+        .airport-marker {
+            background: none !important;
+            border: none !important;
+        }
+
+        /* Aircraft marker styles */
+        .aircraft-marker {
+            width: 24px;
+            height: 24px;
+            background: none !important;
+            border: none !important;
+        }
+
+        .aircraft-icon {
+            width: 100%;
+            height: 100%;
+            transition: transform 0.1s ease;
+        }
+
+        .aircraft-icon.approaching {
+            color: #28a745;
+        }
+
+        .aircraft-icon.departing {
+            color: #ffc107;
+        }
+
+        .aircraft-icon.cruising {
+            color: #17a2b8;
+        }
+
+        .aircraft-icon.ground {
+            color: #6c757d;
+        }
+
+        .aircraft-popup {
+            min-width: 200px;
+        }
+
+        .aircraft-popup .popup-header {
+            font-weight: 700;
+            font-size: 1rem;
+            margin-bottom: 0.3rem;
+            border-bottom: 1px solid #dee2e6;
+            padding-bottom: 0.3rem;
+        }
+
+        .aircraft-popup .popup-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            padding: 0.15rem 0;
+        }
+
+        .aircraft-popup .popup-label {
+            color: #6c757d;
+        }
+
+        .aircraft-popup .popup-value {
+            font-weight: 500;
+        }
+
+        .aircraft-popup .status-badge {
+            display: inline-block;
+            padding: 0.15rem 0.4rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .aircraft-popup .status-approaching { background: #d4edda; color: #155724; }
+        .aircraft-popup .status-departing { background: #fff3cd; color: #856404; }
+        .aircraft-popup .status-cruising { background: #d1ecf1; color: #0c5460; }
+        .aircraft-popup .status-ground { background: #e2e3e5; color: #383d41; }
+        .aircraft-popup .status-landed { background: #d4edda; color: #155724; }
+
+        /* Aircraft marker with schedule indicator */
+        .aircraft-marker.has-schedule svg path {
+            stroke: #2196F3;
+            stroke-width: 2;
+        }
+
+        .aircraft-marker.no-schedule svg path {
+            fill-opacity: 0.5;
+        }
+
+        /* Highlighted aircraft marker */
+        .aircraft-marker.highlighted {
+            z-index: 1000 !important;
+        }
+
+        /* Flight overlay - right side panel */
+        .flight-overlay {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 380px;
+            max-width: 100%;
+            background: white;
+            box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
+            z-index: 9999;
+            overflow-y: auto;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+        }
+
+        .flight-overlay.show {
+            transform: translateX(0);
+        }
+
+        /* Backdrop for clicking outside */
+        .flight-overlay-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 380px;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.3);
+            z-index: 9998;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+
+        .flight-overlay-backdrop.show {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .flight-overlay-content {
+            width: 100%;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+        }
+
+        /* Highlighted aircraft pulse animation */
+        .aircraft-marker.highlighted svg {
+            animation: aircraft-pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes aircraft-pulse {
+            0%, 100% {
+                filter: drop-shadow(0 0 4px rgba(255, 0, 0, 0.6));
+            }
+            50% {
+                filter: drop-shadow(0 0 12px rgba(255, 0, 0, 0.9));
+            }
+        }
+
+        /* Flight track line styles */
+        .flight-track-line {
+            stroke: #0d6efd;
+            stroke-width: 3;
+            stroke-opacity: 0.8;
+        }
+
+        /* Image carousel in overlay */
+        .overlay-image-carousel {
+            position: relative;
+            width: 100%;
+            height: 200px;
+            background: #f8f9fa;
+            overflow: hidden;
+        }
+
+        .overlay-image-carousel img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+        }
+
+        .overlay-image-carousel .carousel-nav {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            z-index: 10;
+        }
+
+        .overlay-image-carousel .carousel-nav:hover {
+            background: rgba(0, 0, 0, 0.7);
+        }
+
+        .overlay-image-carousel .carousel-prev {
+            left: 10px;
+        }
+
+        .overlay-image-carousel .carousel-next {
+            right: 10px;
+        }
+
+        .overlay-image-carousel .carousel-dots {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 6px;
+        }
+
+        .overlay-image-carousel .carousel-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.5);
+            cursor: pointer;
+        }
+
+        .overlay-image-carousel .carousel-dot.active {
+            background: white;
+        }
+
+        .overlay-no-image {
+            width: 100%;
+            height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f8f9fa;
+            color: #adb5bd;
+        }
+
+        .overlay-no-image i {
+            font-size: 3rem;
+        }
+
+        /* Photo metadata */
+        .photo-metadata {
+            padding: 8px 15px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #eee;
+            font-size: 0.75rem;
+            color: #666;
+        }
+
+        .photo-metadata .photographer {
+            font-weight: 600;
+            color: #333;
+        }
+
+        /* Aircraft profile section */
+        .aircraft-profile {
+            padding: 15px;
+            background: #fff;
+        }
+
+        .aircraft-profile h6 {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .profile-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            font-size: 0.85rem;
+        }
+
+        .profile-label {
+            color: #888;
+        }
+
+        .profile-value {
+            font-weight: 500;
+            color: #333;
+            text-align: right;
+            max-width: 60%;
+            word-break: break-word;
+        }
+
+        /* Action buttons in overlay */
+        .overlay-actions {
+            padding: 15px;
+            background: #f8f9fa;
+            display: flex;
+            gap: 10px;
+        }
+
+        .overlay-actions .btn {
+            flex: 1;
+            font-size: 0.85rem;
+        }
+
+        .flight-overlay-close {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+            z-index: 1;
+        }
+
+        .flight-overlay-close:hover {
+            color: #333;
+        }
+
+        .flight-overlay-header {
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .flight-overlay-header h3 {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .flight-overlay-body {
+            padding: 20px;
+        }
+
+        .flight-overlay-body .row {
+            margin-bottom: 15px;
+        }
+
+        .flight-overlay-body .row:last-child {
+            margin-bottom: 0;
+        }
+
+        .flight-overlay-body label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 2px;
+            display: block;
+        }
+
+        .flight-overlay-body .col-4,
+        .flight-overlay-body .col-6 {
+            padding: 0 10px;
+        }
+
+        .schedule-info {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px !important;
+            margin-top: 15px;
+        }
+
+        .schedule-info h5 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #2196F3;
+        }
+
+        @media (max-width: 767.98px) {
+            #realtimeMap {
+                height: 300px;
+            }
+
+            .map-stats {
+                font-size: 0.75rem;
+                gap: 0.5rem;
+            }
+
+            /* Full width panel on mobile */
+            .flight-overlay {
+                width: 100%;
+                max-width: 100%;
+            }
+
+            .flight-overlay-backdrop {
+                right: 0;
+            }
+
+            .flight-overlay-header {
+                padding: 15px;
+            }
+
+            .flight-overlay-body {
+                padding: 15px;
+            }
+
+            .overlay-image-carousel {
+                height: 180px;
+            }
+
+            .overlay-image-carousel img {
+                height: 180px;
+            }
+
+            .overlay-no-image {
+                height: 180px;
+            }
+        }
+        {% endif %}
+
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            display: none;
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        /* Airport selection card for non-airport mode */
+        .airport-selection-bar {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 0.5rem;
+            padding: 0.75rem 1rem;
+            margin-bottom: 0.75rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="text-center">
+            <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <div class="mt-2" id="loadingText">加载中...</div>
+        </div>
+    </div>
+
+    <div class="container-fluid main-content">
+        <!-- Navigation - Standalone -->
+        <nav class="navbar navbar-expand navbar-dark mb-3 {% if not airport_code %}rounded-bottom{% endif %}">
+            <div class="container-fluid px-2">
+                <a class="navbar-brand text-white text-decoration-none" href="/">
+                    <i class="fas fa-plane"></i> FlightMatrix
+                </a>
+                <div class="navbar-nav ms-auto">
+                    <a class="nav-link" href="/"><i class="fas fa-search"></i> 搜索</a>
+                    {% if airport_code %}
+                    <a class="nav-link" href="/flight-schedules"><i class="fas fa-list"></i> 全部航班</a>
+                    {% endif %}
+                </div>
+            </div>
+        </nav>
+
+        {% if airport_code %}
+        <!-- Airport Header (for airport detail mode) -->
+        <div class="airport-header">
+            <div class="airport-code" id="airportCodeDisplay">{{ airport_code }}</div>
+            <div class="airport-name" id="airportNameDisplay">加载中...</div>
+        </div>
+
+        <!-- Horizontal Filter Bar (moved to top for airport mode) -->
+        <div class="filter-bar" id="filterBar">
+            <div class="filter-group">
+                <!-- Flight Type -->
+                <div class="filter-item">
+                    <span class="filter-label">类型</span>
+                    <div class="btn-group btn-group-sm flight-type-group" role="group">
+                        <input type="radio" class="btn-check" name="flightType" id="typeArrival" value="arrival" checked>
+                        <label class="btn btn-outline-success" for="typeArrival">
+                            <i class="fas fa-plane-arrival"></i> 进港
+                        </label>
+                        <input type="radio" class="btn-check" name="flightType" id="typeDeparture" value="departure">
+                        <label class="btn btn-outline-warning" for="typeDeparture">
+                            <i class="fas fa-plane-departure"></i> 离港
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Date Filter -->
+                <div class="filter-item">
+                    <span class="filter-label">日期</span>
+                    <select class="form-select form-select-sm" id="dateSelect">
+                        <option value="">加载中...</option>
+                    </select>
+                </div>
+
+                <!-- Aircraft Category -->
+                <div class="filter-item">
+                    <span class="filter-label">分类</span>
+                    <select class="form-select form-select-sm" id="aircraftCategorySelect">
+                        <option value="">全部分类</option>
+                        <option value="宽体机">宽体机</option>
+                        <option value="窄体机">窄体机</option>
+                        <option value="支线机">支线机</option>
+                        <option value="公务机">公务机</option>
+                        <option value="其他">其他</option>
+                    </select>
+                </div>
+
+                <!-- Aircraft Type -->
+                <div class="filter-item">
+                    <span class="filter-label">机型</span>
+                    <select class="form-select form-select-sm" id="aircraftTypeSelect">
+                        <option value="">全部机型</option>
+                    </select>
+                </div>
+
+                <!-- Livery Filter -->
+                <div class="filter-item">
+                    <span class="filter-label">涂装</span>
+                    <select class="form-select form-select-sm" id="liverySelect">
+                        <option value="__HAS_LIVERY__" selected>只看特殊涂装</option>
+                        <option value="">全部涂装</option>
+                    </select>
+                </div>
+
+                <!-- Refresh Button -->
+                <div class="filter-item ms-auto">
+                    <button class="btn btn-sm btn-outline-light" id="refreshBtn" title="刷新">
+                        <i class="fas fa-sync"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Realtime Aircraft Map -->
+        <div class="realtime-map-container">
+            <div class="card realtime-map-card">
+                <div class="realtime-map-header">
+                    <h6><i class="fas fa-map-marked-alt"></i> 实时飞机位置</h6>
+                    <div class="map-stats">
+                        <div class="map-stat-item">
+                            <i class="fas fa-plane-arrival text-success"></i>
+                            <span class="count" id="mapApproachingCount">0</span>
+                            <span class="d-none d-sm-inline">进港</span>
+                        </div>
+                        <div class="map-stat-item">
+                            <i class="fas fa-plane-departure text-warning"></i>
+                            <span class="count" id="mapDepartingCount">0</span>
+                            <span class="d-none d-sm-inline">离港</span>
+                        </div>
+                        <div class="map-stat-item">
+                            <i class="fas fa-plane text-info"></i>
+                            <span class="count" id="mapCruisingCount">0</span>
+                            <span class="d-none d-sm-inline">巡航</span>
+                        </div>
+                        <div class="map-stat-item">
+                            <i class="fas fa-parking text-secondary"></i>
+                            <span class="count" id="mapGroundCount">0</span>
+                            <span class="d-none d-sm-inline">地面</span>
+                        </div>
+                    </div>
+                </div>
+                <div id="realtimeMap"></div>
+            </div>
+        </div>
+        {% else %}
+        <!-- Airport Selection Bar (for non-airport mode) -->
+        <div class="airport-selection-bar" id="airportSelectionBar">
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+                <div class="position-relative flex-grow-1" style="max-width: 300px;">
+                    <input type="text" class="form-control form-control-sm" id="airportSearch"
+                           placeholder="输入机场代码或名称..." autocomplete="off">
+                    <div id="airportSearchResults" class="d-none"></div>
+                </div>
+                <div id="selectedAirport" class="d-none">
+                    <span class="badge bg-info fs-6" id="selectedAirportBadge">
+                        <span id="selectedAirportName"></span>
+                        <button type="button" class="btn-close btn-close-white ms-2" id="clearSelectedAirport" style="font-size: 0.6rem;"></button>
+                    </span>
+                </div>
+                <div class="d-flex flex-wrap gap-1">
+                    <button class="btn btn-sm btn-outline-secondary quick-airport-btn" data-iata="PEK" data-icao="ZBAA">北京首都</button>
+                    <button class="btn btn-sm btn-outline-secondary quick-airport-btn" data-iata="PVG" data-icao="ZSPD">上海浦东</button>
+                    <button class="btn btn-sm btn-outline-secondary quick-airport-btn" data-iata="CAN" data-icao="ZGGG">广州</button>
+                    <button class="btn btn-sm btn-outline-secondary quick-airport-btn" data-iata="SZX" data-icao="ZGSZ">深圳</button>
+                    <button class="btn btn-sm btn-outline-secondary quick-airport-btn" data-iata="CTU" data-icao="ZUUU">成都</button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if not airport_code %}
+        <!-- Horizontal Filter Bar (for non-airport mode) -->
+        <div class="filter-bar" id="filterBar" style="display: none;">
+            <div class="filter-group">
+                <!-- Flight Type -->
+                <div class="filter-item">
+                    <span class="filter-label">类型</span>
+                    <div class="btn-group btn-group-sm flight-type-group" role="group">
+                        <input type="radio" class="btn-check" name="flightType" id="typeArrival" value="arrival" checked>
+                        <label class="btn btn-outline-success" for="typeArrival">
+                            <i class="fas fa-plane-arrival"></i> 进港
+                        </label>
+                        <input type="radio" class="btn-check" name="flightType" id="typeDeparture" value="departure">
+                        <label class="btn btn-outline-warning" for="typeDeparture">
+                            <i class="fas fa-plane-departure"></i> 离港
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Date Filter -->
+                <div class="filter-item">
+                    <span class="filter-label">日期</span>
+                    <select class="form-select form-select-sm" id="dateSelect">
+                        <option value="">加载中...</option>
+                    </select>
+                </div>
+
+                <!-- Aircraft Category -->
+                <div class="filter-item">
+                    <span class="filter-label">分类</span>
+                    <select class="form-select form-select-sm" id="aircraftCategorySelect">
+                        <option value="">全部分类</option>
+                        <option value="宽体机">宽体机</option>
+                        <option value="窄体机">窄体机</option>
+                        <option value="支线机">支线机</option>
+                        <option value="公务机">公务机</option>
+                        <option value="其他">其他</option>
+                    </select>
+                </div>
+
+                <!-- Aircraft Type -->
+                <div class="filter-item">
+                    <span class="filter-label">机型</span>
+                    <select class="form-select form-select-sm" id="aircraftTypeSelect">
+                        <option value="">全部机型</option>
+                    </select>
+                </div>
+
+                <!-- Livery Filter -->
+                <div class="filter-item">
+                    <span class="filter-label">涂装</span>
+                    <select class="form-select form-select-sm" id="liverySelect">
+                        <option value="__HAS_LIVERY__" selected>只看特殊涂装</option>
+                        <option value="">全部涂装</option>
+                    </select>
+                </div>
+
+                <!-- Refresh Button -->
+                <div class="filter-item ms-auto">
+                    <button class="btn btn-sm btn-outline-secondary" id="refreshBtn" title="刷新">
+                        <i class="fas fa-sync"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Stats Summary -->
+        <div class="card mb-2 {% if airport_code %}stats-card{% endif %}">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center flex-wrap">
+                    <div class="stats-summary">
+                        <div class="stat-item">
+                            <i class="fas fa-list {% if not airport_code %}text-primary{% endif %}"></i>
+                            <span class="d-none d-sm-inline">总计:</span>
+                            <span class="stat-number" id="statTotal">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <i class="fas fa-plane-arrival {% if not airport_code %}text-success{% endif %}"></i>
+                            <span class="d-none d-sm-inline">进港:</span>
+                            <span class="stat-number {% if not airport_code %}text-success{% endif %}" id="statArrivals">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <i class="fas fa-plane-departure {% if not airport_code %}text-warning{% endif %}"></i>
+                            <span class="d-none d-sm-inline">离港:</span>
+                            <span class="stat-number {% if not airport_code %}text-warning{% endif %}" id="statDepartures">0</span>
+                        </div>
+                    </div>
+                    <div>
+                        <small id="currentAirportDisplay" class="{% if airport_code %}text-light{% else %}text-muted{% endif %}">{% if airport_code %}{{ airport_code }}{% else %}请选择机场{% endif %}</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% if airport_code %}
+        <!-- Schedule Section Title for Airport Mode -->
+        <div class="d-flex align-items-center mb-2 mt-3">
+            <h6 class="mb-0 text-light">
+                <i class="fas fa-calendar-alt me-2"></i>航班计划 / 预测
+            </h6>
+            <small class="ms-2 text-light opacity-75">(基于航班时刻表数据)</small>
+        </div>
+        {% endif %}
+
+        <!-- Schedule Table -->
+        <div class="card">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 schedule-table">
+                        <thead>
+                            <tr>
+                                <th>飞机</th>
+                                <th>时间/状态</th>
+                                <th>航班信息</th>
+                                <th class="hide-mobile">航空公司</th>
+                                <th class="hide-mobile">机型</th>
+                                <th>涂装</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scheduleTableBody">
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-5">
+                                    {% if airport_code %}
+                                    <div class="spinner-border spinner-border-sm" role="status"></div>
+                                    <div>加载航班数据...</div>
+                                    {% else %}
+                                    <i class="fas fa-info-circle fa-2x mb-2"></i>
+                                    <div>请选择机场查看航班计划</div>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <!-- Load More -->
+            <div class="card-footer py-2 text-center" id="loadMoreFooter">
+                <small id="paginationInfo" class="text-muted d-block mb-2">已加载 0 / 0 条</small>
+                <button class="btn btn-outline-primary btn-sm" id="loadMoreBtn" style="display: none;">
+                    <i class="fas fa-plus"></i> 加载更多
+                </button>
+                <small id="allLoadedText" class="text-muted" style="display: none;">
+                    <i class="fas fa-check-circle text-success"></i> 已加载全部航班
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Aircraft Info Modal -->
+    <div class="modal fade" id="aircraftInfoModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-info text-white py-2">
+                    <h6 class="modal-title">
+                        <i class="fas fa-plane"></i> 飞机信息 - <span id="modalAircraftReg"></span>
+                    </h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="aircraftInfoContent">
+                        <div class="text-center py-4">
+                            <div class="spinner-border" role="status"></div>
+                            <div>加载飞机信息...</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Lightbox Modal -->
+    <div class="modal fade" id="imageLightboxModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content bg-dark">
+                <div class="modal-header border-0 py-1">
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center p-0">
+                    <img id="lightboxImage" src="" class="img-fluid" style="max-height: 85vh; object-fit: contain;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Leaflet JS for Map -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <!-- Inline JavaScript for standalone page -->
+    <script>
+        {% if airport_code %}
+        /**
+         * Realtime Aircraft Map Manager
+         */
+        class RealtimeAircraftMap {
+            constructor(airportCode) {
+                this.airportCode = airportCode;
+                this.map = null;
+                this.markers = [];
+                this.markerMap = new Map();  // fr24_id -> {marker, aircraft}
+                this.aircraftData = [];
+                this.airportMarker = null;
+                this.refreshInterval = null;
+                this.airportLocation = null;
+                this.isDataLoaded = false;
+                this.highlightedAircraft = null;
+                this.highlightedAircraftId = null;
+
+                this.init();
+            }
+
+            async init() {
+                // Get airport info first
+                await this.loadAirportInfo();
+
+                // Initialize map
+                this.initMap();
+
+                // Bind filter events
+                this.bindEvents();
+
+                // Don't load aircraft data immediately - wait for schedule data to sync
+                // Aircraft will be loaded when syncWithTableFilters is called
+            }
+
+            startAutoRefresh() {
+                if (!this.refreshInterval) {
+                    this.refreshInterval = setInterval(() => this.loadAircraftData(), 30000);
+                }
+            }
+
+            async loadAirportInfo() {
+                try {
+                    const response = await fetch(`/api/airports/${this.airportCode}`);
+                    const data = await response.json();
+                    if (data.success && data.airport) {
+                        this.airportLocation = {
+                            lat: data.airport.latitude,
+                            lng: data.airport.longitude,
+                            name: data.airport.name || this.airportCode
+                        };
+                    }
+                } catch (error) {
+                    console.error('Failed to load airport info:', error);
+                    // Default to Beijing if airport info fails
+                    this.airportLocation = { lat: 40.08, lng: 116.58, name: this.airportCode };
+                }
+            }
+
+            initMap() {
+                const lat = this.airportLocation?.lat || 40.08;
+                const lng = this.airportLocation?.lng || 116.58;
+
+                // Disable scroll wheel zoom by default to prevent accidental zoom while scrolling page
+                // Zoom level 5 shows approximately 2000km radius
+                this.map = L.map('realtimeMap', {
+                    scrollWheelZoom: false
+                }).setView([lat, lng], 5);
+
+                // Enable scroll wheel zoom only when map is focused (clicked)
+                this.map.on('focus', () => this.map.scrollWheelZoom.enable());
+                this.map.on('blur', () => this.map.scrollWheelZoom.disable());
+
+                // Also enable on click for better UX, and clear highlight
+                this.map.on('click', () => {
+                    this.map.scrollWheelZoom.enable();
+                    this.clearHighlight();
+                });
+
+                // Disable when mouse leaves the map
+                this.map.on('mouseout', () => this.map.scrollWheelZoom.disable());
+
+                // Add tile layer (OpenStreetMap)
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap contributors',
+                    maxZoom: 18
+                }).addTo(this.map);
+
+                // Add airport marker
+                this.airportMarker = L.marker([lat, lng], {
+                    icon: L.divIcon({
+                        className: 'airport-marker',
+                        html: '<i class="fas fa-map-marker-alt fa-2x text-danger"></i>',
+                        iconSize: [24, 32],
+                        iconAnchor: [12, 32]
+                    })
+                }).addTo(this.map);
+
+                this.airportMarker.bindPopup(`
+                    <div class="text-center">
+                        <strong>${this.airportCode}</strong><br>
+                        <small>${this.airportLocation?.name || ''}</small>
+                    </div>
+                `);
+            }
+
+            bindEvents() {
+                // Map events are now controlled by the main filter bar
+                // No separate map controls needed
+            }
+
+            // Sync filters with table - highlight aircraft that match current table filters
+            async syncWithTableFilters(schedules) {
+                // Build lookup for flight numbers with route and time info
+                // This ensures we only show aircraft that match the visible list
+                this.tableFlightNumbers = new Set();
+                this.tableSchedules = new Map(); // flight_number -> schedule info
+
+                const now = new Date();
+                const sixHoursMs = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
+
+                if (Array.isArray(schedules)) {
+                    schedules.forEach(s => {
+                        const fn = (s.flight_number || '').toUpperCase();
+                        if (!fn) return;
+
+                        // Parse scheduled time and check if within ±6 hours of now
+                        // This ensures we only show aircraft for "current" flights, not tomorrow's
+                        let isWithinTimeWindow = true;
+                        if (s.scheduled_time) {
+                            const scheduledTime = new Date(s.scheduled_time.replace(' ', 'T'));
+                            const timeDiff = Math.abs(scheduledTime - now);
+                            isWithinTimeWindow = timeDiff <= sixHoursMs;
+                        }
+
+                        if (isWithinTimeWindow) {
+                            this.tableFlightNumbers.add(fn);
+                            // Store schedule info for route matching
+                            this.tableSchedules.set(fn, {
+                                flight_type: s.flight_type,
+                                remote_airport: (s.remote_airport_iata || '').toUpperCase(),
+                                registration: (s.aircraft_registration || '').toUpperCase(),
+                                scheduled_time: s.scheduled_time
+                            });
+                        }
+                    });
+                }
+
+                // Load aircraft data if not loaded yet
+                if (!this.isDataLoaded) {
+                    await this.loadAircraftData();
+                    this.startAutoRefresh();
+                } else {
+                    this.applyFilters();
+                }
+            }
+
+            // Highlight a specific aircraft on the map and scroll to it
+            // Highlight aircraft by flight number
+            highlightAircraft(flightNumber, registration) {
+                const fn = (flightNumber || '').toUpperCase();
+
+                if (!fn) {
+                    return false;
+                }
+
+                // Find matching aircraft by flight number
+                const matchingAircraft = this.aircraftData.find(ac => {
+                    const acFn = (ac.flight_number || '').toUpperCase();
+                    return acFn === fn;
+                });
+
+                if (matchingAircraft) {
+                    // Clear previous highlight if any
+                    if (this.highlightedAircraftId && this.highlightedAircraftId !== matchingAircraft.fr24_id) {
+                        this.updateSingleMarkerIcon(this.highlightedAircraftId, false);
+                    }
+
+                    // Store the EXACT aircraft object to highlight
+                    this.highlightedAircraftId = matchingAircraft.fr24_id;
+
+                    // Scroll map into view
+                    document.getElementById('realtimeMap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                    // Fit map to show both the aircraft and the airport
+                    const bounds = L.latLngBounds([
+                        [matchingAircraft.latitude, matchingAircraft.longitude],
+                        [this.airportLocation.lat, this.airportLocation.lng]
+                    ]);
+                    this.map.fitBounds(bounds, { padding: [50, 50], maxZoom: 10 });
+
+                    // Only update the single marker - much faster than rebuilding all
+                    this.updateSingleMarkerIcon(matchingAircraft.fr24_id, true);
+
+                    // Show the flight overlay panel (same as clicking on map)
+                    this.showFlightOverlay(matchingAircraft);
+
+                    return true;
+                }
+                return false;
+            }
+
+            // Clear current highlight
+            clearHighlight() {
+                if (this.highlightedAircraftId) {
+                    this.updateSingleMarkerIcon(this.highlightedAircraftId, false);
+                    this.highlightedAircraftId = null;
+                }
+            }
+
+            async loadAircraftData() {
+                try {
+                    // 只查询时刻表中的航班，如果时刻表为空则跳过
+                    if (!this.tableFlightNumbers || this.tableFlightNumbers.size === 0) {
+                        console.log('No flight numbers in table, skipping aircraft data load');
+                        this.aircraftData = [];
+                        this.isDataLoaded = true;
+                        return;
+                    }
+
+                    // 使用 realtime-aircraft API 获取航班时刻表中航班的实时位置
+                    const flightNumbersParam = Array.from(this.tableFlightNumbers).join(',');
+                    const url = `/api/airports/${this.airportCode}/realtime-aircraft?flight_numbers=${encodeURIComponent(flightNumbersParam)}`;
+
+                    const response = await fetch(url);
+                    const data = await response.json();
+
+                    if (data.success) {
+                        this.aircraftData = data.aircraft || [];
+                        this.isDataLoaded = true;
+                        this.updateStats(data);
+                        this.applyFilters();
+                    } else {
+                        console.error('Failed to load aircraft data:', data.error);
+                    }
+                } catch (error) {
+                    console.error('Error loading aircraft data:', error);
+                }
+            }
+
+            updateStats(data) {
+                document.getElementById('mapApproachingCount').textContent = data.approaching_count || 0;
+                document.getElementById('mapDepartingCount').textContent = data.departing_count || 0;
+                document.getElementById('mapCruisingCount').textContent = data.cruising_count || 0;
+                document.getElementById('mapGroundCount').textContent = data.ground_count || 0;
+            }
+
+            applyFilters() {
+                // Filter aircraft to only show those that match schedules in the table
+                // This ensures the map shows exactly what's in the list (same flight AND same route)
+                const filteredAircraft = this.aircraftData.filter(ac => {
+                    const fn = (ac.flight_number || '').toUpperCase();
+                    if (!fn || !this.tableSchedules) return false;
+
+                    const schedule = this.tableSchedules.get(fn);
+                    if (!schedule) return false;
+
+                    // Verify route matches
+                    // For arrivals: FR24's origin should match schedule's remote_airport
+                    // For departures: FR24's destination should match schedule's remote_airport
+                    const acOrigin = (ac.origin_iata || '').toUpperCase();
+                    const acDest = (ac.destination_iata || '').toUpperCase();
+                    const scheduleRemote = schedule.remote_airport;
+
+                    if (schedule.flight_type === 'arrival') {
+                        // Arrival: remote_airport is the origin
+                        if (scheduleRemote && acOrigin && acOrigin !== scheduleRemote) {
+                            return false; // Different origin = different flight
+                        }
+                    } else if (schedule.flight_type === 'departure') {
+                        // Departure: remote_airport is the destination
+                        if (scheduleRemote && acDest && acDest !== scheduleRemote) {
+                            return false; // Different destination = different flight
+                        }
+                    }
+
+                    return true;
+                });
+
+                const processedAircraft = filteredAircraft.map(ac => {
+                    return { ...ac, in_filtered_table: true, is_highlighted: false };
+                });
+
+                this.updateMarkers(processedAircraft);
+            }
+
+            updateMarkers(aircraft) {
+                // Clear existing markers
+                this.markers.forEach(marker => this.map.removeLayer(marker));
+                this.markers = [];
+                this.markerMap.clear();
+
+                // Add new markers
+                aircraft.forEach(ac => {
+                    if (!ac.latitude || !ac.longitude) return;
+
+                    const marker = this.createAircraftMarker(ac);
+                    marker.addTo(this.map);
+                    this.markers.push(marker);
+                    // Store in map for quick access during highlight
+                    if (ac.fr24_id) {
+                        this.markerMap.set(ac.fr24_id, { marker, aircraft: ac });
+                    }
+                });
+            }
+
+            // Update a single marker's icon (for highlight/unhighlight)
+            updateSingleMarkerIcon(fr24_id, isHighlighted) {
+                const entry = this.markerMap.get(fr24_id);
+                if (!entry) return;
+
+                const ac = { ...entry.aircraft, is_highlighted: isHighlighted, in_filtered_table: true };
+                const newMarker = this.createAircraftMarker(ac);
+
+                // Replace the marker
+                this.map.removeLayer(entry.marker);
+                newMarker.addTo(this.map);
+
+                // Update references
+                const idx = this.markers.indexOf(entry.marker);
+                if (idx >= 0) this.markers[idx] = newMarker;
+                this.markerMap.set(fr24_id, { marker: newMarker, aircraft: entry.aircraft });
+            }
+
+            // Get aircraft category based on type code
+            getAircraftCategory(typeCode) {
+                if (!typeCode) return 'other';
+                const code = typeCode.toUpperCase();
+
+                // Widebody aircraft
+                const widebody = ['A330', 'A332', 'A333', 'A338', 'A339', 'A340', 'A342', 'A343', 'A345', 'A346',
+                    'A350', 'A359', 'A35K', 'A380', 'A388',
+                    'B747', 'B748', 'B74S', 'B767', 'B762', 'B763', 'B764',
+                    'B777', 'B772', 'B773', 'B77W', 'B77L', 'B77F',
+                    'B787', 'B788', 'B789', 'B78X', 'IL96', 'MD11'];
+                if (widebody.some(t => code.startsWith(t))) return 'widebody';
+
+                // Narrowbody aircraft
+                const narrowbody = ['A319', 'A320', 'A321', 'A20N', 'A21N', 'A19N',
+                    'B737', 'B738', 'B739', 'B38M', 'B39M', 'B3XM',
+                    'B752', 'B753', 'B757', 'C919', 'ARJ21', 'ARJ2', 'MA60', 'Y12'];
+                if (narrowbody.some(t => code.startsWith(t))) return 'narrowbody';
+
+                // Regional aircraft
+                const regional = ['E170', 'E175', 'E190', 'E195', 'E290', 'E295',
+                    'CRJ1', 'CRJ2', 'CRJ7', 'CRJ9', 'CRJX',
+                    'AT43', 'AT45', 'AT72', 'AT76', 'ATR'];
+                if (regional.some(t => code.startsWith(t))) return 'regional';
+
+                // Business jets
+                const bizjet = ['G550', 'G650', 'GLEX', 'GL5T', 'GL7T',
+                    'CL30', 'CL35', 'CL60', 'C680', 'C68A',
+                    'F900', 'FA7X', 'FA8X', 'H25B', 'LJ60', 'GLF', 'GALX'];
+                if (bizjet.some(t => code.startsWith(t))) return 'bizjet';
+
+                return 'other';
+            }
+
+            // Get SVG path for aircraft type
+            getAircraftSvgPath(category) {
+                switch (category) {
+                    case 'widebody':
+                        // Larger, wider aircraft silhouette
+                        return 'M12 2C11.17 2 10.5 2.67 10.5 3.5V8L3 13v2l7.5-2V17L8 18.5V20l4-1 4 1v-1.5L13.5 17v-4L21 15v-2l-7.5-5V3.5C13.5 2.67 12.83 2 12 2z';
+                    case 'narrowbody':
+                        // Standard commercial aircraft
+                        return 'M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z';
+                    case 'regional':
+                        // Smaller regional aircraft with propeller look
+                        return 'M12 3c-.55 0-1 .45-1 1v5l-7 4v1.5l7-2v4l-2 1.5v1l3-.75 3 .75v-1l-2-1.5v-4l7 2V13l-7-4V4c0-.55-.45-1-1-1z';
+                    case 'bizjet':
+                        // Sleek business jet shape
+                        return 'M12 2c-.4 0-.75.34-.75.75V8L4 12v1.5l7.25-1.5v5l-1.75 1v1.25L12 18l2.5 1.25V18l-1.75-1v-5L20 13.5V12l-7.25-4V2.75c0-.41-.35-.75-.75-.75z';
+                    default:
+                        // Default aircraft icon
+                        return 'M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z';
+                }
+            }
+
+            createAircraftMarker(aircraft) {
+                const heading = aircraft.heading || 0;
+                const status = aircraft.flight_status || 'cruising';
+                // Use in_filtered_table (from current table view) for visual highlighting
+                const inFilteredTable = aircraft.in_filtered_table || false;
+                const isHighlighted = aircraft.is_highlighted || false;
+
+                // Get aircraft category and SVG path
+                const category = this.getAircraftCategory(aircraft.aircraft_type);
+                const svgPath = this.getAircraftSvgPath(category);
+
+                // Get color based on status
+                const statusColors = {
+                    'approaching': '#28a745',
+                    'departing': '#ffc107',
+                    'cruising': '#17a2b8',
+                    'ground': '#6c757d',
+                    'landed': '#28a745'
+                };
+                const color = statusColors[status] || '#17a2b8';
+
+                // Highlighted aircraft: larger size with red pulsing border
+                // Aircraft in filtered table: solid color with blue stroke
+                // Aircraft not in table: semi-transparent
+                let fillOpacity, strokeStyle, markerClass, iconSize;
+
+                if (isHighlighted) {
+                    // Highlighted aircraft: RED fill color for maximum visibility (same size as normal)
+                    fillOpacity = '1';
+                    strokeStyle = 'stroke="#ff0000" stroke-width="2"';
+                    markerClass = 'aircraft-marker highlighted';
+                    iconSize = category === 'widebody' ? 28 : (category === 'bizjet' ? 20 : 24);
+                    const highlightColor = '#ff0000';
+                    const icon = L.divIcon({
+                        className: markerClass,
+                        html: `<div style="width:${iconSize}px;height:${iconSize}px;display:flex;align-items:center;justify-content:center;">
+                            <svg viewBox="0 0 24 24" width="${iconSize}" height="${iconSize}" style="transform: rotate(${heading}deg);">
+                                <path fill="${highlightColor}" fill-opacity="${fillOpacity}" ${strokeStyle} d="${svgPath}"/>
+                            </svg>
+                        </div>`,
+                        iconSize: [iconSize, iconSize],
+                        iconAnchor: [iconSize/2, iconSize/2]
+                    });
+                    const marker = L.marker([aircraft.latitude, aircraft.longitude], { icon, zIndexOffset: 1000 });
+                    marker.on('click', () => { this.showFlightOverlay(aircraft); });
+                    return marker;
+                } else if (inFilteredTable) {
+                    fillOpacity = '1';
+                    strokeStyle = 'stroke="#2196F3" stroke-width="2"';
+                    markerClass = 'aircraft-marker has-schedule';
+                    iconSize = category === 'widebody' ? 28 : (category === 'bizjet' ? 20 : 24);
+                } else {
+                    fillOpacity = '0.5';
+                    strokeStyle = '';
+                    markerClass = 'aircraft-marker no-schedule';
+                    iconSize = category === 'widebody' ? 28 : (category === 'bizjet' ? 20 : 24);
+                }
+
+                // Create custom icon with rotated plane
+                // Use a wrapper div with explicit centering to fix anchor issues
+                const icon = L.divIcon({
+                    className: markerClass,
+                    html: `<div style="width:${iconSize}px;height:${iconSize}px;display:flex;align-items:center;justify-content:center;">
+                        <svg viewBox="0 0 24 24" width="${iconSize}" height="${iconSize}" style="transform: rotate(${heading}deg);">
+                            <path fill="${color}" fill-opacity="${fillOpacity}" ${strokeStyle} d="${svgPath}"/>
+                        </svg>
+                    </div>`,
+                    iconSize: [iconSize, iconSize],
+                    iconAnchor: [iconSize/2, iconSize/2]
+                });
+
+                const markerOptions = { icon };
+                if (isHighlighted) {
+                    markerOptions.zIndexOffset = 1000;
+                }
+                const marker = L.marker([aircraft.latitude, aircraft.longitude], markerOptions);
+
+                // Click to show flight overlay
+                marker.on('click', () => {
+                    this.showFlightOverlay(aircraft);
+                });
+
+                return marker;
+            }
+
+            showFlightOverlay(aircraft) {
+                // Remove existing overlay (also clears highlight and track)
+                this.hideFlightOverlay();
+
+                // Store highlighted aircraft
+                this.highlightedAircraft = aircraft;
+
+                // Highlight the aircraft marker
+                if (aircraft.fr24_id) {
+                    this.updateSingleMarkerIcon(aircraft.fr24_id, true);
+                }
+
+                const statusNames = {
+                    'approaching': '进港中',
+                    'departing': '离港中',
+                    'cruising': '巡航中',
+                    'ground': '地面',
+                    'landed': '已落地'
+                };
+                const flightStatusName = statusNames[aircraft.flight_status] || '未知';
+
+                const scheduleTypeNames = {
+                    'arrival': '到达',
+                    'departure': '出发'
+                };
+                const scheduleTypeName = scheduleTypeNames[aircraft.schedule_flight_type] || '-';
+
+                const inTable = aircraft.in_filtered_table || false;
+
+                // Create backdrop
+                const backdrop = document.createElement('div');
+                backdrop.id = 'flight-overlay-backdrop';
+                backdrop.className = 'flight-overlay-backdrop';
+                backdrop.onclick = () => this.hideFlightOverlay();
+                document.body.appendChild(backdrop);
+
+                // Create overlay panel
+                const overlay = document.createElement('div');
+                overlay.id = 'flight-overlay';
+                overlay.className = 'flight-overlay';
+                overlay.innerHTML = `
+                    <div class="flight-overlay-content">
+                        <!-- Header -->
+                        <div class="flight-overlay-header">
+                            <div>
+                                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
+                                    ${aircraft.registration || '-'}
+                                    <span style="font-size: 0.9rem; font-weight: normal; color: #666;">
+                                        ${aircraft.flight_number || aircraft.callsign || ''}
+                                    </span>
+                                </h3>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span class="status-badge status-${aircraft.flight_status}">${flightStatusName}</span>
+                                <button class="flight-overlay-close" onclick="realtimeMap.hideFlightOverlay()">&times;</button>
+                            </div>
+                        </div>
+
+                        <!-- Image carousel placeholder -->
+                        <div id="overlay-image-section">
+                            <div class="overlay-no-image">
+                                <i class="fas fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+
+                        <!-- Flight info -->
+                        <div class="flight-overlay-body">
+                            <h6 style="font-size: 0.85rem; font-weight: 600; color: #666; margin-bottom: 10px;">
+                                <i class="fas fa-route me-1"></i> 航班信息
+                            </h6>
+                            <div class="row">
+                                <div class="col-6">
+                                    <label>出发地</label>
+                                    <div style="font-weight: 600; font-size: 1.1rem;">${aircraft.origin_iata || '-'}</div>
+                                </div>
+                                <div class="col-6">
+                                    <label>目的地</label>
+                                    <div style="font-weight: 600; font-size: 1.1rem;">${aircraft.destination_iata || '-'}</div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-4">
+                                    <label>高度</label>
+                                    <div>${aircraft.altitude ? aircraft.altitude.toLocaleString() + ' ft' : '-'}</div>
+                                </div>
+                                <div class="col-4">
+                                    <label>速度</label>
+                                    <div>${aircraft.ground_speed ? aircraft.ground_speed + ' kts' : '-'}</div>
+                                </div>
+                                <div class="col-4">
+                                    <label>距离</label>
+                                    <div>${aircraft.distance_km ? aircraft.distance_km + ' km' : '-'}</div>
+                                </div>
+                            </div>
+                            ${aircraft.has_schedule ? `
+                            <div class="schedule-info">
+                                <h5><i class="fas fa-calendar-alt"></i> 航班计划</h5>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <label>计划时间</label>
+                                        <div>${aircraft.scheduled_time || '-'}</div>
+                                    </div>
+                                    <div class="col-6">
+                                        <label>类型</label>
+                                        <div>${scheduleTypeName}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            ` : ''}
+                        </div>
+
+                        <!-- Aircraft profile placeholder -->
+                        <div id="overlay-profile-section" class="aircraft-profile">
+                            <h6><i class="fas fa-plane me-1"></i> 飞机档案</h6>
+                            <div class="text-center text-muted py-3">
+                                <i class="fas fa-spinner fa-spin"></i> 加载中...
+                            </div>
+                        </div>
+
+                        <!-- Action buttons -->
+                        <div class="overlay-actions">
+                            ${aircraft.registration ? `
+                            <a href="/aircraft/${aircraft.registration}" class="btn btn-outline-primary" target="_blank">
+                                <i class="fas fa-external-link-alt me-1"></i> 查看完整档案
+                            </a>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+
+                document.body.appendChild(overlay);
+
+                // Slide in animation
+                requestAnimationFrame(() => {
+                    overlay.classList.add('show');
+                    backdrop.classList.add('show');
+                });
+
+                // ESC key to close
+                this._escHandler = (e) => {
+                    if (e.key === 'Escape') this.hideFlightOverlay();
+                };
+                document.addEventListener('keydown', this._escHandler);
+
+                // Load aircraft details, images, and track asynchronously
+                if (aircraft.registration) {
+                    this.loadAircraftDetails(aircraft.registration);
+                    this.loadAircraftImages(aircraft.registration);
+                    // 使用 FR24 ID 获取实时轨迹（更准确）
+                    if (aircraft.fr24_id) {
+                        this.loadFlightTrackFromFR24(aircraft.fr24_id, aircraft);
+                    }
+                } else {
+                    // No registration - show no image placeholder
+                    document.getElementById('overlay-image-section').innerHTML = `
+                        <div class="overlay-no-image">
+                            <i class="fas fa-image"></i>
+                        </div>
+                    `;
+                    document.getElementById('overlay-profile-section').innerHTML = `
+                        <div class="aircraft-profile">
+                            <h6><i class="fas fa-plane me-1"></i> 飞机档案</h6>
+                            <div class="text-center text-muted py-3">无注册号信息</div>
+                        </div>
+                    `;
+                }
+            }
+
+            async loadAircraftDetails(registration) {
+                try {
+                    const res = await fetch(`/api/aircraft/static/${registration}`);
+                    const data = await res.json();
+
+                    if (data.success && data.data) {
+                        this.updateOverlayWithDetails(data.data);
+                    } else {
+                        document.getElementById('overlay-profile-section').innerHTML = `
+                            <div class="aircraft-profile">
+                                <h6><i class="fas fa-plane me-1"></i> 飞机档案</h6>
+                                <div class="text-center text-muted py-3">暂无档案信息</div>
+                            </div>
+                        `;
+                    }
+                } catch (e) {
+                    console.error('Failed to load aircraft details:', e);
+                    document.getElementById('overlay-profile-section').innerHTML = `
+                        <div class="aircraft-profile">
+                            <h6><i class="fas fa-plane me-1"></i> 飞机档案</h6>
+                            <div class="text-center text-muted py-3">加载失败</div>
+                        </div>
+                    `;
+                }
+            }
+
+            updateOverlayWithDetails(details) {
+                const profileSection = document.getElementById('overlay-profile-section');
+                if (!profileSection) return;
+
+                let profileHtml = `
+                    <h6><i class="fas fa-plane me-1"></i> 飞机档案</h6>
+                `;
+
+                const addRow = (label, value) => {
+                    if (value && value !== '-') {
+                        profileHtml += `
+                            <div class="profile-row">
+                                <span class="profile-label">${label}</span>
+                                <span class="profile-value">${value}</span>
+                            </div>
+                        `;
+                    }
+                };
+
+                addRow('机型', details.aircraft_model || details.aircraft_type);
+                addRow('运营商', details.operator);
+                addRow('所有者', details.owner);
+                addRow('制造商', details.manufacturer);
+                addRow('制造年份', details.year_built);
+                addRow('序列号', details.serial_number);
+                addRow('注册国', details.country);
+
+                // Special livery info
+                if (details.livery_type || details.livery_name) {
+                    profileHtml += `
+                        <div class="profile-row" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee;">
+                            <span class="profile-label">特殊涂装</span>
+                            <span class="profile-value">
+                                <span class="badge bg-info">${details.livery_type || ''}</span>
+                                ${details.livery_name || ''}
+                            </span>
+                        </div>
+                    `;
+                }
+
+                profileSection.innerHTML = `<div class="aircraft-profile">${profileHtml}</div>`;
+            }
+
+            async loadAircraftImages(registration) {
+                try {
+                    const res = await fetch(`/api/aircraft/${registration}/images`);
+                    const data = await res.json();
+
+                    if (data.success && data.images_with_metadata && data.images_with_metadata.length > 0) {
+                        this.updateOverlayWithImages(data.images_with_metadata);
+                    } else if (data.success && data.images && data.images.length > 0) {
+                        // Fallback to simple images array
+                        const simpleImages = data.images.map(url => ({ url }));
+                        this.updateOverlayWithImages(simpleImages);
+                    } else {
+                        document.getElementById('overlay-image-section').innerHTML = `
+                            <div class="overlay-no-image">
+                                <i class="fas fa-image"></i>
+                            </div>
+                        `;
+                    }
+                } catch (e) {
+                    console.error('Failed to load aircraft images:', e);
+                    document.getElementById('overlay-image-section').innerHTML = `
+                        <div class="overlay-no-image">
+                            <i class="fas fa-image"></i>
+                        </div>
+                    `;
+                }
+            }
+
+            updateOverlayWithImages(images) {
+                const imageSection = document.getElementById('overlay-image-section');
+                if (!imageSection || images.length === 0) return;
+
+                this._currentImageIndex = 0;
+                this._images = images;
+
+                const showImage = (index) => {
+                    const img = images[index];
+                    const imgEl = imageSection.querySelector('.carousel-image');
+                    if (imgEl) {
+                        imgEl.src = img.url;
+                    }
+
+                    // Update dots
+                    imageSection.querySelectorAll('.carousel-dot').forEach((dot, i) => {
+                        dot.classList.toggle('active', i === index);
+                    });
+
+                    // Update metadata
+                    const metaEl = imageSection.querySelector('.photo-metadata');
+                    if (metaEl && img.photographer) {
+                        metaEl.innerHTML = `
+                            <span class="photographer"><i class="fas fa-camera me-1"></i>${img.photographer}</span>
+                            ${img.location ? `<span class="ms-2"><i class="fas fa-map-marker-alt me-1"></i>${img.location}</span>` : ''}
+                            ${img.photo_date ? `<span class="ms-2"><i class="fas fa-calendar me-1"></i>${img.photo_date.split('T')[0]}</span>` : ''}
+                        `;
+                    }
+                };
+
+                let carouselHtml = `
+                    <div class="overlay-image-carousel">
+                        <img class="carousel-image" src="${images[0].url}" alt="Aircraft" onerror="this.onerror=null;this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%2250%25%22 x=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%23ccc%22 font-size=%2220%22>No Image</text></svg>';">
+                        ${images.length > 1 ? `
+                            <button class="carousel-nav carousel-prev" onclick="realtimeMap.prevImage()">
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                            <button class="carousel-nav carousel-next" onclick="realtimeMap.nextImage()">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                            <div class="carousel-dots">
+                                ${images.map((_, i) => `<div class="carousel-dot ${i === 0 ? 'active' : ''}" onclick="realtimeMap.showImage(${i})"></div>`).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+
+                // Add metadata section if available
+                const firstImg = images[0];
+                if (firstImg.photographer || firstImg.location) {
+                    carouselHtml += `
+                        <div class="photo-metadata">
+                            <span class="photographer"><i class="fas fa-camera me-1"></i>${firstImg.photographer || 'Unknown'}</span>
+                            ${firstImg.location ? `<span class="ms-2"><i class="fas fa-map-marker-alt me-1"></i>${firstImg.location}</span>` : ''}
+                            ${firstImg.photo_date ? `<span class="ms-2"><i class="fas fa-calendar me-1"></i>${firstImg.photo_date.split('T')[0]}</span>` : ''}
+                        </div>
+                    `;
+                }
+
+                imageSection.innerHTML = carouselHtml;
+            }
+
+            prevImage() {
+                if (!this._images || this._images.length <= 1) return;
+                this._currentImageIndex = (this._currentImageIndex - 1 + this._images.length) % this._images.length;
+                this.showImage(this._currentImageIndex);
+            }
+
+            nextImage() {
+                if (!this._images || this._images.length <= 1) return;
+                this._currentImageIndex = (this._currentImageIndex + 1) % this._images.length;
+                this.showImage(this._currentImageIndex);
+            }
+
+            showImage(index) {
+                if (!this._images || index < 0 || index >= this._images.length) return;
+                this._currentImageIndex = index;
+
+                const img = this._images[index];
+                const imageSection = document.getElementById('overlay-image-section');
+                if (!imageSection) return;
+
+                const imgEl = imageSection.querySelector('.carousel-image');
+                if (imgEl) {
+                    imgEl.src = img.url;
+                }
+
+                // Update dots
+                imageSection.querySelectorAll('.carousel-dot').forEach((dot, i) => {
+                    dot.classList.toggle('active', i === index);
+                });
+
+                // Update metadata
+                const metaEl = imageSection.querySelector('.photo-metadata');
+                if (metaEl) {
+                    metaEl.innerHTML = `
+                        <span class="photographer"><i class="fas fa-camera me-1"></i>${img.photographer || 'Unknown'}</span>
+                        ${img.location ? `<span class="ms-2"><i class="fas fa-map-marker-alt me-1"></i>${img.location}</span>` : ''}
+                        ${img.photo_date ? `<span class="ms-2"><i class="fas fa-calendar me-1"></i>${img.photo_date.split('T')[0]}</span>` : ''}
+                    `;
+                }
+            }
+
+            async loadFlightTrackFromFR24(fr24Id, aircraft) {
+                try {
+                    console.log('[Track] Loading FR24 trail for:', fr24Id);
+                    const res = await fetch(`/api/flight/trail/${fr24Id}`);
+                    const data = await res.json();
+                    console.log('[Track] FR24 API response:', data.success, 'tracks:', data.tracks?.length);
+
+                    if (data.success && data.tracks && data.tracks.length > 1) {
+                        this.drawFlightTrack(data.tracks, aircraft);
+                    } else {
+                        console.log('[Track] No FR24 tracks to draw');
+                    }
+                } catch (e) {
+                    console.error('[Track] Failed to load FR24 flight track:', e);
+                }
+            }
+
+            drawFlightTrack(tracks, aircraft) {
+                console.log('[Track] Drawing', tracks.length, 'track points');
+                // Clear existing track
+                this.clearFlightTrack();
+
+                // FR24 tracks are in reverse time order (newest first), so reverse them
+                const reversedTracks = [...tracks].reverse();
+
+                // Convert to coordinates
+                const coords = reversedTracks
+                    .filter(t => t.lat && t.lon)
+                    .map(t => [t.lat, t.lon]);
+
+                console.log('[Track] Coords after processing:', coords.length);
+                if (coords.length < 2) {
+                    console.log('[Track] Not enough coordinates');
+                    return;
+                }
+
+                // Draw track polyline (blue)
+                this.flightTrackLine = L.polyline(coords, {
+                    color: '#0d6efd',
+                    weight: 3,
+                    opacity: 0.8,
+                    dashArray: null
+                }).addTo(this.map);
+                console.log('[Track] Polyline added to map');
+
+                // Add start point marker (green circle - departure)
+                this.trackStartMarker = L.circleMarker(coords[0], {
+                    radius: 6,
+                    color: '#28a745',
+                    fillColor: '#28a745',
+                    fillOpacity: 1,
+                    weight: 2
+                }).addTo(this.map);
+                console.log('[Track] Start marker (departure) at:', coords[0]);
+
+                // 更新飞机图标位置到 FR24 最新位置
+                const latestPos = coords[coords.length - 1];
+                if (aircraft && aircraft.fr24_id && latestPos) {
+                    this.updateAircraftPosition(aircraft.fr24_id, latestPos[0], latestPos[1]);
+                }
+            }
+
+            // 更新飞机图标到最新位置
+            updateAircraftPosition(fr24Id, lat, lon) {
+                const entry = this.markerMap.get(fr24Id);
+                if (!entry) return;
+
+                const oldLatLng = entry.marker.getLatLng();
+                const newLatLng = L.latLng(lat, lon);
+
+                // 只有位置明显不同时才更新
+                if (oldLatLng.distanceTo(newLatLng) > 100) { // 超过100米
+                    entry.marker.setLatLng(newLatLng);
+                    entry.aircraft.latitude = lat;
+                    entry.aircraft.longitude = lon;
+                    console.log('[Track] Updated aircraft position to:', lat, lon);
+                }
+            }
+
+            clearFlightTrack() {
+                if (this.flightTrackLine) {
+                    this.map.removeLayer(this.flightTrackLine);
+                    this.flightTrackLine = null;
+                }
+                if (this.trackStartMarker) {
+                    this.map.removeLayer(this.trackStartMarker);
+                    this.trackStartMarker = null;
+                }
+            }
+
+            hideFlightOverlay() {
+                const overlay = document.getElementById('flight-overlay');
+                const backdrop = document.getElementById('flight-overlay-backdrop');
+
+                if (overlay) {
+                    overlay.classList.remove('show');
+                    setTimeout(() => overlay.remove(), 300); // Wait for animation
+                }
+                if (backdrop) {
+                    backdrop.classList.remove('show');
+                    setTimeout(() => backdrop.remove(), 300);
+                }
+
+                // Clear highlight
+                if (this.highlightedAircraft?.fr24_id) {
+                    this.updateSingleMarkerIcon(this.highlightedAircraft.fr24_id, false);
+                    this.highlightedAircraft = null;
+                }
+
+                // Clear flight track
+                this.clearFlightTrack();
+
+                // Remove ESC handler
+                if (this._escHandler) {
+                    document.removeEventListener('keydown', this._escHandler);
+                    this._escHandler = null;
+                }
+
+                // Clear image carousel state
+                this._images = null;
+                this._currentImageIndex = 0;
+            }
+
+            createPopupContent(aircraft) {
+                const statusNames = {
+                    'approaching': '进港中',
+                    'departing': '离港中',
+                    'cruising': '巡航中',
+                    'ground': '地面',
+                    'landed': '已落地'
+                };
+                const statusName = statusNames[aircraft.flight_status] || '未知';
+
+                return `
+                    <div class="aircraft-popup">
+                        <div class="popup-header">
+                            ${aircraft.flight_number || aircraft.callsign || aircraft.registration || 'Unknown'}
+                        </div>
+                        <div class="popup-row">
+                            <span class="popup-label">注册号</span>
+                            <span class="popup-value">${aircraft.registration || '-'}</span>
+                        </div>
+                        <div class="popup-row">
+                            <span class="popup-label">机型</span>
+                            <span class="popup-value">${aircraft.aircraft_type || '-'}</span>
+                        </div>
+                        <div class="popup-row">
+                            <span class="popup-label">高度</span>
+                            <span class="popup-value">${aircraft.altitude ? aircraft.altitude + ' ft' : '-'}</span>
+                        </div>
+                        <div class="popup-row">
+                            <span class="popup-label">速度</span>
+                            <span class="popup-value">${aircraft.ground_speed ? aircraft.ground_speed + ' kts' : '-'}</span>
+                        </div>
+                        <div class="popup-row">
+                            <span class="popup-label">航向</span>
+                            <span class="popup-value">${aircraft.heading ? aircraft.heading + '°' : '-'}</span>
+                        </div>
+                        <div class="popup-row">
+                            <span class="popup-label">出发</span>
+                            <span class="popup-value">${aircraft.origin_iata || '-'}</span>
+                        </div>
+                        <div class="popup-row">
+                            <span class="popup-label">目的地</span>
+                            <span class="popup-value">${aircraft.destination_iata || '-'}</span>
+                        </div>
+                        <div class="popup-row">
+                            <span class="popup-label">距离</span>
+                            <span class="popup-value">${aircraft.distance_km ? aircraft.distance_km + ' km' : '-'}</span>
+                        </div>
+                        <div class="popup-row">
+                            <span class="popup-label">状态</span>
+                            <span class="popup-value">
+                                <span class="status-badge status-${aircraft.flight_status}">${statusName}</span>
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            destroy() {
+                if (this.refreshInterval) {
+                    clearInterval(this.refreshInterval);
+                }
+                if (this.map) {
+                    this.map.remove();
+                }
+            }
+        }
+        {% endif %}
+
+        /**
+         * Flight Schedules - Standalone Page
+         */
+        class FlightSchedulesApp {
+            constructor() {
+                this.selectedAirport = null;
+                this.currentPage = 0;
+                this.pageSize = 50;
+                this.totalCount = 0;
+                this.arrivalCount = 0;
+                this.departureCount = 0;
+                this.schedules = [];
+
+                // Grouped aircraft types by category
+                this.groupedAircraftTypes = {};
+
+                // Aircraft type categories configuration
+                this.aircraftCategories = {
+                    '宽体机': ['A330', 'A332', 'A333', 'A338', 'A339', 'A340', 'A342', 'A343', 'A345', 'A346',
+                              'A350', 'A359', 'A35K', 'A380', 'A388',
+                              'B747', 'B748', 'B74S', 'B767', 'B762', 'B763', 'B764',
+                              'B777', 'B772', 'B773', 'B77W', 'B77L', 'B77F',
+                              'B787', 'B788', 'B789', 'B78X',
+                              'IL96', 'MD11'],
+                    '窄体机': ['A319', 'A320', 'A321', 'A20N', 'A21N', 'A19N',
+                              'B737', 'B738', 'B739', 'B38M', 'B39M', 'B3XM',
+                              'B752', 'B753', 'B757',
+                              'C919', 'ARJ21', 'ARJ2', 'MA60', 'Y12'],
+                    '支线机': ['E170', 'E175', 'E190', 'E195', 'E290', 'E295',
+                              'CRJ1', 'CRJ2', 'CRJ7', 'CRJ9', 'CRJX',
+                              'AT43', 'AT45', 'AT72', 'AT76', 'ATR'],
+                    '公务机': ['G550', 'G650', 'GLEX', 'GL5T', 'GL7T',
+                              'CL30', 'CL35', 'CL60', 'C680', 'C68A',
+                              'F900', 'FA7X', 'FA8X', 'H25B', 'LJ60']
+                };
+
+                this.init();
+            }
+
+            // Helper to find category for an aircraft type
+            getAircraftCategory(code) {
+                for (const [category, types] of Object.entries(this.aircraftCategories)) {
+                    if (types.some(t => code.toUpperCase().startsWith(t))) {
+                        return category;
+                    }
+                }
+                return '其他';
+            }
+
+            // Update aircraft type dropdown based on selected category
+            updateAircraftTypeDropdown() {
+                const categorySelect = document.getElementById('aircraftCategorySelect');
+                const typeSelect = document.getElementById('aircraftTypeSelect');
+                const selectedCategory = categorySelect.value;
+
+                typeSelect.innerHTML = '<option value="">全部机型</option>';
+
+                if (!selectedCategory) {
+                    // Show all types grouped
+                    const categoryOrder = ['宽体机', '窄体机', '支线机', '公务机', '其他'];
+                    categoryOrder.forEach(cat => {
+                        if (this.groupedAircraftTypes[cat] && this.groupedAircraftTypes[cat].length > 0) {
+                            this.groupedAircraftTypes[cat].forEach(code => {
+                                typeSelect.innerHTML += `<option value="${code}">${code}</option>`;
+                            });
+                        }
+                    });
+                } else {
+                    // Show only types in selected category
+                    const types = this.groupedAircraftTypes[selectedCategory] || [];
+                    types.forEach(code => {
+                        typeSelect.innerHTML += `<option value="${code}">${code}</option>`;
+                    });
+                }
+            }
+
+            // Sync map filters with table filters
+            syncMapFilters() {
+                if (typeof realtimeMap !== 'undefined' && realtimeMap) {
+                    // Pass full schedule data to map for matching by flight_number and registration
+                    realtimeMap.syncWithTableFilters(this.schedules);
+                }
+            }
+
+            // Handle click on flight row - highlight aircraft on map
+            onFlightRowClick(flightNumber, registration) {
+                if (typeof realtimeMap !== 'undefined' && realtimeMap) {
+                    const found = realtimeMap.highlightAircraft(flightNumber, registration);
+                    if (!found) {
+                        // Aircraft not found on map - show a message
+                        this.showMessage('该航班暂未在地图范围内', 'info', 2000);
+                    }
+                }
+            }
+
+            init() {
+                // Check if we're in airport detail mode (URL-specified airport)
+                this.isAirportDetailMode = this.getPreselectedAirport() !== null;
+
+                this.bindEvents();
+
+                // Check for pre-selected airport from URL parameter (passed from template)
+                const preselectedAirport = this.getPreselectedAirport();
+                if (preselectedAirport) {
+                    // In airport detail mode, load airport info and display name
+                    this.loadAirportInfo(preselectedAirport);
+                    this.selectAirport({
+                        iata: preselectedAirport,
+                        icao: preselectedAirport,
+                        name: preselectedAirport
+                    }, true);  // true = is preselected, skip some UI updates
+                }
+            }
+
+            getPreselectedAirport() {
+                // Check Jinja2 template variable first
+                const templateAirport = '{{ airport_code | default("", true) }}';
+                if (templateAirport && templateAirport.length >= 3) {
+                    return templateAirport;
+                }
+
+                // Also check URL query parameter as fallback
+                const urlParams = new URLSearchParams(window.location.search);
+                const urlAirport = urlParams.get('airport');
+                if (urlAirport && urlAirport.length >= 3) {
+                    return urlAirport.toUpperCase();
+                }
+
+                return null;
+            }
+
+            async loadAirportInfo(airportCode) {
+                // Load airport details to display name in header
+                try {
+                    const response = await fetch(`/api/airports/${airportCode}`);
+                    const data = await response.json();
+                    if (data.success && data.airport) {
+                        const airport = data.airport;
+                        const nameDisplay = document.getElementById('airportNameDisplay');
+                        if (nameDisplay) {
+                            nameDisplay.textContent = airport.name || airport.city || airportCode;
+                        }
+                        // Also update the current airport display
+                        document.getElementById('currentAirportDisplay').textContent =
+                            `${airport.iata_code || airport.icao_code} - ${airport.name || ''}`;
+                    }
+                } catch (error) {
+                    console.error('Error loading airport info:', error);
+                }
+            }
+
+            bindEvents() {
+                // Airport search (only in non-airport-detail mode)
+                const airportSearch = document.getElementById('airportSearch');
+                if (airportSearch) {
+                    let searchTimeout;
+                    airportSearch.addEventListener('input', (e) => {
+                        clearTimeout(searchTimeout);
+                        searchTimeout = setTimeout(() => this.searchAirports(e.target.value), 300);
+                    });
+                }
+
+                // Clear selected airport (only in non-airport-detail mode)
+                const clearSelectedAirportBtn = document.getElementById('clearSelectedAirport');
+                if (clearSelectedAirportBtn) {
+                    clearSelectedAirportBtn.addEventListener('click', () => {
+                        this.clearAirport();
+                    });
+                }
+
+                // Quick airport selection (only in non-airport-detail mode)
+                document.querySelectorAll('.quick-airport-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const iata = btn.dataset.iata;
+                        const icao = btn.dataset.icao;
+                        const name = btn.textContent.trim();
+                        this.selectAirport({ iata, icao, name });
+                    });
+                });
+
+                // Refresh (reload from beginning)
+                document.getElementById('refreshBtn').addEventListener('click', () => {
+                    this.currentPage = 0;
+                    this.schedules = [];
+                    this.loadSchedules(false);
+                });
+
+                // Load More
+                document.getElementById('loadMoreBtn').addEventListener('click', () => {
+                    this.currentPage++;
+                    this.loadSchedules(true);
+                });
+
+                // Flight type change - auto reload
+                document.querySelectorAll('input[name="flightType"]').forEach(radio => {
+                    radio.addEventListener('change', () => {
+                        this.currentPage = 0;
+                        if (this.selectedAirport) {
+                            this.loadSchedules();
+                        }
+                    });
+                });
+
+                // Date change - auto reload
+                document.getElementById('dateSelect').addEventListener('change', () => {
+                    this.currentPage = 0;
+                    if (this.selectedAirport) {
+                        this.loadSchedules();
+                    }
+                });
+
+                // Aircraft category change - update type dropdown and reload
+                document.getElementById('aircraftCategorySelect').addEventListener('change', () => {
+                    this.updateAircraftTypeDropdown();
+                    this.currentPage = 0;
+                    if (this.selectedAirport) {
+                        this.loadSchedules();
+                    }
+                });
+
+                // Aircraft type change - auto reload
+                document.getElementById('aircraftTypeSelect').addEventListener('change', () => {
+                    this.currentPage = 0;
+                    if (this.selectedAirport) {
+                        this.loadSchedules();
+                    }
+                });
+
+                // Livery change - auto reload
+                document.getElementById('liverySelect').addEventListener('change', () => {
+                    this.currentPage = 0;
+                    if (this.selectedAirport) {
+                        this.loadSchedules();
+                    }
+                });
+
+                // Keyboard shortcuts
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && document.activeElement.id === 'airportSearch') {
+                        e.preventDefault();
+                        if (this.selectedAirport) {
+                            this.loadSchedules();
+                        }
+                    }
+                });
+
+                // Touch to dismiss search results
+                document.addEventListener('click', (e) => {
+                    const airportSearchResults = document.getElementById('airportSearchResults');
+                    if (airportSearchResults && !e.target.closest('#airportSearch') && !e.target.closest('#airportSearchResults')) {
+                        airportSearchResults.classList.add('d-none');
+                    }
+                });
+            }
+
+            async searchAirports(query) {
+                const resultsDiv = document.getElementById('airportSearchResults');
+                if (!resultsDiv) return;
+
+                if (!query || query.length < 2) {
+                    resultsDiv.classList.add('d-none');
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`/api/flight-schedules/filter-options?search=${encodeURIComponent(query)}`);
+                    const data = await response.json();
+
+                    if (data.success && data.airports && data.airports.length > 0) {
+                        resultsDiv.innerHTML = data.airports.slice(0, 10).map(airport => `
+                            <div class="airport-search-result" data-iata="${airport.iata || ''}" data-icao="${airport.icao || ''}" data-name="${airport.name || airport.iata}">
+                                <strong>${airport.iata || airport.icao}</strong>
+                                <span class="text-muted ms-2">${airport.name || ''}</span>
+                            </div>
+                        `).join('');
+
+                        resultsDiv.querySelectorAll('.airport-search-result').forEach(item => {
+                            item.addEventListener('click', () => {
+                                this.selectAirport({
+                                    iata: item.dataset.iata,
+                                    icao: item.dataset.icao,
+                                    name: item.dataset.name
+                                });
+                                resultsDiv.classList.add('d-none');
+                            });
+                        });
+
+                        resultsDiv.classList.remove('d-none');
+                    } else {
+                        resultsDiv.classList.add('d-none');
+                    }
+                } catch (error) {
+                    console.error('Airport search error:', error);
+                    resultsDiv.classList.add('d-none');
+                }
+            }
+
+            selectAirport(airport, isPreselected = false) {
+                console.log('[selectAirport] Called with:', JSON.stringify(airport), 'isPreselected:', isPreselected);
+                this.selectedAirport = airport;
+                this.currentPage = 0;
+
+                // Only update airport selection UI if not in airport detail mode
+                if (!this.isAirportDetailMode) {
+                    const selectedAirportEl = document.getElementById('selectedAirport');
+                    if (selectedAirportEl) selectedAirportEl.classList.remove('d-none');
+
+                    const selectedAirportNameEl = document.getElementById('selectedAirportName');
+                    if (selectedAirportNameEl) selectedAirportNameEl.textContent = `${airport.iata || airport.icao} - ${airport.name || ''}`;
+
+                    const airportSearchEl = document.getElementById('airportSearch');
+                    if (airportSearchEl) airportSearchEl.value = '';
+
+                    // Show filter bar
+                    document.getElementById('filterBar').style.display = 'block';
+                }
+
+                // Update current airport display
+                const currentAirportDisplayEl = document.getElementById('currentAirportDisplay');
+                if (currentAirportDisplayEl && !isPreselected) {
+                    currentAirportDisplayEl.textContent = airport.name || airport.iata;
+                }
+
+                // Reset filters to defaults - default to arrivals
+                document.getElementById('typeArrival').checked = true;
+                document.getElementById('aircraftCategorySelect').value = '';
+                document.getElementById('aircraftTypeSelect').value = '';
+                document.getElementById('liverySelect').value = '__HAS_LIVERY__';  // Default: show special liveries
+                document.getElementById('dateSelect').value = 'recent';  // Default to recent
+
+                // Load schedules directly (filter options will be extracted from response)
+                const airportCode = airport.iata || airport.icao;
+                console.log('[selectAirport] Calling loadSchedules for:', airportCode);
+                this.loadSchedules();
+            }
+
+            clearAirport() {
+                this.selectedAirport = null;
+
+                const selectedAirportEl = document.getElementById('selectedAirport');
+                if (selectedAirportEl) selectedAirportEl.classList.add('d-none');
+
+                document.getElementById('currentAirportDisplay').textContent = '请选择机场';
+
+                // Hide filter bar
+                document.getElementById('filterBar').style.display = 'none';
+
+                this.clearTable();
+            }
+
+            async loadFilterOptions(airport = '', autoLoadSchedules = false) {
+                console.log('[loadFilterOptions] Called with airport:', airport, 'autoLoad:', autoLoadSchedules);
+                try {
+                    const params = new URLSearchParams();
+                    if (airport) params.append('airport', airport);
+
+                    // Add cache-busting parameter
+                    params.append('_t', Date.now());
+
+                    const url = `/api/flight-schedules/filter-options?${params}`;
+                    console.log('[loadFilterOptions] Fetching:', url);
+                    const response = await fetch(url);
+                    const data = await response.json();
+                    console.log('[loadFilterOptions] Response:', data.success, 'aircraft_types:', data.aircraft_types?.length, 'dates:', data.available_dates?.length);
+
+                    if (data.success) {
+                        // Update date select (set to most recent date as default)
+                        const dateSelect = document.getElementById('dateSelect');
+                        const currentDateValue = dateSelect.value;
+                        dateSelect.innerHTML = '';
+
+                        // Add "最近" (recent) option first - shows flights from 1 hour ago to future
+                        dateSelect.innerHTML = '<option value="recent">最近</option>';
+
+                        if (data.available_dates && data.available_dates.length > 0) {
+                            // Get today's date in YYYY-MM-DD format (Beijing timezone approximation)
+                            const now = new Date();
+                            const todayStr = now.toLocaleDateString('en-CA'); // YYYY-MM-DD format
+
+                            // Add available dates (already sorted DESC, most recent/future first)
+                            data.available_dates.forEach((date, index) => {
+                                const dateObj = new Date(date + 'T00:00:00');
+                                const dayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+                                const dayName = dayNames[dateObj.getDay()];
+                                // Mark today and future dates
+                                let suffix = '';
+                                if (date === todayStr) suffix = ' 今天';
+                                else if (date > todayStr) suffix = ' 未来';
+                                const label = `${date} (${dayName})${suffix}`;
+                                dateSelect.innerHTML += `<option value="${date}">${label}</option>`;
+                            });
+
+                            // Set default date: "recent" for auto load, otherwise preserve selection
+                            if (autoLoadSchedules || !currentDateValue) {
+                                dateSelect.value = 'recent';  // Default to "最近"
+                            } else if (currentDateValue && [...dateSelect.options].some(opt => opt.value === currentDateValue)) {
+                                dateSelect.value = currentDateValue;
+                            }
+                        }
+
+                        // Group aircraft types by category and store for dropdown updates
+                        this.groupedAircraftTypes = {};
+                        if (data.aircraft_types && data.aircraft_types.length > 0) {
+                            console.log('[loadFilterOptions] Grouping', data.aircraft_types.length, 'aircraft types');
+                            data.aircraft_types.forEach(type => {
+                                const code = type.code || type;
+                                const category = this.getAircraftCategory(code);
+                                if (!this.groupedAircraftTypes[category]) {
+                                    this.groupedAircraftTypes[category] = [];
+                                }
+                                this.groupedAircraftTypes[category].push(code);
+                            });
+                        }
+
+                        // Preserve current selections
+                        const categorySelect = document.getElementById('aircraftCategorySelect');
+                        const aircraftSelect = document.getElementById('aircraftTypeSelect');
+                        const currentCategoryValue = autoLoadSchedules ? '' : categorySelect.value;
+                        const currentAircraftValue = autoLoadSchedules ? '' : aircraftSelect.value;
+
+                        // Reset category if auto loading
+                        if (autoLoadSchedules) {
+                            categorySelect.value = '';
+                        }
+
+                        // Update aircraft type dropdown
+                        this.updateAircraftTypeDropdown();
+
+                        // Restore aircraft type selection if it exists
+                        if (currentAircraftValue && [...aircraftSelect.options].some(opt => opt.value === currentAircraftValue)) {
+                            aircraftSelect.value = currentAircraftValue;
+                        }
+
+                        // Update livery select (preserve current selection, no count display)
+                        const liverySelect = document.getElementById('liverySelect');
+                        const currentLiveryValue = autoLoadSchedules ? '__HAS_LIVERY__' : liverySelect.value;
+                        liverySelect.innerHTML = '<option value="__HAS_LIVERY__">只看特殊涂装</option><option value="">全部涂装</option>';
+                        if (data.liveries && data.liveries.length > 0) {
+                            data.liveries.forEach(livery => {
+                                const name = livery.name || livery;
+                                liverySelect.innerHTML += `<option value="${name}">${name}</option>`;
+                            });
+                        }
+                        // Restore livery selection if it exists
+                        if (!autoLoadSchedules && currentLiveryValue && [...liverySelect.options].some(opt => opt.value === currentLiveryValue)) {
+                            liverySelect.value = currentLiveryValue;
+                        }
+
+                        // Auto load schedules if requested
+                        if (autoLoadSchedules) {
+                            this.loadSchedules();
+                        }
+                    }
+                } catch (error) {
+                    console.error('Load filter options error:', error);
+                }
+            }
+
+            async loadSchedules(append = false) {
+                if (!this.selectedAirport) {
+                    this.showMessage('请先选择机场', 'warning');
+                    return;
+                }
+
+                // Reset if not appending
+                if (!append) {
+                    this.currentPage = 0;
+                    this.schedules = [];
+                }
+
+                this.showLoading(append ? '加载更多...' : '加载航班数据...');
+
+                try {
+                    const params = new URLSearchParams();
+                    params.append('airport', this.selectedAirport.iata || this.selectedAirport.icao);
+
+                    const date = document.getElementById('dateSelect').value;
+                    if (date) params.append('date', date);
+
+                    const flightType = document.querySelector('input[name="flightType"]:checked').value;
+                    console.log('[loadSchedules] flightType:', flightType, 'checked element:', document.querySelector('input[name="flightType"]:checked').id);
+                    if (flightType) params.append('flight_type', flightType);
+
+                    const aircraftType = document.getElementById('aircraftTypeSelect').value;
+                    if (aircraftType) params.append('aircraft_type', aircraftType);
+
+                    const livery = document.getElementById('liverySelect').value;
+                    if (livery === '__HAS_LIVERY__') {
+                        params.append('has_livery', 'true');
+                    } else if (livery) {
+                        params.append('livery', livery);
+                    }
+
+                    params.append('limit', this.pageSize);
+                    params.append('offset', this.currentPage * this.pageSize);
+
+                    const response = await fetch(`/api/flight-schedules?${params}`);
+                    const data = await response.json();
+
+                    if (data.success) {
+                        // Append or replace schedules
+                        if (append) {
+                            this.schedules = this.schedules.concat(data.schedules);
+                        } else {
+                            this.schedules = data.schedules;
+                        }
+                        this.totalCount = data.total_count;
+                        this.arrivalCount = data.arrival_count || 0;
+                        this.departureCount = data.departure_count || 0;
+                        this.renderSchedules();
+                        this.updateStats();
+                        this.updatePagination();
+                        // Extract filter options from loaded data (no extra DB query needed)
+                        if (!append) {
+                            this.updateFilterOptionsFromData(data.schedules);
+                        }
+                        // Sync map to only show flights in the table
+                        this.syncMapFilters();
+                    } else {
+                        this.showMessage(data.error || '加载失败', 'danger');
+                    }
+                } catch (error) {
+                    console.error('Load schedules error:', error);
+                    this.showMessage('网络错误: ' + error.message, 'danger');
+                } finally {
+                    this.hideLoading();
+                }
+            }
+
+            /**
+             * Extract filter options from loaded schedules data
+             * This avoids an extra database query for filter options
+             */
+            updateFilterOptionsFromData(schedules) {
+                if (!schedules || schedules.length === 0) return;
+
+                // Extract unique dates from scheduled_time
+                const datesSet = new Set();
+                const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+
+                schedules.forEach(s => {
+                    if (s.scheduled_time) {
+                        const dateStr = s.scheduled_time.split(' ')[0]; // "2026-02-28 14:30:00" -> "2026-02-28"
+                        datesSet.add(dateStr);
+                    }
+                });
+
+                // Update date select
+                const dateSelect = document.getElementById('dateSelect');
+                const currentValue = dateSelect.value;
+                dateSelect.innerHTML = '<option value="recent">最近</option>';
+
+                const sortedDates = Array.from(datesSet).sort().reverse();
+                const dayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+                sortedDates.forEach(date => {
+                    const dateObj = new Date(date + 'T00:00:00');
+                    const dayName = dayNames[dateObj.getDay()];
+                    let suffix = '';
+                    if (date === todayStr) suffix = ' 今天';
+                    else if (date > todayStr) suffix = ' 未来';
+                    dateSelect.innerHTML += `<option value="${date}">${date} (${dayName})${suffix}</option>`;
+                });
+
+                // Preserve current selection if valid
+                if (currentValue && [...dateSelect.options].some(opt => opt.value === currentValue)) {
+                    dateSelect.value = currentValue;
+                }
+
+                // Extract aircraft types
+                const typesMap = {};
+                schedules.forEach(s => {
+                    if (s.aircraft_type) {
+                        typesMap[s.aircraft_type] = (typesMap[s.aircraft_type] || 0) + 1;
+                    }
+                });
+
+                // Group and store aircraft types
+                this.groupedAircraftTypes = {};
+                Object.entries(typesMap).forEach(([code, count]) => {
+                    const category = this.getAircraftCategory(code);
+                    if (!this.groupedAircraftTypes[category]) {
+                        this.groupedAircraftTypes[category] = [];
+                    }
+                    this.groupedAircraftTypes[category].push({ code, count });
+                });
+
+                // Sort each category by count
+                Object.keys(this.groupedAircraftTypes).forEach(cat => {
+                    this.groupedAircraftTypes[cat].sort((a, b) => b.count - a.count);
+                });
+
+                this.updateAircraftTypeDropdown();
+
+                // Extract livery types
+                const liveriesMap = {};
+                schedules.forEach(s => {
+                    if (s.livery_type && !s.livery_type.includes('标准涂装')) {
+                        liveriesMap[s.livery_type] = (liveriesMap[s.livery_type] || 0) + 1;
+                    }
+                });
+
+                // Update livery select
+                const liverySelect = document.getElementById('liverySelect');
+                const currentLivery = liverySelect.value;
+                liverySelect.innerHTML = `
+                    <option value="">全部涂装</option>
+                    <option value="__HAS_LIVERY__">仅特殊涂装</option>
+                `;
+
+                Object.entries(liveriesMap)
+                    .sort((a, b) => b[1] - a[1])
+                    .forEach(([name, count]) => {
+                        liverySelect.innerHTML += `<option value="${name}">${name} (${count})</option>`;
+                    });
+
+                // Preserve current selection
+                if (currentLivery && [...liverySelect.options].some(opt => opt.value === currentLivery)) {
+                    liverySelect.value = currentLivery;
+                }
+
+                console.log('[updateFilterOptionsFromData] Extracted:', sortedDates.length, 'dates,', Object.keys(typesMap).length, 'types,', Object.keys(liveriesMap).length, 'liveries');
+            }
+
+            /**
+             * Format datetime to Chinese format with AM/PM
+             * Input: "2026-01-25 14:30:00" (Beijing time from API)
+             * Output: { date: "1月25日", time: "下午 2:30" }
+             */
+            formatTimeWithDate(datetimeStr) {
+                if (!datetimeStr) return { date: '', time: '--:--' };
+
+                try {
+                    // Parse the datetime string (format: "YYYY-MM-DD HH:MM:SS")
+                    const parts = datetimeStr.split(' ');
+                    if (parts.length < 2) return { date: '', time: '--:--' };
+
+                    const dateParts = parts[0].split('-');
+                    const timeParts = parts[1].split(':');
+
+                    const month = parseInt(dateParts[1], 10);
+                    const day = parseInt(dateParts[2], 10);
+                    let hour = parseInt(timeParts[0], 10);
+                    const minute = timeParts[1];
+
+                    // Determine AM/PM in Chinese
+                    let period;
+                    let displayHour;
+
+                    if (hour === 0) {
+                        period = '凌晨';
+                        displayHour = 12;
+                    } else if (hour < 6) {
+                        period = '凌晨';
+                        displayHour = hour;
+                    } else if (hour < 12) {
+                        period = '上午';
+                        displayHour = hour;
+                    } else if (hour === 12) {
+                        period = '下午';
+                        displayHour = 12;
+                    } else if (hour < 18) {
+                        period = '下午';
+                        displayHour = hour - 12;
+                    } else {
+                        period = '晚上';
+                        displayHour = hour - 12;
+                    }
+
+                    return {
+                        date: `${month}月${day}日`,
+                        time: `${period} ${displayHour}:${minute}`
+                    };
+                } catch (e) {
+                    console.error('Time format error:', e, datetimeStr);
+                    return { date: '', time: '--:--' };
+                }
+            }
+
+            renderSchedules() {
+                const tbody = document.getElementById('scheduleTableBody');
+
+                if (!this.schedules || this.schedules.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">
+                                <i class="fas fa-plane-slash fa-2x mb-2"></i>
+                                <div>暂无航班数据</div>
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                tbody.innerHTML = this.schedules.map(flight => {
+                    const isArrival = flight.flight_type === 'arrival';
+                    const rowClass = isArrival ? 'flight-row-arrival' : 'flight-row-departure';
+                    const typeIcon = isArrival
+                        ? '<i class="fas fa-plane-arrival text-success flight-type-icon"></i>'
+                        : '<i class="fas fa-plane-departure text-warning flight-type-icon"></i>';
+
+                    // Format time with date in Chinese (returns {date, time})
+                    const timeObj = this.formatTimeWithDate(flight.scheduled_time);
+
+                    // Status badge
+                    let statusBadge = '';
+                    if (flight.status) {
+                        const statusClass = this.getStatusClass(flight.status);
+                        statusBadge = `<span class="badge ${statusClass} status-badge">${flight.status}</span>`;
+                    }
+
+                    // Remote airport display - for arrivals show origin, for departures show destination
+                    const remoteCode = flight.remote_airport_iata || '?';
+                    const remoteName = flight.remote_airport_name || '';
+
+                    // Registration link - navigate to detail page
+                    const reg = flight.aircraft_registration || '-';
+                    let regLink = reg;
+                    if (flight.aircraft_registration) {
+                        regLink = `<a href="/aircraft/${flight.aircraft_registration}" class="text-decoration-none" onclick="event.stopPropagation()">${reg}</a>`;
+                    }
+
+                    // Aircraft image thumbnail with registration below
+                    let aircraftDisplay = '';
+                    if (flight.image_url) {
+                        const thumbUrl = flight.image_url.replace('/jetphotos_images/', '/jetphotos_thumbnails/').replace('_full_', '_thumb_');
+                        const fullUrl = flight.image_url;
+                        aircraftDisplay = `
+                            <div class="aircraft-cell">
+                                <img src="${thumbUrl}" class="aircraft-thumb" alt="飞机图片"
+                                     onclick="event.stopPropagation(); app.showLightbox('${fullUrl}')"
+                                     onerror="this.onerror=null; this.src='${fullUrl}';">
+                                <div class="aircraft-reg">${regLink}</div>
+                            </div>`;
+                    } else if (flight.has_images) {
+                        aircraftDisplay = `
+                            <div class="aircraft-cell">
+                                <span class="aircraft-thumb-placeholder" onclick="event.stopPropagation(); window.location.href='/aircraft/${flight.aircraft_registration}'">
+                                    <i class="fas fa-image"></i>
+                                </span>
+                                <div class="aircraft-reg">${regLink}</div>
+                            </div>`;
+                    } else {
+                        aircraftDisplay = `
+                            <div class="aircraft-cell">
+                                <span class="aircraft-thumb-placeholder no-image">
+                                    <i class="fas fa-plane"></i>
+                                </span>
+                                <div class="aircraft-reg">${regLink}</div>
+                            </div>`;
+                    }
+
+                    // Livery display (two rows: indicator from airline_name, type from aircraft_static_info)
+                    const liveryIndicator = flight.livery_indicator || '-';
+                    const liveryType = flight.livery_type || '-';
+                    const liveryDisplay = `
+                        <div class="livery-cell">
+                            <div>${liveryIndicator !== '-' ? `<span class="badge bg-info livery-badge">${liveryIndicator}</span>` : '-'}</div>
+                            <div class="livery-type text-muted">${liveryType}</div>
+                        </div>
+                    `;
+
+                    // Data attributes for map highlighting
+                    const flightNum = flight.flight_number || '';
+                    const regNum = flight.aircraft_registration || '';
+
+                    return `
+                        <tr class="flight-row ${rowClass}" style="cursor: pointer;"
+                            data-flight-number="${flightNum}"
+                            data-registration="${regNum}"
+                            onclick="app.onFlightRowClick('${flightNum}', '${regNum}')">
+                            <td class="text-center">
+                                ${aircraftDisplay}
+                            </td>
+                            <td class="time-status-cell">
+                                ${typeIcon}
+                                <div><small class="text-muted">${timeObj.date}</small></div>
+                                <div><strong>${timeObj.time}</strong> <span class="status-inline">${statusBadge}</span></div>
+                                <div class="status-newline">${statusBadge}</div>
+                            </td>
+                            <td>
+                                <div>航班号：<strong>${flight.flight_number || flight.callsign || '-'}</strong></div>
+                                <div>${flight.flight_type === 'arrival' ? '始发' : '目的'}：<span title="${remoteName}">${remoteCode}</span></div>
+                            </td>
+                            <td class="hide-mobile">${flight.airline_name || '-'}</td>
+                            <td class="hide-mobile">${flight.aircraft_type || '-'}</td>
+                            <td>${liveryDisplay}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            getStatusClass(status) {
+                const statusLower = (status || '').toLowerCase();
+                if (statusLower.includes('landed') || statusLower.includes('arrived') || statusLower.includes('departed')) return 'status-landed';
+                if (statusLower.includes('en route') || statusLower.includes('airborne')) return 'status-en-route';
+                if (statusLower.includes('delayed')) return 'status-delayed';
+                if (statusLower.includes('canceled') || statusLower.includes('cancelled')) return 'status-canceled';
+                if (statusLower.includes('estimated')) return 'status-estimated';
+                return 'status-scheduled';
+            }
+
+            updateStats() {
+                document.getElementById('statTotal').textContent = this.totalCount;
+                document.getElementById('statArrivals').textContent = this.arrivalCount;
+                document.getElementById('statDepartures').textContent = this.departureCount;
+            }
+
+            updatePagination() {
+                const loadedCount = this.schedules.length;
+                const hasMore = loadedCount < this.totalCount;
+
+                // Update info text
+                document.getElementById('paginationInfo').textContent =
+                    this.totalCount > 0 ? `已加载 ${loadedCount} / ${this.totalCount} 条` : '已加载 0 / 0 条';
+
+                // Show/hide load more button
+                const loadMoreBtn = document.getElementById('loadMoreBtn');
+                const allLoadedText = document.getElementById('allLoadedText');
+
+                if (this.totalCount === 0) {
+                    loadMoreBtn.style.display = 'none';
+                    allLoadedText.style.display = 'none';
+                } else if (hasMore) {
+                    loadMoreBtn.style.display = 'inline-block';
+                    allLoadedText.style.display = 'none';
+                } else {
+                    loadMoreBtn.style.display = 'none';
+                    allLoadedText.style.display = 'inline';
+                }
+            }
+
+            clearTable() {
+                document.getElementById('scheduleTableBody').innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-5">
+                            <i class="fas fa-info-circle fa-2x mb-2"></i>
+                            <div>请选择机场查看航班计划</div>
+                        </td>
+                    </tr>
+                `;
+                document.getElementById('statTotal').textContent = '0';
+                document.getElementById('statArrivals').textContent = '0';
+                document.getElementById('statDepartures').textContent = '0';
+                document.getElementById('paginationInfo').textContent = '已加载 0 / 0 条';
+                document.getElementById('loadMoreBtn').style.display = 'none';
+                document.getElementById('allLoadedText').style.display = 'none';
+            }
+
+            async showAircraftInfo(registration) {
+                const modal = new bootstrap.Modal(document.getElementById('aircraftInfoModal'));
+                document.getElementById('modalAircraftReg').textContent = registration;
+                document.getElementById('aircraftInfoContent').innerHTML = `
+                    <div class="text-center py-4">
+                        <div class="spinner-border" role="status"></div>
+                        <div>加载飞机信息...</div>
+                    </div>
+                `;
+
+                modal.show();
+
+                try {
+                    const [staticRes, imagesRes] = await Promise.all([
+                        fetch(`/api/aircraft/static/${registration}`),
+                        fetch(`/api/aircraft/${registration}/images`)
+                    ]);
+
+                    const staticData = await staticRes.json();
+                    const imagesData = await imagesRes.json();
+
+                    if (staticData.success) {
+                        const info = staticData.data;
+                        const images = imagesData.success ? imagesData.images : [];
+                        document.getElementById('aircraftInfoContent').innerHTML = this.renderAircraftInfo(info, images);
+                    } else {
+                        document.getElementById('aircraftInfoContent').innerHTML = `
+                            <div class="alert alert-warning">
+                                <i class="fas fa-exclamation-triangle"></i> ${staticData.error || '未找到信息'}
+                            </div>
+                        `;
+                    }
+                } catch (error) {
+                    document.getElementById('aircraftInfoContent').innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-circle"></i> 加载失败: ${error.message}
+                        </div>
+                    `;
+                }
+            }
+
+            renderAircraftInfo(info, images = []) {
+                let imagesHtml = '';
+                if (images && images.length > 0) {
+                    imagesHtml = `
+                        <div class="mb-3">
+                            <h6 class="border-bottom pb-2"><i class="fas fa-images"></i> 飞机图片</h6>
+                            <div class="row g-2">
+                                ${images.slice(0, 3).map((url, i) => {
+                                    const thumbUrl = url.replace('/jetphotos_images/', '/jetphotos_thumbnails/').replace('_full_', '_thumb_');
+                                    return `
+                                        <div class="col-4">
+                                            <img src="${thumbUrl}" class="img-fluid rounded" alt="飞机图片"
+                                                 style="height: 100px; width: 100%; object-fit: cover; cursor: pointer;"
+                                                 onclick="app.showLightbox('${url}')"
+                                                 onerror="this.src='${url}'">
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                return `
+                    ${imagesHtml}
+                    <table class="table table-sm mb-0">
+                        <tr><th>注册号</th><td><strong>${info.registration || '-'}</strong></td></tr>
+                        <tr><th>机型</th><td>${info.aircraft_type || '-'}</td></tr>
+                        <tr><th>运营方</th><td>${info.organization || '-'}</td></tr>
+                        <tr><th>涂装类型</th><td>${info.livery_type || '-'}</td></tr>
+                    </table>
+                `;
+            }
+
+            showLightbox(imageUrl) {
+                document.getElementById('lightboxImage').src = imageUrl;
+                new bootstrap.Modal(document.getElementById('imageLightboxModal')).show();
+            }
+
+            showLoading(text = '加载中...') {
+                document.getElementById('loadingText').textContent = text;
+                document.getElementById('loadingOverlay').classList.add('active');
+            }
+
+            hideLoading() {
+                document.getElementById('loadingOverlay').classList.remove('active');
+            }
+
+            showMessage(message, type = 'info', timeout = 3000) {
+                const alert = document.createElement('div');
+                alert.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+                alert.style.cssText = 'top: 70px; right: 15px; z-index: 9999; min-width: 250px; max-width: 90%;';
+                alert.innerHTML = `
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                document.body.appendChild(alert);
+                setTimeout(() => alert.remove(), timeout);
+            }
+        }
+
+        // Initialize app
+        let app;
+        {% if airport_code %}
+        let realtimeMap;
+        {% endif %}
+
+        document.addEventListener('DOMContentLoaded', () => {
+            app = new FlightSchedulesApp();
+
+            {% if airport_code %}
+            // Initialize realtime aircraft map
+            realtimeMap = new RealtimeAircraftMap('{{ airport_code }}');
+            {% endif %}
+        });
+    </script>
+
+    <!-- Token Refresh -->
+    {% include '_token_refresh.html' %}
+</body>
+</html>

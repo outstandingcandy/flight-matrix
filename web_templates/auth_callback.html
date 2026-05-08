@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录中...</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .loading-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .loading-card {
+            max-width: 400px;
+            text-align: center;
+        }
+        .spinner-icon {
+            font-size: 3rem;
+            color: #0d6efd;
+            margin-bottom: 1rem;
+        }
+        .error-icon {
+            font-size: 3rem;
+            color: #dc3545;
+            margin-bottom: 1rem;
+        }
+        #error-container {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="loading-container">
+        <div class="loading-card card shadow">
+            <div class="card-body p-5">
+                <!-- Loading State -->
+                <div id="loading-container">
+                    <div class="spinner-icon">
+                        <i class="fas fa-spinner fa-spin"></i>
+                    </div>
+                    <h4 class="mb-3">正在登录...</h4>
+                    <p class="text-muted" id="status-text">正在验证身份</p>
+                </div>
+
+                <!-- Error State -->
+                <div id="error-container">
+                    <div class="error-icon">
+                        <i class="fas fa-exclamation-circle"></i>
+                    </div>
+                    <h4 class="mb-3">登录失败</h4>
+                    <p class="text-muted" id="error-text"></p>
+                    <div class="d-grid gap-2 mt-4">
+                        <a href="/login" class="btn btn-primary">
+                            <i class="fas fa-redo"></i> 重新登录
+                        </a>
+                        <a href="/flight-schedules" class="btn btn-outline-secondary">
+                            <i class="fas fa-home"></i> 返回首页
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Cognito configuration from server
+        const cognitoConfig = {
+            domain: "{{ cognito_domain }}",
+            clientId: "{{ cognito_client_id }}",
+            clientSecret: "{{ cognito_client_secret }}",
+            callbackUrl: "{{ cognito_callback_url }}",
+            expectedState: "{{ expected_state }}"
+        };
+
+        function showError(message) {
+            document.getElementById('loading-container').style.display = 'none';
+            document.getElementById('error-container').style.display = 'block';
+            document.getElementById('error-text').textContent = message;
+        }
+
+        function updateStatus(message) {
+            document.getElementById('status-text').textContent = message;
+        }
+
+        async function handleCallback() {
+            const urlParams = new URLSearchParams(window.location.search);
+
+            // Check for errors from Cognito
+            const error = urlParams.get('error');
+            if (error) {
+                const errorDesc = urlParams.get('error_description') || '未知错误';
+                showError(errorDesc);
+                return;
+            }
+
+            // Get authorization code
+            const code = urlParams.get('code');
+            if (!code) {
+                showError('未收到授权码');
+                return;
+            }
+
+            // Verify state (CSRF protection)
+            const state = urlParams.get('state');
+            if (state !== cognitoConfig.expectedState) {
+                console.warn('State mismatch, redirecting to login');
+                window.location.href = '/login';
+                return;
+            }
+
+            updateStatus('正在获取令牌...');
+
+            try {
+                // Exchange code for tokens (client-side)
+                const tokenEndpoint = `https://${cognitoConfig.domain}/oauth2/token`;
+
+                const body = new URLSearchParams({
+                    grant_type: 'authorization_code',
+                    client_id: cognitoConfig.clientId,
+                    code: code,
+                    redirect_uri: cognitoConfig.callbackUrl
+                });
+
+                const headers = {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                };
+
+                // Add client secret if available (Basic auth)
+                if (cognitoConfig.clientSecret) {
+                    const credentials = btoa(`${cognitoConfig.clientId}:${cognitoConfig.clientSecret}`);
+                    headers['Authorization'] = `Basic ${credentials}`;
+                }
+
+                const tokenResponse = await fetch(tokenEndpoint, {
+                    method: 'POST',
+                    headers: headers,
+                    body: body
+                });
+
+                if (!tokenResponse.ok) {
+                    const errorText = await tokenResponse.text();
+                    console.error('Token exchange failed:', errorText);
+                    showError('获取令牌失败');
+                    return;
+                }
+
+                const tokens = await tokenResponse.json();
+                updateStatus('正在设置会话...');
+
+                // Send tokens to backend to set session
+                const sessionResponse = await fetch('/auth/set-session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        id_token: tokens.id_token,
+                        access_token: tokens.access_token,
+                        refresh_token: tokens.refresh_token
+                    }),
+                    credentials: 'same-origin'
+                });
+
+                if (!sessionResponse.ok) {
+                    const errorData = await sessionResponse.json();
+                    showError(errorData.error || '设置会话失败');
+                    return;
+                }
+
+                const sessionData = await sessionResponse.json();
+
+                // Redirect to next URL or home
+                window.location.href = sessionData.redirect_url || '/flight-schedules';
+
+            } catch (err) {
+                console.error('Authentication error:', err);
+                showError('认证过程中发生错误: ' + err.message);
+            }
+        }
+
+        // Start the callback handling
+        handleCallback();
+    </script>
+</body>
+</html>

@@ -1,0 +1,85 @@
+# Dockerfile for Flight Matrix Scraper Worker
+# Multi-stage build for smaller final image
+
+FROM python:3.12-slim as builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install Python dependencies
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r /tmp/requirements.txt && \
+    pip install --no-cache-dir psycopg2-binary
+
+
+# Final stage
+FROM python:3.12-slim
+
+# Install runtime dependencies including Chromium and Xvfb
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    chromium-driver \
+    xvfb \
+    fonts-liberation \
+    libnss3 \
+    libxss1 \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libgtk-3-0 \
+    libgbm1 \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Download AWS RDS SSL certificate bundle for IAM authentication
+RUN curl -sS "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem" \
+    -o /etc/ssl/certs/rds-ca-bundle.pem
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    DISPLAY=:99 \
+    CHROME_BIN=/usr/bin/chromium \
+    CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage"
+
+# Create non-root user
+RUN useradd -m -u 1000 scraper && \
+    mkdir -p /app /var/log/scraper && \
+    chown -R scraper:scraper /app /var/log/scraper
+
+WORKDIR /app
+
+# Copy application code and configuration
+COPY --chown=scraper:scraper src/ ./src/
+COPY --chown=scraper:scraper config/ ./config/
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Start Xvfb in background\n\
+echo "Starting Xvfb..."\n\
+Xvfb :99 -screen 0 1920x1080x24 &\n\
+sleep 2\n\
+\n\
+# Run scraper\n\
+echo "Starting scraper worker..."\n\
+exec python -m src.scraper_main --config config/config.yaml "$@"\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+USER scraper
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD []

@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ registration }} - FlightMatrix</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <style>
+        :root {
+            --bg-dark: #1a1a2e;
+            --bg-dark-secondary: #16213e;
+            --card-bg: rgba(255, 255, 255, 0.95);
+            --text-light: #ffffff;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-secondary) 100%);
+            min-height: 100vh;
+        }
+
+        /* Navbar */
+        .navbar {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
+            padding: 0.5rem 1rem;
+        }
+
+        .navbar-brand {
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        /* Aircraft Hero */
+        .aircraft-hero {
+            text-align: center;
+            padding: 30px 20px 20px;
+            color: var(--text-light);
+        }
+
+        .aircraft-hero .registration {
+            font-size: 3rem;
+            font-weight: 700;
+            letter-spacing: 4px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+
+        .aircraft-hero .aircraft-type {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
+
+        .aircraft-hero .owner-info {
+            margin-top: 15px;
+            font-size: 1rem;
+            opacity: 0.85;
+        }
+
+        .aircraft-hero .badge-group {
+            margin-top: 15px;
+        }
+
+        .aircraft-hero .badge {
+            font-size: 0.85rem;
+            padding: 0.5em 1em;
+            margin: 0.25rem;
+        }
+
+        /* Cards */
+        .main-content .card {
+            background: var(--card-bg);
+            border: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            font-weight: 600;
+            border-radius: 0.5rem 0.5rem 0 0 !important;
+        }
+
+        .info-label {
+            font-weight: 500;
+            color: #6c757d;
+            font-size: 0.8rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .info-value {
+            font-size: 0.95rem;
+            color: #212529;
+            word-break: break-word;
+        }
+
+        /* Gallery */
+        .gallery-container {
+            position: relative;
+        }
+
+        .gallery-main-image {
+            width: 100%;
+            max-height: 350px;
+            object-fit: cover;
+            border-radius: 0.5rem;
+            cursor: pointer;
+        }
+
+        .gallery-thumbnail {
+            width: 70px;
+            height: 50px;
+            object-fit: cover;
+            cursor: pointer;
+            border: 2px solid transparent;
+            border-radius: 4px;
+            opacity: 0.7;
+            transition: all 0.2s;
+        }
+
+        .gallery-thumbnail:hover,
+        .gallery-thumbnail.active {
+            opacity: 1;
+            border-color: #0d6efd;
+        }
+
+        .summary-text {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
+        .meta-info {
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+
+        /* Image Gallery Grid */
+        .image-gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+
+        .image-card {
+            background: #fff;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .image-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        }
+
+        .image-card img {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+            cursor: pointer;
+        }
+
+        .image-card-body {
+            padding: 0.75rem;
+        }
+
+        .image-meta-row {
+            display: flex;
+            align-items: center;
+            font-size: 0.8rem;
+            color: #6c757d;
+            margin-bottom: 0.25rem;
+        }
+
+        .image-meta-row i {
+            width: 16px;
+            margin-right: 0.5rem;
+            text-align: center;
+        }
+
+        .image-meta-row .value {
+            color: #212529;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .image-notes {
+            font-size: 0.75rem;
+            color: #6c757d;
+            background: #f8f9fa;
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            margin-top: 0.5rem;
+            max-height: 60px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .image-badge {
+            position: absolute;
+            top: 0.5rem;
+            left: 0.5rem;
+        }
+
+        .image-order {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            font-size: 0.7rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 0.25rem;
+        }
+
+        .image-card-wrapper {
+            position: relative;
+        }
+
+        .jetphotos-link {
+            font-size: 0.7rem;
+            color: #6c757d;
+        }
+
+        .jetphotos-link:hover {
+            color: #0d6efd;
+        }
+
+        .gallery-stats {
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.7);
+        }
+
+        /* Recent flights */
+        .recent-flight-item {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .recent-flight-item:last-child {
+            border-bottom: none;
+        }
+
+        .flight-type-badge {
+            width: 50px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .flight-route {
+            flex: 1;
+            font-weight: 500;
+            margin: 0 0.75rem;
+        }
+
+        .flight-time {
+            color: #6c757d;
+            font-size: 0.85rem;
+            flex-shrink: 0;
+        }
+
+        /* Loading state */
+        #loadingState {
+            color: var(--text-light);
+        }
+
+        #loadingState .spinner-border {
+            color: var(--text-light) !important;
+        }
+
+        /* Responsive */
+        @media (max-width: 767.98px) {
+            .aircraft-hero .registration {
+                font-size: 2rem;
+            }
+
+            .aircraft-hero .aircraft-type {
+                font-size: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand navbar-dark mb-3">
+        <div class="container-fluid px-2">
+            <a class="navbar-brand text-white text-decoration-none" href="/">
+                <i class="fas fa-plane"></i> FlightMatrix
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/"><i class="fas fa-search"></i> 搜索</a>
+                <a class="nav-link" href="/flight-schedules"><i class="fas fa-list"></i> 航班</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container main-content">
+        <!-- Loading State -->
+        <div id="loadingState" class="text-center py-5">
+            <div class="spinner-border" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">加载中...</span>
+            </div>
+            <div class="mt-2">正在加载飞机信息...</div>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorState" class="alert alert-danger d-none" role="alert">
+            <i class="fas fa-exclamation-circle"></i>
+            <span id="errorMessage">加载失败</span>
+            <a href="javascript:history.back()" class="alert-link ms-3">返回</a>
+        </div>
+
+        <!-- Main Content -->
+        <div id="mainContent" class="d-none">
+            <!-- Aircraft Hero Header -->
+            <div class="aircraft-hero">
+                <div class="registration" id="heroRegistration">{{ registration }}</div>
+                <div class="aircraft-type" id="heroType"></div>
+                <div class="owner-info" id="heroOwner"></div>
+                <div class="badge-group" id="heroBadges"></div>
+            </div>
+
+            <div class="row justify-content-center">
+                <div class="col-lg-8">
+                    <!-- Images Card -->
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span><i class="fas fa-images me-2"></i>飞机图片</span>
+                            <span id="galleryStats" class="gallery-stats"></span>
+                        </div>
+                        <div class="card-body">
+                            <!-- Main Image -->
+                            <div class="gallery-container mb-3">
+                                <img id="galleryMainImage" class="gallery-main-image d-none"
+                                     src="" alt="飞机图片" onclick="detailPage.openLightbox(this.src)">
+                                <div id="galleryPlaceholder" class="text-center py-5 bg-light rounded">
+                                    <i class="fas fa-image fa-3x text-muted mb-2"></i>
+                                    <div class="text-muted">暂无图片</div>
+                                </div>
+                            </div>
+                            <!-- Current Image Metadata -->
+                            <div id="currentImageMeta" class="d-none mb-3">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="image-meta-row">
+                                            <i class="fas fa-camera"></i>
+                                            <span class="value" id="metaPhotographer">-</span>
+                                        </div>
+                                        <div class="image-meta-row">
+                                            <i class="fas fa-map-marker-alt"></i>
+                                            <span class="value" id="metaLocation">-</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="image-meta-row">
+                                            <i class="fas fa-camera-retro"></i>
+                                            <span class="value" id="metaPhotoDate">-</span>
+                                        </div>
+                                        <div class="image-meta-row">
+                                            <i class="fas fa-cloud-upload-alt"></i>
+                                            <span class="value" id="metaUploadDate">-</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="metaNotesContainer" class="d-none mt-2">
+                                    <div class="image-notes" id="metaNotes"></div>
+                                </div>
+                                <div class="mt-2">
+                                    <a id="metaJetphotosLink" href="#" target="_blank" class="jetphotos-link">
+                                        <i class="fas fa-external-link-alt me-1"></i>在 JetPhotos 查看
+                                    </a>
+                                </div>
+                            </div>
+                            <!-- Thumbnails -->
+                            <div id="galleryThumbnails" class="d-flex gap-2 justify-content-center flex-wrap"></div>
+                        </div>
+                    </div>
+
+                    <!-- Basic Info -->
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="fas fa-id-card me-2"></i>基本信息
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-3 col-6">
+                                    <div class="info-label">注册号</div>
+                                    <div class="info-value fw-bold" id="infoRegistration">-</div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <div class="info-label">ICAO Hex</div>
+                                    <div class="info-value"><code id="infoHex">-</code></div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <div class="info-label">机型代码</div>
+                                    <div class="info-value" id="infoType">-</div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <div class="info-label">型号</div>
+                                    <div class="info-value" id="infoModel">-</div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <div class="info-label">制造商</div>
+                                    <div class="info-value" id="infoManufacturer">-</div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <div class="info-label">序列号</div>
+                                    <div class="info-value" id="infoSerialNumber">-</div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <div class="info-label">制造年份</div>
+                                    <div class="info-value" id="infoYearBuilt">-</div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <div class="info-label">注册国</div>
+                                    <div class="info-value" id="infoCountry">-</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Ownership Info -->
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="fas fa-building me-2"></i>归属信息
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <div class="info-label">所有者</div>
+                                    <div class="info-value" id="infoOwner">-</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="info-label">运营方</div>
+                                    <div class="info-value" id="infoOperator">-</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="info-label">组织机构</div>
+                                    <div class="info-value" id="infoOrganization">-</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="info-label">标签</div>
+                                    <div class="info-value" id="infoTags">-</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Livery Info -->
+                    <div id="liveryCard" class="card d-none">
+                        <div class="card-header">
+                            <i class="fas fa-paint-brush me-2"></i>涂装信息
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-4 col-6">
+                                    <div class="info-label">涂装类型</div>
+                                    <div class="info-value" id="infoLiveryType">-</div>
+                                </div>
+                                <div class="col-md-4 col-6">
+                                    <div class="info-label">涂装名称</div>
+                                    <div class="info-value" id="infoLiveryName">-</div>
+                                </div>
+                                <div class="col-md-4 col-6" id="liveryTypeDetailRow">
+                                    <div class="info-label">详细类型</div>
+                                    <div class="info-value" id="infoLiveryTypeDetail">-</div>
+                                </div>
+                                <div class="col-12" id="liveryDescRow">
+                                    <div class="info-label">涂装描述</div>
+                                    <div class="info-value" id="infoLiveryDescription">-</div>
+                                </div>
+                                <div class="col-12" id="specialMarkingsRow">
+                                    <div class="info-label">特殊标记</div>
+                                    <div class="info-value" id="infoSpecialMarkings">-</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Flights -->
+                    <div id="recentFlightsCard" class="card d-none">
+                        <div class="card-header">
+                            <i class="fas fa-history me-2"></i>最近航班
+                        </div>
+                        <div class="card-body">
+                            <div id="recentFlightsLoading" class="text-center py-3">
+                                <div class="spinner-border spinner-border-sm"></div>
+                            </div>
+                            <div id="recentFlightsList" class="d-none"></div>
+                            <div id="recentFlightsEmpty" class="text-center text-muted py-3 d-none">
+                                暂无航班记录
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI Summary -->
+                    <div id="summaryCard" class="card d-none">
+                        <div class="card-header">
+                            <i class="fas fa-robot me-2"></i>AI 分析摘要
+                        </div>
+                        <div class="card-body">
+                            <div class="summary-text" id="infoSummary">-</div>
+                        </div>
+                    </div>
+
+                    <!-- Intelligence Analysis -->
+                    <div id="intelligenceCard" class="card d-none">
+                        <div class="card-header">
+                            <i class="fas fa-user-secret me-2"></i>情报分析
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-4 col-6">
+                                    <div class="info-label">关注等级</div>
+                                    <div class="info-value" id="infoAttentionLevel">-</div>
+                                </div>
+                                <div class="col-md-8 col-6">
+                                    <div class="info-label">关注原因</div>
+                                    <div class="info-value" id="infoAttentionReason">-</div>
+                                </div>
+                                <div class="col-12" id="intelligenceSummaryRow">
+                                    <div class="info-label">情报摘要</div>
+                                    <div class="info-value summary-text" id="infoIntelligenceSummary">-</div>
+                                </div>
+                                <div class="col-md-6" id="flightPatternRow">
+                                    <div class="info-label">飞行模式</div>
+                                    <div class="info-value" id="infoFlightPattern">-</div>
+                                </div>
+                                <div class="col-md-6" id="anomaliesRow">
+                                    <div class="info-label">异常情况</div>
+                                    <div class="info-value" id="infoAnomalies">-</div>
+                                </div>
+                                <div class="col-12" id="recommendedActionsRow">
+                                    <div class="info-label">建议措施</div>
+                                    <div class="info-value" id="infoRecommendedActions">-</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Previous Owners -->
+                    <div id="previousOwnersCard" class="card d-none">
+                        <div class="card-header">
+                            <i class="fas fa-history me-2"></i>历史所有者
+                        </div>
+                        <div class="card-body">
+                            <div id="infoPreviousOwners">-</div>
+                        </div>
+                    </div>
+
+                    <!-- Data Source Info -->
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="fas fa-database me-2"></i>数据信息
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-4 col-6">
+                                    <div class="info-label">数据来源</div>
+                                    <div class="info-value" id="infoDataSource">-</div>
+                                </div>
+                                <div class="col-md-4 col-6">
+                                    <div class="info-label">更新时间</div>
+                                    <div class="info-value" id="infoUpdatedAt">-</div>
+                                </div>
+                                <div class="col-md-4 col-6">
+                                    <div class="info-label">记录 ID</div>
+                                    <div class="info-value" id="infoId">-</div>
+                                </div>
+                                <div class="col-md-4 col-6">
+                                    <div class="info-label">访问次数</div>
+                                    <div class="info-value" id="infoHitCount">-</div>
+                                </div>
+                                <div class="col-md-4 col-6">
+                                    <div class="info-label">图片已下载</div>
+                                    <div class="info-value" id="infoImagesDownloaded">-</div>
+                                </div>
+                                <div class="col-md-4 col-6">
+                                    <div class="info-label">图片更新时间</div>
+                                    <div class="info-value" id="infoImagesUpdatedAt">-</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- All Images Gallery -->
+            <div id="allImagesSection" class="d-none">
+                <div class="row justify-content-center">
+                    <div class="col-lg-8">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-th me-2"></i>全部图片</span>
+                                <span id="allImagesCount" class="gallery-stats"></span>
+                            </div>
+                            <div class="card-body">
+                                <div id="allImagesGrid" class="image-gallery-grid"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Lightbox Modal -->
+    <div class="modal fade" id="imageLightboxModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content bg-dark">
+                <div class="modal-header border-0">
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center p-0">
+                    <img id="lightboxImage" src="" class="img-fluid" style="max-height: 85vh; object-fit: contain;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Pass server data to frontend -->
+    <script>
+        const AIRCRAFT_REGISTRATION = "{{ registration }}";
+    </script>
+
+    <!-- Detail page JavaScript -->
+    <script src="{{ static_url }}/js/aircraft_detail.js?v=20260207"></script>
+</body>
+</html>

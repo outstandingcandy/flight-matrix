@@ -1,0 +1,35 @@
+# =================================
+# Recall Configuration - Determines which sources to fetch aircraft data from
+# =================================
+recall:
+  sources:
+    # Specific aircraft recall
+    specific_flights: []                # Specific flight numbers
+    specific_registrations: []          # Specific registrations
+    #  - "YU-RSB"                        # Serbia Government
+
+    # Type recall
+    military_global: true               # Global military aircraft
+
+    # Regional recall
+    regional_scan:                      # Regional scan countries
+      - "United States"
+      - "China"
+      - "Russia"
+    global_scan: false                  # Global scan (use sparingly, consumes API quota)
+
+    # Coordinate location recall - Track aircraft around specified coordinates
+    # API endpoint: /v2/lat/{lat}/lon/{lon}/dist/{dist}/
+    # location_tracking: []             # Default disabled
+    location_tracking:                  # Enable example
+      - name: "China Area"              # Region name (for logging)
+        lat: 28.75                      # Latitude (-90 to 90)
+        lon: 104.25                     # Longitude (-180 to 180)
+        radius_nm: 2500                 # Radius (nautical miles, 1-250, default 25)
+
+  # Recall strategy
+  strategy:
+    update_interval: 600                # Recall interval (seconds)
+    max_aircraft_per_call: 1000         # Max aircraft per call
+    parallel_requests: true             # Parallel requests
+    cache_duration: 60                  # Cache duration (seconds)

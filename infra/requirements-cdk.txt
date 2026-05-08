@@ -1,0 +1,8 @@
+# AWS CDK Dependencies for Flight-Matrix Deployment
+
+# CDK Core
+aws-cdk-lib>=2.100.0
+constructs>=10.0.0
+
+# Python typing support
+typing-extensions>=4.5.0

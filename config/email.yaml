@@ -1,0 +1,27 @@
+# =================================
+# Email Configuration
+# =================================
+email:
+  provider: "smtp"                      # smtp | aws_ses
+
+  # SMTP configuration (Gmail)
+  smtp:
+    server: "smtp.gmail.com"
+    port: 587
+    sender: "${SENDER_EMAIL}"
+    password: "${GMAIL_APP_PASSWORD}"
+
+  # AWS SES configuration (recommended for production)
+  # Note: Uses top-level aws.region configuration
+  aws_ses:
+    sender: "${AWS_SES_SENDER_EMAIL}"
+
+  # Recipients (multiple emails separated by comma)
+  recipients: "${RECIPIENTS}"
+
+  # Email feature toggles
+  features:
+    enable_maps: true                   # Include maps
+    enable_aircraft_images: true        # Include aircraft images
+    enable_flight_analysis: true        # Enable AI analysis
+    enable_tavily_search: true          # Enable web search

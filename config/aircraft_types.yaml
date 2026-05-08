@@ -1,0 +1,91 @@
+# =================================
+# Aircraft Type Recognition Configuration (for country inference)
+# =================================
+aircraft_types:
+  # Chinese military aircraft types
+  chinese_military:
+    - "Y20"
+    - "Y8"
+    - "Y9"      # Transport aircraft
+    - "J20"
+    - "J10"
+    - "J11"
+    - "J16"
+    - "J7"
+    - "J8"      # Fighter aircraft
+    - "H6"
+    - "H20"     # Bombers
+    - "Z10"
+    - "Z19"
+    - "Z20"
+    - "Z8"
+    - "Z9"      # Helicopters
+    - "KJ2000"
+    - "KJ500"
+    - "KJ200"   # AWACS
+    - "Y5"
+    - "Y7"
+    - "Y12"     # Other transport
+    - "JL8"
+    - "JL9"
+    - "JL10"    # Trainers
+    - "AG600"   # Amphibious aircraft
+
+  # US military aircraft types
+  us_military:
+    - "C17"
+    - "C130"
+    - "C5"
+    - "C141"
+    - "C135"    # Transport aircraft
+    - "F16"
+    - "F18"
+    - "F22"
+    - "F35"
+    - "F15"
+    - "F14"     # Fighters
+    - "KC135"
+    - "KC46"
+    - "KC10"    # Tankers
+    - "B52"
+    - "B1"
+    - "B2"      # Bombers
+    - "H60"
+    - "H47"
+    - "H1"
+    - "AH64"
+    - "UH1"     # Helicopters
+    - "E3"
+    - "E4"
+    - "E6"
+    - "RC135"
+    - "U2"      # Special mission
+
+  # Russian military aircraft types
+  russian_military:
+    - "SU27"
+    - "SU30"
+    - "SU35"
+    - "SU57"
+    - "MIG29"
+    - "MIG31"   # Fighters
+    - "TU95"
+    - "TU160"
+    - "TU22"    # Bombers
+    - "IL76"
+    - "AN124"
+    - "AN225"   # Transport
+    - "MI8"
+    - "MI24"
+    - "MI26"
+    - "KA50"
+    - "KA52"    # Helicopters
+
+  # European military aircraft types
+  european_military:
+    - "EF2000"
+    - "TYPHOON"  # Eurofighter Typhoon
+    - "RAFALE"   # Dassault Rafale
+    - "GRIPEN"   # Saab Gripen
+    - "TORNADO"
+    - "ALPHAJET" # Other European types

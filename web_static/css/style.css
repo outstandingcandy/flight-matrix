@@ -1,0 +1,378 @@
+/* 飞机追踪系统样式 */
+
+body {
+    background-color: #f8f9fa;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* 导航栏样式 */
+.navbar-brand {
+    font-weight: bold;
+}
+
+.navbar-brand i {
+    margin-right: 8px;
+}
+
+/* 卡片样式 */
+.card {
+    border: none;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    transition: box-shadow 0.15s ease-in-out;
+}
+
+.card:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.card-header {
+    background-color: #fff;
+    border-bottom: 1px solid #e9ecef;
+    font-weight: 600;
+}
+
+.card-header h5 {
+    margin: 0;
+    color: #495057;
+}
+
+.card-header i {
+    margin-right: 8px;
+    color: #007bff;
+}
+
+/* 表单样式 */
+.form-label {
+    font-weight: 500;
+    color: #495057;
+}
+
+.form-control:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+/* 按钮样式 */
+.btn {
+    border-radius: 0.375rem;
+    font-weight: 500;
+    transition: all 0.15s ease-in-out;
+}
+
+.btn i {
+    margin-right: 6px;
+}
+
+.btn-outline-primary:hover,
+.btn-outline-danger:hover,
+.btn-outline-info:hover,
+.btn-outline-secondary:hover {
+    transform: translateY(-1px);
+}
+
+/* 地图样式 */
+#map, #trackMap {
+    border-radius: 0.375rem;
+    border: 1px solid #dee2e6;
+}
+
+.leaflet-popup-content-wrapper {
+    border-radius: 8px;
+}
+
+.leaflet-popup-content {
+    margin: 12px 16px;
+    line-height: 1.4;
+}
+
+/* 自定义地图控件 */
+.aircraft-marker {
+    background-color: #007bff;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    width: 12px;
+    height: 12px;
+}
+
+.aircraft-marker.military {
+    background-color: #dc3545;
+}
+
+.aircraft-marker.interesting {
+    background-color: #ffc107;
+}
+
+/* 表格样式 */
+.table th {
+    background-color: #f8f9fa;
+    border-top: none;
+    font-weight: 600;
+    color: #495057;
+    font-size: 0.875rem;
+}
+
+.table td {
+    font-size: 0.875rem;
+    vertical-align: middle;
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(0, 123, 255, 0.05);
+}
+
+/* 徽章样式 */
+.badge {
+    font-size: 0.75rem;
+}
+
+.military-badge {
+    background-color: #dc3545;
+}
+
+.civilian-badge {
+    background-color: #28a745;
+}
+
+/* 统计信息样式 */
+.stat-item {
+    text-align: center;
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+    background-color: #fff;
+    border-radius: 0.375rem;
+    border: 1px solid #e9ecef;
+}
+
+.stat-number {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #007bff;
+}
+
+.stat-label {
+    font-size: 0.875rem;
+    color: #6c757d;
+    margin-top: 0.25rem;
+}
+
+/* 加载动画 */
+.loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+/* 状态指示器 */
+.status-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.status-indicator i {
+    font-size: 0.75rem;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .container-fluid {
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+    }
+    
+    .card-body {
+        padding: 1rem 0.75rem;
+    }
+    
+    #map, #trackMap {
+        height: 300px !important;
+    }
+    
+    .table-responsive {
+        font-size: 0.8rem;
+    }
+    
+    .btn-group-sm .btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+    }
+}
+
+/* 动画效果 */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+/* 工具提示样式 */
+.tooltip-inner {
+    max-width: 200px;
+    text-align: left;
+}
+
+/* 自定义滚动条 */
+.table-responsive::-webkit-scrollbar {
+    height: 8px;
+}
+
+.table-responsive::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+/* 模态框样式 */
+.modal-xl {
+    max-width: 95%;
+}
+
+.modal-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.modal-title i {
+    color: #007bff;
+    margin-right: 8px;
+}
+
+/* 飞行轨迹线样式 */
+.flight-path {
+    stroke: #007bff;
+    stroke-width: 3;
+    stroke-opacity: 0.8;
+    fill: none;
+}
+
+.flight-path.military {
+    stroke: #dc3545;
+}
+
+/* 空状态样式 */
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #6c757d;
+}
+
+.empty-state i {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+/* 错误状态样式 */
+.error-state {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: #dc3545;
+}
+
+.error-state i {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+}
+
+/* 成功状态样式 */
+.success-state {
+    color: #28a745;
+}
+
+/* 警告状态样式 */
+.warning-state {
+    color: #ffc107;
+}
+
+/* 表格过滤器样式 */
+.table-filters {
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+}
+
+.table-filters th {
+    padding: 8px;
+    background-color: #f8f9fa;
+    border-top: 1px solid #dee2e6;
+}
+
+.table-filters .form-control,
+.table-filters .form-select {
+    font-size: 0.8rem;
+    padding: 4px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+}
+
+.table-filters .form-control:focus,
+.table-filters .form-select:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 0 0.1rem rgba(0, 123, 255, 0.25);
+}
+
+.column-filter {
+    width: 100%;
+    min-width: 80px;
+}
+
+/* 过滤器切换按钮样式 */
+#toggleFilters {
+    font-size: 0.875rem;
+    padding: 0.375rem 0.75rem;
+}
+
+#toggleFilters.active {
+    background-color: #007bff;
+    border-color: #007bff;
+    color: #fff;
+}
+
+/* 过滤器清空按钮 */
+#clearFilters {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+}
+
+/* 过滤器动画效果 */
+.table-filters {
+    transition: all 0.3s ease-in-out;
+}
+
+/* 过滤结果高亮 */
+.filtered-row {
+    background-color: rgba(40, 167, 69, 0.1) !important;
+}
+
+.no-results-row {
+    background-color: rgba(220, 53, 69, 0.05);
+}
+
+/* 过滤器状态指示 */
+.filter-active {
+    background-color: rgba(0, 123, 255, 0.1);
+    border-color: #007bff;
+}
+
+.filter-count {
+    font-size: 0.75rem;
+    color: #6c757d;
+    margin-left: 0.5rem;
+}

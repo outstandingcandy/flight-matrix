@@ -1,0 +1,171 @@
+# =================================
+# HTML Template Configuration
+# =================================
+# Available placeholders: {flight_number}, {registration}, {country_of_registration},
+#            {icao}, {aircraft_type}, {squawk}, {current_position},
+#            {altitude}, {speed}, {heading}, {agent_result}, {timestamp},
+#            {input_tokens}, {output_tokens}, {total_tokens}, {api_calls}
+templates:
+  report_html: |
+    <!DOCTYPE html>
+    <html lang="zh">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Aviation Intelligence Analysis Report</title>
+        <style>
+            body {{
+                font-family: 'Microsoft YaHei', 'SimSun', Arial, sans-serif;
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: #f5f7fa;
+                color: #2c3e50;
+            }}
+            .header {{
+                background: linear-gradient(135deg, #3498db, #2c3e50);
+                color: white;
+                padding: 30px;
+                border-radius: 15px;
+                margin-bottom: 30px;
+                text-align: center;
+                box-shadow: 0 8px 32px rgba(52, 152, 219, 0.3);
+            }}
+            .header h1 {{
+                margin: 0;
+                font-size: 2.2em;
+                font-weight: 300;
+            }}
+            .header .subtitle {{
+                margin: 10px 0 0 0;
+                opacity: 0.9;
+                font-size: 1.1em;
+            }}
+            .section {{
+                background: white;
+                border-radius: 12px;
+                padding: 25px;
+                margin-bottom: 25px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            }}
+            .section h2 {{
+                color: #2c3e50;
+                margin-top: 0;
+                font-size: 1.5em;
+                border-bottom: 3px solid #3498db;
+                padding-bottom: 10px;
+            }}
+            .flight-details {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                gap: 15px;
+                margin: 20px 0;
+                padding: 20px;
+                background: #f8f9fa;
+                border-radius: 8px;
+                border-left: 5px solid #3498db;
+            }}
+            .flight-details .detail {{
+                margin: 5px 0;
+            }}
+            .flight-details .detail strong {{
+                color: #2c3e50;
+            }}
+            .analysis-content {{
+                line-height: 1.6;
+                font-size: 1em;
+                margin: 20px 0;
+                padding: 20px;
+                background: #f8f9fa;
+                border-radius: 8px;
+                border-left: 5px solid #27ae60;
+            }}
+            .footer {{
+                background: linear-gradient(135deg, #34495e, #2c3e50);
+                color: white;
+                padding: 20px;
+                border-radius: 10px;
+                text-align: center;
+                margin-top: 30px;
+            }}
+            .timestamp {{
+                font-size: 0.9em;
+                opacity: 0.8;
+                margin-top: 10px;
+            }}
+            .token-stats {{
+                font-size: 0.85em;
+                opacity: 0.7;
+                margin-top: 8px;
+                padding-top: 8px;
+                border-top: 1px solid rgba(255,255,255,0.2);
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>Aviation Intelligence Analysis Report</h1>
+            <div class="subtitle">Aviation Intelligence Analysis Report (AWS Bedrock)</div>
+        </div>
+
+        <div class="section">
+            <h2>Aircraft Basic Information</h2>
+            <div class="flight-details">
+                <div class="detail"><strong>Flight Number:</strong> {flight_number}</div>
+                <div class="detail"><strong>Registration:</strong> {registration}</div>
+                <div class="detail"><strong>Country of Registration:</strong> {country_of_registration}</div>
+                <div class="detail"><strong>ICAO Code:</strong> {icao}</div>
+                <div class="detail"><strong>Aircraft Type:</strong> {aircraft_type}</div>
+                <div class="detail"><strong>Squawk:</strong> {squawk}</div>
+                <div class="detail"><strong>Current Position:</strong> {current_position}</div>
+                <div class="detail"><strong>Altitude:</strong> {altitude}</div>
+                <div class="detail"><strong>Speed:</strong> {speed}</div>
+                <div class="detail"><strong>Heading:</strong> {heading}</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Intelligent Analysis Result</h2>
+            <div class="analysis-content">{agent_result}</div>
+        </div>
+
+        <div class="footer">
+            <div><strong>Aviation Intelligence Analyst</strong> (AWS Bedrock)</div>
+            <div>Aviation Intelligence Analyst Agent</div>
+            <div class="timestamp">Report Generated: {timestamp}</div>
+            <div class="token-stats">Token Usage: Input {input_tokens} / Output {output_tokens} / Total {total_tokens} (API Calls: {api_calls})</div>
+        </div>
+    </body>
+    </html>
+
+  error_html: |
+    <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f8f9fa;">
+        <div style="background: #dc3545; color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+            <h1 style="margin: 0;">Aircraft Analysis System Error</h1>
+        </div>
+        <div style="background: white; padding: 20px; border-radius: 10px; border-left: 5px solid #dc3545;">
+            <h2>Error Details</h2>
+            <p><strong>Error Message:</strong> {error_msg}</p>
+            <p><strong>Aircraft ID:</strong> {registration}</p>
+            <p><strong>ICAO:</strong> {icao}</p>
+            <p><strong>Time:</strong> {timestamp}</p>
+
+            <h2>Basic Aircraft Information</h2>
+            <ul>
+                <li><strong>Registration:</strong> {registration}</li>
+                <li><strong>Flight Number:</strong> {flight_number}</li>
+                <li><strong>Aircraft Type:</strong> {aircraft_type}</li>
+                <li><strong>Altitude:</strong> {altitude}</li>
+                <li><strong>Speed:</strong> {speed}</li>
+                <li><strong>Squawk:</strong> {squawk}</li>
+            </ul>
+
+            <div style="background: #fff3cd; padding: 15px; border-radius: 5px; margin-top: 20px;">
+                <strong>Suggested Actions:</strong>
+                <ul>
+                    <li>Check AWS credentials and Bedrock service configuration</li>
+                    <li>Verify input data format is correct</li>
+                    <li>Retry the analysis operation later</li>
+                </ul>
+            </div>
+        </div>

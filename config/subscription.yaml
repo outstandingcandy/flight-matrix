@@ -1,0 +1,44 @@
+# =================================
+# Multi-User Subscription System Configuration
+# =================================
+multi_user:
+  enabled: true # Set true to enable multi-user mode, false for single-user mode
+
+  # Default settings (inherited by new users)
+  defaults:
+    cooldown_hours: 12.0                # Default cooldown time (hours)
+    min_move_distance_km: 1.0           # Minimum move distance (km)
+
+# =================================
+# Subscription Tier Configuration
+# =================================
+subscription_tiers:
+  basic:
+    name: "Basic"
+    daily_report_limit: 10              # Daily report limit (-1=unlimited)
+    monthly_report_limit: 100           # Monthly report limit (-1=unlimited)
+    features:
+      enable_maps: true                 # Include maps
+      enable_aircraft_images: true      # Include aircraft images
+    cooldown_hours: 24.0                # Cooldown time (hours)
+    max_filters: 3                      # Maximum filters (-1=unlimited)
+
+  premium:
+    name: "Premium"
+    daily_report_limit: 50
+    monthly_report_limit: 500
+    features:
+      enable_maps: true
+      enable_aircraft_images: true
+    cooldown_hours: 6.0
+    max_filters: 10
+
+  enterprise:
+    name: "Enterprise"
+    daily_report_limit: -1              # Unlimited
+    monthly_report_limit: -1            # Unlimited
+    features:
+      enable_maps: true
+      enable_aircraft_images: true
+    cooldown_hours: 1.0
+    max_filters: -1                     # Unlimited

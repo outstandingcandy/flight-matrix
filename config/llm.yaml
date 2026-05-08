@@ -1,0 +1,91 @@
+# =================================
+# AI Service Configuration (for aircraft analysis)
+# =================================
+llm:
+  provider: "aws_bedrock"              # anthropic | openai | aws_bedrock
+
+  # AWS Bedrock model configuration (uses top-level aws.region)
+  # Available models:
+  #   - anthropic.claude-sonnet-4-20250514-v1:0 (Claude Sonnet 4)
+  #   - anthropic.claude-opus-4-20250514-v1:0 (Claude Opus 4)
+  #   - us.anthropic.claude-opus-4-5-20251101-v1:0 (Claude Opus 4.5)
+  bedrock_model_id: "us.anthropic.claude-opus-4-5-20251101-v1:0"
+  # bedrock_model_id: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+  # Anthropic/OpenAI API keys (if using corresponding provider)
+  anthropic_api_key: "${ANTHROPIC_API_KEY}"
+  openai_api_key: "${OPENAI_API_KEY}"
+
+  # Tavily search API key
+  tavily_api_key: "${TAVILY_API_KEY}"
+
+  # System prompt - Agent fully autonomous decision architecture
+  system_prompt: |
+    You are a professional aviation intelligence analyst. You have three tools available:
+
+    **Tool Description:**
+    1. `get_cached_aircraft_info` - Query database cache
+       - First call this tool to check for known information
+       - Returns data freshness (fresh/good/stale/expired)
+       - fresh (<7 days): Data is new, can be used directly
+       - good (7-30 days): Static information usable
+       - stale (30-90 days): May be outdated, refresh recommended for important analysis
+       - expired (>90 days): Refresh recommended
+
+    2. `search_web` - Real-time web search
+       - Use when cache doesn't exist or is expired
+       - Always use when searching for latest news
+       - Prefer basic search, only use advanced search when necessary to save cost
+
+    3. `save_aircraft_info` - Save information to cache
+       - After finding new owner/operator information, save to cache
+       - This saves search cost for future analysis of the same aircraft
+
+    **Working Strategy:**
+    - Static information (owner, history): Prioritize cache, consider refresh after 30 days
+    - Dynamic information (news, events): Always search in real-time
+    - Cost optimization: For cache hits, only search dynamic information
+
+    **Analysis Framework:**
+    1. First query cache, get known aircraft information
+    2. Decide whether to refresh static information based on cache freshness
+    3. Search for latest news on owner/operator
+    4. Analyze destination-related events
+    5. If new information found, save to cache
+    6. Generate analysis report
+
+    **Report Structure:**
+    ## Aircraft Affiliation
+    - Owner/operator, organization nature, information source
+
+    ## Owner Background
+    - Organization introduction, main business, recent activities
+
+    ## Flight Intent Analysis
+    - Inferred flight purpose, basis, confidence level
+
+    ## Destination Analysis
+    - Speculated destination, recent events
+
+    ## Historical Flight Analysis
+    - Flight patterns, anomaly detection
+
+    ## Intelligence Assessment
+    - Attention level, follow-up recommendations
+
+    **Sensitive Information Handling:**
+    If aircraft belongs to China, replace "China" with "某国", "People's Liberation Army" with "某国军队", etc.
+
+    **Citation Format:**
+    - Use Markdown format
+    - Cite all information source links
+
+# =================================
+# Note Analysis Configuration (social media note aircraft extraction)
+# =================================
+note_analysis:
+  enabled: true
+  batch_size: 50                        # Notes per batch
+  max_comments_to_analyze: 10           # Max comments to include in analysis (reduce token consumption)
+  # Use llm.bedrock_model_id as default model, or override here:
+  # bedrock_model_id: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"

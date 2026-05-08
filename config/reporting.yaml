@@ -1,0 +1,302 @@
+# =================================
+# Reporting Configuration (includes filter settings)
+# =================================
+reporting:
+  enable_report_cooldown: true          # Enable report cooldown
+  cooldown_hours: 12.0                  # Cooldown time (hours) - default for snapshot_based mode
+  min_move_distance_km: 1.0             # Minimum move distance (km), aircraft must move beyond this to generate new report
+  cleanup_interval_cycles: 12           # Cleanup interval (cycles)
+  max_reports_per_aircraft: 24          # Maximum reports per aircraft
+  recent_tracks_count: 10               # Number of recent tracks to show in history summary
+
+  # =================================
+  # Dual Mode Filtering Configuration (filter_modes)
+  # =================================
+  filter_modes:
+    # Mode A: Position-based filtering (existing logic)
+    snapshot_based:
+      enabled: true
+      cooldown_hours: 12.0              # Cooldown time (hours)
+      cooldown_key_suffix: ""           # Cooldown key suffix (empty=use original key format)
+      min_move_distance_km: 1.0         # Minimum move distance (km)
+      snapshot_max_age_hours: 1.0       # Only query snapshots from last N hours
+      # filters configuration see below in reporting.filters
+
+    # Mode B: Schedule-based filtering (new)
+    schedule_based:
+      enabled: true
+      cooldown_hours: 24.0              # Cooldown time (hours)
+      cooldown_key_suffix: ":schedule"  # Independent cooldown key suffix
+      lookahead_hours: 8.0              # Query flights N hours ahead
+      lookbehind_hours: 0               # Query flights N hours behind (0 = only future flights)
+      target_airports:                  # Target airports (IATA codes)
+        - PEK     # Beijing Capital
+        - PKX     # Beijing Daxing
+        - PVG     # Shanghai Pudong
+        - SHA     # Shanghai Hongqiao
+        - CAN     # Guangzhou Baiyun
+        - SZX     # Shenzhen Bao'an
+        - CTU     # Chengdu Shuangliu
+        - TFU     # Chengdu Tianfu
+      flight_types:                     # Flight types of interest
+        - arrival                       # Arrivals
+        - departure                     # Departures
+      reuse_snapshot_filters: true      # Reuse Mode A's custom_sql filter conditions
+
+    # Mode C: Registration match-based filtering
+    # Correlates FR24 positions (missing registration) with ADS-B snapshots
+    registration_match_based:
+      enabled: true
+      cooldown_hours: 12.0              # Cooldown time (hours)
+      cooldown_key_suffix: ":regmatch"  # Independent cooldown key suffix
+
+      # Match parameters
+      time_window_minutes: 3.0          # Time window (±minutes) for matching
+      max_distance_km: 5.0              # Maximum distance (km) between positions
+      max_altitude_diff_ft: 2000        # Maximum altitude difference (ft)
+      max_age_hours: 1.0                # Only match data from last N hours
+
+  # Filter configuration - Determines which recalled aircraft need reports (for snapshot_based mode)
+  filters:
+    mode: "custom_sql"                    # Only custom_sql mode supported
+
+    # Data quality filter (applied before SQL filter)
+    require_position: true                # Filter out aircraft without position info
+
+    # Flight number prefix filter - Watch for special prefix callsigns (VIP/government aircraft)
+    # Reference: https://en.wikipedia.org/wiki/Air_transports_of_heads_of_state_and_government
+    flight_number_prefixes:
+      # === Americas ===
+      - "SAM"       # US Special Air Mission - High VIP
+      - "EXEC"      # US Executive flights
+      - "CFC"       # Canadian Forces (Canforce)
+      - "BRS"       # Brazilian Air Force
+      - "FAC"       # Colombian Air Force
+      - "FAM"       # Mexican Air Force (Fuerza Aerea Mexicana)
+      - "ARG"       # Argentina Government
+
+      # === Europe ===
+      - "GAF"       # German Air Force
+      - "CTM"       # French Air Force (Cotam)
+      - "COTAM"     # French Air Force full name
+      - "KRF"       # UK Royal Air Force - Royal (Kittyhawk)
+      - "RRR"       # UK Royal Air Force - Government (Ascot)
+      - "RSD"       # Russia State Aero (Rossiya)
+      - "PLF"       # Polish Air Force
+      - "HUF"       # Hungarian Air Force
+      - "SUI"       # Swiss Air Force
+      - "IAM"       # Italian Air Force (Aeronautica Militare)
+
+      # === Asia-Pacific ===
+      - "JF"        # Japanese Self-Defense Force
+      - "AIC"       # Air India One
+      - "PAK"       # Pakistan Air Force
+      - "IDN"       # Indonesia
+      - "RTAF"      # Royal Thai Air Force
+      - "PAF"       # Philippine Air Force
+      - "KIW"       # New Zealand (Kiwi)
+      - "ASY"       # Royal Australian Air Force (Aussie)
+
+      # === Middle East ===
+      - "QAF"       # Qatar Amiri Flight
+      - "UAE"       # UAE Government
+      - "IAF"       # Israeli Air Force
+      - "BAH"       # Bahrain Royal
+      - "KUW"       # Kuwait Government
+
+      # === Africa ===
+      - "NGR"       # Nigeria Air Force
+      - "ETF"       # Ethiopian Air Force
+      - "EGF"       # Egyptian Air Force
+
+      # === Central Asia ===
+      - "BEC"       # Kazakhstan Berkut Air (Presidential)
+      - "TUA"       # Turkmenistan Government
+
+      # === Generic VIP ===
+      - "VIP"       # Generic VIP identifier
+
+      # === Uncomment when needed (high volume) ===
+      # - "RCH"     # US Air Mobility Command - Military transport
+      # - "CNV"     # US Navy
+      # - "SVA"     # Saudi Airlines (also royal, but many commercial flights)
+
+    # Custom SQL filter configuration
+    # Available fields:
+    #   - registration: Registration number (e.g., 'N12345', 'B-1234')
+    #   - aircraft_type: Type code (e.g., 'B742', 'IL76', 'A320')
+    #   - current_country: Current country (e.g., 'China', 'United States', 'Russia')
+    #   - country_of_registration: Registration country (e.g., 'China', 'United States')
+    #   - is_military: Is military (1=yes, 0=no)
+    #   - flight_number: Flight number (e.g., 'CA123')
+    #   - squawk: Transponder code (e.g., '7700'=emergency)
+    #
+    # SQL syntax examples:
+    #   - Equals: field = 'value'
+    #   - Contains: field IN ('val1', 'val2')
+    #   - Pattern match: field LIKE 'N1%' (starts with N1)
+    #   - Combined conditions: AND, OR, ()
+
+    custom_sql: |
+      (
+        is_military = 1
+        AND current_country IN ('China')
+        AND registration NOT IN ('B-2472')
+      )
+      OR
+      (
+        registration IN (
+          -- Private Jets (Billionaires/Corporations)
+          'N628TS',   -- Elon Musk (G650ER)
+          'N271DV',   -- Jeff Bezos (G650ER)
+          'N887WM',   -- Bill Gates (G650ER)
+          'N1980K',   -- Kim Kardashian (G650ER)
+          'N3546',    -- Nike Inc. (G650ER)
+          'N1KE',     -- Nike Inc. / Phil Knight (G650)
+          'N810KJ',   -- Kylie Jenner (Global 7500)
+          'N457AD',   -- Aliko Dangote (Global 7500)
+          'N729KF',   -- Stan Kroenke (Global 7500)
+          'N762F',    -- Frank Fertitta (Global 7500)
+          'N45GH',    -- Walmart Inc. (Global 7500)
+          'N278L',    -- Patrick Soon-Shiong (G650)
+          'A7-CGA',   -- Qatar Executive (G650ER)
+          'A9C-BAH',  -- Bahrain Royal Flight (G650)
+          -- Government/State Aircraft
+          '82-8000',  -- USAF Air Force One (VC-25A)
+          '92-9000',  -- USAF Air Force One (VC-25A)
+          'B-2479',   -- China Air China (747-8i)
+          'RA-96022', -- Russia Rossiya (Il-96-300PU)
+          '80-1111',  -- Japan JASDF (777-300ER)
+          'HL7643',   -- South Korea ROKAF (747-8i)
+          '10+01',    -- Germany Luftwaffe (A350-900)
+          '10+03',    -- Germany Luftwaffe (A350-900)
+          'F-RARF',   -- France Air Force (A330-200)
+          'ZZ336',    -- UK RAF Vespina (A330 MRTT)
+          'HZ-HM1',   -- Saudi Royal Flight (747-400)
+          'A7-HHE',   -- Qatar Amiri Flight (747-8 BBJ)
+          'TC-TRK',   -- Turkey Government (747-8 BBJ)
+          'K7066',    -- India Air Force One (777-300ER)
+          '2101',     -- Brazil FAB (A319CJ)
+          'FAC0001',  -- Colombia FAC (737 BBJ)
+          'CN-MBH',   -- Morocco Royal Air Force (747-8 BBJ)
+          'KAF308',   -- Kenya Air Force (Fokker 70)
+          '0110',     -- Poland Air Force (737 BBJ2)
+          '9M-NAA',   -- Malaysia RMAF (A319CJ)
+          '330002',   -- Canada Royal Canadian Air Force (RCAF)
+          'MM62209',  -- Aeronautica Militare
+          -- Special Foreign Aircraft (非普通航班 - 公务机/高关注度/特殊涂装/货运, 2026-03-08)
+          -- === 高关注度飞机 (attention_level: 高/中) ===
+          'N864GT',   -- 高关注度 | 全白无标涂装
+          '4K-SW888', -- 高关注度 | 货运 (阿塞拜疆)
+          'EP-MMU',   -- 高关注度 (伊朗)
+          'VP-BTU',   -- 高关注度 | VIP公务机 (俄罗斯)
+          'HL8080',   -- 中关注度 | VIP公务机 (韩国)
+          'N404KZ',   -- 中关注度 | 全白涂装
+          'N701CK',   -- 中关注度 | 全白涂装
+          '4X-ERC',   -- 中关注度 (以色列)
+          'VP-BBS',   -- 中关注度 (俄罗斯)
+          'XA-LRL',   -- 中关注度 | 货运 (墨西哥)
+          '4L-GMC',   -- 中关注度 | 货运 (格鲁吉亚)
+          'RA-73151', -- 中关注度 (俄罗斯)
+          'RA-73816', -- 中关注度 (俄罗斯)
+          '5H-TCR',   -- 中关注度 (坦桑尼亚)
+          'RA-73130', -- 中关注度 (俄罗斯)
+          'EZ-A781',  -- 中关注度 (土库曼斯坦)
+          'HL7227',   -- 中关注度 | 私人/公务机 (韩国)
+          -- === 公务机 (Business Jets) ===
+          '9H-VISTA', -- GL7T VistaJet
+          '9H-VIL',   -- GL7T VistaJet
+          'HL8550',   -- GLF6 韩国
+          'TC-ATA',   -- GLF5 土耳其
+          'RA-73575', -- GLEX 俄罗斯
+          'HL8372',   -- GLF6 韩国
+          'OK-EVO',   -- GLF6 捷克
+          'F-RAFA',   -- FA7X 法国空军
+          'F-RAFB',   -- FA7X 法国空军
+          'MM62343',  -- GLF6 意大利空军
+          'MM62346',  -- GLF6 意大利空军
+          'MM62344',  -- GLF6 意大利空军
+          'HL8230',   -- GLEX 韩国
+          'N149LP',   -- GLEX 美国
+          'RA-73588', -- GLEX 俄罗斯
+          'T7-DXB',   -- GLF6 圣马力诺
+          'D-AGBF',   -- FA7X 德国
+          'M-HSCZ',   -- GLF6 马恩岛
+          'OO-FAE',   -- FA7X 比利时
+          'VP-COY',   -- FA7X 百慕大
+          'T7-ROC',   -- GLEX 圣马力诺
+          'N400J',    -- GLF6 美国
+          'HS-SKS',   -- GLF6 泰国
+          'VP-CYA',   -- GLEX 百慕大
+          'TC-JUN',   -- GLF5 土耳其
+          'N550GP',   -- GLF5 美国
+          'A56-002',  -- FA7X 澳大利亚空军
+          'VP-CSH',   -- GLEX 百慕大
+          'M-GAGA',   -- GLF6 马恩岛
+          'N700MK',   -- GLF6 美国
+          'N684MT',   -- GLF6 美国
+          'N939SG',   -- GLF6 美国
+          'A56-001',  -- FA7X 澳大利亚空军
+          'VP-BZE',   -- FA7X 百慕大
+          '9H-VIG',   -- GL7T VistaJet
+          '9H-VIJ',   -- GL7T VistaJet
+          '9H-VIC',   -- GL7T VistaJet
+          '9H-VID',   -- GL7T VistaJet
+          '9H-VIH',   -- GL7T VistaJet
+          '9H-VIO',   -- GL7T VistaJet
+          '9H-VIN',   -- GL7T VistaJet
+          '9H-VIM',   -- GL7T VistaJet
+          '9H-VIK',   -- GL7T VistaJet
+          'N979JW',   -- FA7X 美国
+          'HZ-MS5A',  -- GLF5 沙特
+          'VP-CSY',   -- GL7T 百慕大
+          'VT-JSJ',   -- GL7T 印度
+          '9H-VIE',   -- GL7T VistaJet
+          'N88FE',    -- GL7T 美国
+          '9H-VIT',   -- GL7T VistaJet
+          'TC-CBK',   -- GLF5 土耳其
+          'N650WS',   -- GLF6 美国
+          'N96UA',    -- GLF5 美国
+          'VP-CTC',   -- GL7T 百慕大
+          'TC-DAP',   -- GLF5 土耳其
+          'P4-IFF',   -- GLF6 阿鲁巴
+          'N2N',      -- GLF6 美国
+          'N57SN',    -- FA7X 美国
+          'N2291R',   -- GLF5 美国
+          'HS-KVS',   -- GLF6 泰国
+          'N540LF',   -- GLF6 美国
+          'M-SUNY',   -- FA7X 马恩岛
+          'T7-GTS',   -- GL7T 圣马力诺
+          'M-SZSZ',   -- GLF6 马恩岛
+          'RA-73530', -- GLEX 俄罗斯
+          'N468GH',   -- GLEX 美国
+          'VP-CJC',   -- GLEX 百慕大
+          'VT-BRS',   -- GLF5 印度
+          'VT-AGL',   -- GLEX 印度
+          'N2313A',   -- GLEX 美国
+          'SX-VVO',   -- GLF5 希腊
+          'N968BX',   -- GLEX 美国
+          'VH-LEF',   -- GLEX 澳大利亚
+          '9M-ZZZ',   -- GLF6 马来西亚
+          'N100ES',   -- GLF6 美国
+          'N805TM',   -- GLF6 美国
+          '9H-VJG',   -- GLEX VistaJet
+          'N811TM',   -- GLF6 美国
+          'N45GX',    -- GLEX 美国
+          'N377LT',   -- GLF6 美国
+          'VH-FMG',   -- GL7T 澳大利亚
+          'RA-09010', -- FA7X 俄罗斯
+          'RA-09009'  -- FA7X 俄罗斯
+        )
+      )
+
+# =================================
+# Report Service Configuration (separate process)
+# =================================
+report_service:
+  enabled: true                         # Enable report service
+  poll_interval: 300                    # Poll interval (seconds) - frequency to check for new reports
+  batch_size: 10                        # Reports per batch
+  max_retries: 3                        # Retry count on failure
+  processing_timeout: 300               # Single report processing timeout (seconds)
+  queue_retention_days: 7               # Retention days for completed/failed reports

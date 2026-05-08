@@ -1,0 +1,32 @@
+# Gitleaks configuration for Flight Matrix
+#
+# Reference: https://github.com/gitleaks/gitleaks
+# Uses the default ruleset plus the allowlist below.
+
+title = "Flight Matrix gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Legitimate non-secret patterns that trip the default rules"
+
+paths = [
+  # Placeholders in the template env file
+  '''\.env\.example$''',
+  # Project docs that reference service names / example domains
+  '''^docs/''',
+  # Lock files
+  '''uv\.lock$''',
+  # The public Ubuntu-owned AWS account used to find Canonical AMIs
+  '''scripts/deploy_workers\.sh$''',
+]
+
+regexes = [
+  # Canonical's public AWS account for Ubuntu AMIs
+  '''099720109477''',
+  # Example / placeholder tokens used in docs and tests
+  '''YOUR[_-]?API[_-]?KEY''',
+  '''PLACEHOLDER''',
+  '''example\.com''',
+]

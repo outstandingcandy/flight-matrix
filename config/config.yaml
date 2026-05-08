@@ -1,0 +1,58 @@
+# Flight Matrix Configuration
+# Aircraft Tracking System - Main Configuration File
+#
+# This file includes modular configuration files for better maintainability.
+# All includes are relative to this file's directory.
+
+includes:
+  - aws.yaml
+  - database.yaml
+  - api.yaml
+  - email.yaml
+  - llm.yaml
+  - aircraft_types.yaml
+  - recall.yaml
+  - reporting.yaml
+  - subscription.yaml
+  - scraper/base.yaml
+  - scraper/fr24.yaml
+  - scraper/xiaohongshu.yaml
+  - scraper/jetphotos.yaml
+  - scraper/other.yaml
+  - templates.yaml
+
+# =================================
+# Home Page Popular Items Configuration
+# =================================
+home_popular:
+  # Popular airports (IATA or ICAO codes)
+  # Configure 5 airports to avoid slow queries
+  airports:
+    - PEK     # Beijing Capital
+    - CAN     # Guangzhou Baiyun
+    - PVG     # Shanghai Pudong
+    - SZX     # Shenzhen Bao'an
+    - CTU     # Chengdu Tianfu
+  # Popular aircraft (registration numbers)
+  # Must exist in database
+  aircraft:
+    - CU-T1250  # Cuba Government IL96
+    - JA873A    # ANA B789
+    - D-ABYT    # Lufthansa B748
+    - HL7614    # Korean Air B77W
+    - B-18918   # China Airlines A359
+
+# =================================
+# Notification Settings
+# =================================
+notification:
+  notify_all_military: true             # Notify for all military aircraft
+  notify_watchlist_only: false          # Notify only for watchlist aircraft
+
+  # Area tracking settings (currently disabled)
+  area_tracking:
+    enabled: false
+    name: "My Home"
+    latitude: 40.0801
+    longitude: 116.5845
+    radius_km: 5000

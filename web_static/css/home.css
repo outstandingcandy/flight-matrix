@@ -1,0 +1,647 @@
+/* FlightMatrix Home Page Styles - FlightAware Inspired */
+
+/* CSS Variables */
+:root {
+    --bg-gradient-start: #1a1a2e;
+    --bg-gradient-end: #16213e;
+    --search-bg: #ffffff;
+    --search-border: #e0e0e0;
+    --search-shadow: rgba(0, 0, 0, 0.2);
+    --dropdown-bg: #ffffff;
+    --dropdown-border: #e9ecef;
+    --dropdown-shadow: rgba(0, 0, 0, 0.15);
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.8);
+    --text-dark: #212529;
+    --text-muted: #6c757d;
+    --badge-iata: #e3f2fd;
+    --badge-iata-text: #1565c0;
+    --badge-icao: #e8f5e9;
+    --badge-icao-text: #2e7d32;
+    --badge-reg: #fff3e0;
+    --badge-reg-text: #e65100;
+    --hover-bg: #f8f9fa;
+    --link-color: #64b5f6;
+    --link-hover: #90caf9;
+}
+
+/* Reset and base */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+}
+
+body {
+    background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+}
+
+/* Background overlay with subtle pattern */
+.background-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background:
+        radial-gradient(circle at 20% 80%, rgba(100, 181, 246, 0.05) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(100, 181, 246, 0.05) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Main container */
+.home-container {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+}
+
+/* Logo section */
+.logo-section {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.logo-icon {
+    font-size: 4rem;
+    color: var(--text-primary);
+    margin-bottom: 16px;
+    text-shadow: 0 4px 20px rgba(100, 181, 246, 0.4);
+}
+
+.logo-icon i {
+    animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+}
+
+.site-title {
+    font-size: 3rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.site-subtitle {
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+    font-weight: 300;
+}
+
+/* Search section */
+.search-section {
+    width: 100%;
+    max-width: 600px;
+    margin-bottom: 40px;
+}
+
+.search-wrapper {
+    position: relative;
+}
+
+.search-input-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.search-icon {
+    position: absolute;
+    left: 20px;
+    color: var(--text-muted);
+    font-size: 1.1rem;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.search-input {
+    width: 100%;
+    padding: 18px 50px 18px 55px;
+    font-size: 1.1rem;
+    border: 2px solid transparent;
+    border-radius: 30px;
+    background: var(--search-bg);
+    box-shadow: 0 4px 20px var(--search-shadow);
+    transition: all 0.3s ease;
+    outline: none;
+}
+
+.search-input:focus {
+    border-color: var(--link-color);
+    box-shadow: 0 6px 30px rgba(100, 181, 246, 0.3);
+}
+
+.search-input::placeholder {
+    color: var(--text-muted);
+}
+
+.search-clear-btn {
+    position: absolute;
+    right: 16px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+    z-index: 2;
+}
+
+.search-clear-btn:hover {
+    background: var(--hover-bg);
+    color: var(--text-dark);
+}
+
+/* Search dropdown */
+.search-dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    background: var(--dropdown-bg);
+    border-radius: 16px;
+    box-shadow: 0 8px 40px var(--dropdown-shadow);
+    overflow: hidden;
+    z-index: 100;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.dropdown-loading {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+/* Section styles */
+.suggestion-section,
+.result-section {
+    border-bottom: 1px solid var(--dropdown-border);
+}
+
+.suggestion-section:last-child,
+.result-section:last-child {
+    border-bottom: none;
+}
+
+.section-header {
+    padding: 12px 20px 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.section-header i {
+    font-size: 0.85rem;
+}
+
+.section-items {
+    padding-bottom: 8px;
+}
+
+/* Result item styles */
+.result-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 20px;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.result-item:hover,
+.result-item.active {
+    background-color: var(--hover-bg);
+}
+
+.result-item-icon {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    margin-right: 14px;
+    font-size: 1rem;
+}
+
+.result-item-icon.airport {
+    background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+    color: #1976d2;
+}
+
+.result-item-icon.aircraft {
+    background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+    color: #388e3c;
+}
+
+.result-item-icon.aircraft-type {
+    background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
+    color: #7b1fa2;
+}
+
+.result-item-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.result-item-title {
+    font-weight: 600;
+    color: var(--text-dark);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.result-item-subtitle {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Code badges */
+.code-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.code-badge.iata {
+    background-color: var(--badge-iata);
+    color: var(--badge-iata-text);
+}
+
+.code-badge.icao {
+    background-color: var(--badge-icao);
+    color: var(--badge-icao-text);
+}
+
+.code-badge.registration {
+    background-color: var(--badge-reg);
+    color: var(--badge-reg-text);
+}
+
+.code-badge.type-code {
+    background-color: #f3e5f5;
+    color: #7b1fa2;
+}
+
+/* Text purple color for aircraft type icon */
+.text-purple {
+    color: #7b1fa2 !important;
+}
+
+/* No results */
+.no-results {
+    padding: 30px 20px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.no-results i {
+    font-size: 2rem;
+    margin-bottom: 10px;
+    display: block;
+}
+
+/* Popular cards */
+.popular-cards {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 40px;
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.popular-card {
+    flex: 1;
+    min-width: 300px;
+    max-width: 420px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 16px;
+    backdrop-filter: blur(10px);
+    overflow: hidden;
+}
+
+.popular-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.popular-card-header i {
+    font-size: 1.1rem;
+    color: var(--accent-color);
+}
+
+.popular-card-content {
+    padding: 12px;
+}
+
+.popular-card-content .loading-placeholder {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 30px;
+    color: var(--text-secondary);
+}
+
+.popular-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    color: var(--text-primary);
+}
+
+.popular-item:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.popular-item-icon {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    font-size: 0.9rem;
+}
+
+.popular-item-icon.airport {
+    color: #4fc3f7;
+}
+
+.popular-item-icon.aircraft {
+    color: #ffb74d;
+}
+
+.popular-item-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.popular-item-title {
+    font-weight: 500;
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.popular-item-subtitle {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.popular-item-badge {
+    font-size: 0.7rem;
+    padding: 3px 8px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.popular-item-badge i {
+    margin-right: 4px;
+}
+
+/* User section */
+.user-section {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.user-link {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--link-color);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: color 0.2s ease;
+}
+
+.user-link:hover {
+    color: var(--link-hover);
+}
+
+.user-link.admin-link {
+    background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+    color: #ffffff;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-weight: 500;
+}
+
+.user-link.admin-link:hover {
+    background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+    color: #ffffff;
+}
+
+/* Keyboard navigation hint */
+.keyboard-hint {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    padding: 8px 20px;
+    border-top: 1px solid var(--dropdown-border);
+}
+
+.keyboard-hint kbd {
+    background: #e9ecef;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-family: inherit;
+}
+
+/* Responsive styles */
+@media (max-width: 768px) {
+    .home-container {
+        padding: 20px 16px;
+    }
+
+    .logo-icon {
+        font-size: 3rem;
+    }
+
+    .site-title {
+        font-size: 2rem;
+    }
+
+    .site-subtitle {
+        font-size: 1rem;
+    }
+
+    .search-input {
+        padding: 14px 45px 14px 50px;
+        font-size: 1rem;
+    }
+
+    .popular-cards {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .popular-card {
+        width: 100%;
+        max-width: 400px;
+    }
+
+    .user-section {
+        position: static;
+        margin-top: 20px;
+        justify-content: center;
+    }
+
+    .result-item {
+        padding: 10px 16px;
+    }
+
+    .result-item-icon {
+        width: 36px;
+        height: 36px;
+        font-size: 0.9rem;
+    }
+
+    .section-header {
+        padding: 10px 16px 6px;
+    }
+}
+
+@media (max-width: 480px) {
+    .site-title {
+        font-size: 1.75rem;
+    }
+
+    .search-input {
+        padding: 12px 40px 12px 45px;
+        font-size: 0.95rem;
+        border-radius: 24px;
+    }
+
+    .search-icon {
+        left: 16px;
+    }
+
+    .code-badge {
+        font-size: 0.65rem;
+        padding: 1px 6px;
+    }
+
+    .result-item-title {
+        font-size: 0.9rem;
+    }
+
+    .result-item-subtitle {
+        font-size: 0.8rem;
+    }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+    .search-input {
+        border: 2px solid var(--text-dark);
+    }
+
+    .code-badge {
+        border: 1px solid currentColor;
+    }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    .logo-icon i {
+        animation: none;
+    }
+
+    .search-input,
+    .popular-item,
+    .result-item {
+        transition: none;
+    }
+}
+
+/* Scrollbar styling for dropdown */
+.search-dropdown::-webkit-scrollbar {
+    width: 8px;
+}
+
+.search-dropdown::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.search-dropdown::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 4px;
+}
+
+.search-dropdown::-webkit-scrollbar-thumb:hover {
+    background: #999;
+}

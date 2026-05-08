@@ -1,0 +1,8 @@
+# =================================
+# API Configuration
+# =================================
+api:
+  adsb_api_key: "${ADSB_API_KEY}"                                         # ADS-B Exchange API key
+  adsb_api_url: "https://adsbexchange-com1.p.rapidapi.com/v2"             # API base URL
+  update_interval: 300                                                    # Update interval (seconds)
+  timeout: 30                                                             # Request timeout (seconds)

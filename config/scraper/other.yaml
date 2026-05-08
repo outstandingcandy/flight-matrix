@@ -1,0 +1,23 @@
+# =================================
+# Other Scrapers Configuration
+# =================================
+scraper:
+  scrapers:
+    # Planespotters.net Aircraft Data Scraper
+    planespotters:
+      enabled: true
+      screenshots_dir: "data/planespotters_screenshots"
+      max_pages_per_family: 500       # Max pages to scrape per aircraft family
+      skip_existing: true             # Skip registrations already in DB
+      wait_for_login: true            # Wait for manual login when required
+      login_timeout: 300              # Login timeout in seconds (5 minutes)
+      use_existing_browser: true      # Connect to existing Chrome with debug port
+      chrome_debug_port: 9222         # Chrome debugging port
+
+    # Airport-data.com Aircraft Data Scraper
+    airport_data:
+      enabled: true
+      screenshots_dir: "data/airport_data_screenshots"
+      s3_prefix: "data/airport_data_raw"
+      max_pages_per_manufacturer: 500 # Max pages to scrape per manufacturer
+      skip_existing: true             # Skip registrations already in DB

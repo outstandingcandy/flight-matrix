@@ -1,0 +1,169 @@
+<!-- Token Refresh Script - Include this in authenticated pages -->
+{% if auth_config and auth_config.refresh_token %}
+<script>
+(function() {
+    'use strict';
+
+    // Auth configuration from server
+    const authConfig = {
+        domain: "{{ auth_config.domain }}",
+        clientId: "{{ auth_config.client_id }}",
+        clientSecret: "{{ auth_config.client_secret }}",
+        callbackUrl: "{{ auth_config.callback_url }}",
+        tokenExp: {{ auth_config.token_exp or 0 }},
+        refreshToken: "{{ auth_config.refresh_token }}"
+    };
+
+    // Token refresh manager
+    const TokenRefresh = {
+        refreshing: false,
+        checkInterval: null,
+
+        // Check if token is about to expire (within 5 minutes)
+        isTokenExpiring() {
+            if (!authConfig.tokenExp) return false;
+            const now = Math.floor(Date.now() / 1000);
+            const timeLeft = authConfig.tokenExp - now;
+            // Refresh if less than 5 minutes remaining
+            return timeLeft < 300;
+        },
+
+        // Check if token is already expired
+        isTokenExpired() {
+            if (!authConfig.tokenExp) return false;
+            const now = Math.floor(Date.now() / 1000);
+            return authConfig.tokenExp < now;
+        },
+
+        // Refresh tokens using Cognito endpoint
+        async refreshTokens() {
+            if (this.refreshing || !authConfig.refreshToken) {
+                return false;
+            }
+
+            this.refreshing = true;
+            console.log('[TokenRefresh] Starting token refresh...');
+
+            try {
+                const tokenEndpoint = `https://${authConfig.domain}/oauth2/token`;
+
+                const body = new URLSearchParams({
+                    grant_type: 'refresh_token',
+                    client_id: authConfig.clientId,
+                    refresh_token: authConfig.refreshToken
+                });
+
+                const headers = {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                };
+
+                // Add client secret if available (Basic auth)
+                if (authConfig.clientSecret) {
+                    const credentials = btoa(`${authConfig.clientId}:${authConfig.clientSecret}`);
+                    headers['Authorization'] = `Basic ${credentials}`;
+                }
+
+                const tokenResponse = await fetch(tokenEndpoint, {
+                    method: 'POST',
+                    headers: headers,
+                    body: body
+                });
+
+                if (!tokenResponse.ok) {
+                    const errorText = await tokenResponse.text();
+                    console.error('[TokenRefresh] Failed:', errorText);
+                    this.refreshing = false;
+                    return false;
+                }
+
+                const tokens = await tokenResponse.json();
+                console.log('[TokenRefresh] Got new tokens, updating session...');
+
+                // Send new tokens to backend to update session
+                const sessionResponse = await fetch('/auth/set-session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        id_token: tokens.id_token,
+                        access_token: tokens.access_token,
+                        refresh_token: tokens.refresh_token || authConfig.refreshToken
+                    }),
+                    credentials: 'same-origin'
+                });
+
+                if (sessionResponse.ok) {
+                    console.log('[TokenRefresh] Session updated successfully');
+
+                    // Update local token expiration
+                    try {
+                        const payload = JSON.parse(atob(tokens.id_token.split('.')[1]));
+                        authConfig.tokenExp = payload.exp;
+                    } catch (e) {
+                        console.error('[TokenRefresh] Failed to parse new token exp:', e);
+                    }
+
+                    // Update refresh token if a new one was returned
+                    if (tokens.refresh_token) {
+                        authConfig.refreshToken = tokens.refresh_token;
+                    }
+
+                    this.refreshing = false;
+                    return true;
+                } else {
+                    console.error('[TokenRefresh] Failed to update session');
+                    this.refreshing = false;
+                    return false;
+                }
+
+            } catch (err) {
+                console.error('[TokenRefresh] Error:', err);
+                this.refreshing = false;
+                return false;
+            }
+        },
+
+        // Periodic check for token expiration
+        startPeriodicCheck() {
+            // Check every minute
+            this.checkInterval = setInterval(() => {
+                if (this.isTokenExpiring()) {
+                    console.log('[TokenRefresh] Token expiring soon, refreshing...');
+                    this.refreshTokens();
+                }
+            }, 60000);
+
+            // Also check immediately on page load
+            if (this.isTokenExpiring()) {
+                console.log('[TokenRefresh] Token expiring soon on load, refreshing...');
+                this.refreshTokens();
+            }
+        },
+
+        // Initialize
+        init() {
+            if (!authConfig.refreshToken || !authConfig.domain) {
+                console.log('[TokenRefresh] Not initialized - missing config');
+                return;
+            }
+
+            console.log('[TokenRefresh] Initialized, token exp:',
+                authConfig.tokenExp ? new Date(authConfig.tokenExp * 1000).toLocaleString() : 'unknown');
+
+            this.startPeriodicCheck();
+        }
+    };
+
+    // Initialize when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => TokenRefresh.init());
+    } else {
+        TokenRefresh.init();
+    }
+
+    // Expose for debugging
+    window.TokenRefresh = TokenRefresh;
+})();
+</script>
+{% endif %}

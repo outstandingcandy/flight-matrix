@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户仪表盘 - 飞机追踪系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { border: none; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .card-header { background-color: #0d6efd; color: white; }
+        .stats-card { border-left: 4px solid #0d6efd; }
+        .usage-bar { height: 8px; border-radius: 4px; }
+        .tier-basic { background-color: #95a5a6; }
+        .tier-premium { background-color: #9b59b6; }
+        .tier-enterprise { background-color: #f1c40f; color: #2c3e50; }
+        .feature-enabled { color: #27ae60; }
+        .feature-disabled { color: #e74c3c; }
+        .progress-bar-success { background-color: #27ae60; }
+        .progress-bar-warning { background-color: #f39c12; }
+        .progress-bar-danger { background-color: #e74c3c; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><i class="fas fa-plane"></i> 飞机追踪系统</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/admin/track">轨迹查询</a>
+                <a class="nav-link" href="/flight-schedules">航班计划</a>
+                <a class="nav-link" href="/admin/reports"><i class="fas fa-file-alt"></i> 报告</a>
+                <a class="nav-link" href="/admin/users"><i class="fas fa-users"></i> 用户</a>
+                <a class="nav-link" href="/admin/scraper-status"><i class="fas fa-robot"></i> 抓取</a>
+            </div>
+            <div class="navbar-nav ms-auto">
+                {% if current_user %}
+                    <span class="navbar-text me-3">
+                        <i class="fas fa-user"></i> {{ current_user.email }}
+                    </span>
+                    <a class="nav-link" href="/logout">
+                        <i class="fas fa-sign-out-alt"></i> 退出
+                    </a>
+                {% else %}
+                    <a class="nav-link" href="/login">
+                        <i class="fas fa-sign-in-alt"></i> 登录
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- User Header -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h3 class="mb-1">
+                            <i class="fas fa-user-circle"></i>
+                            <span id="userName">Loading...</span>
+                        </h3>
+                        <p class="text-muted mb-0" id="userEmail">-</p>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <span class="badge fs-6" id="tierBadge">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Row -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card stats-card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted mb-2">Daily Usage</h6>
+                        <div class="d-flex justify-content-between align-items-end mb-2">
+                            <h3 class="mb-0" id="dailyReports">-</h3>
+                            <span class="text-muted" id="dailyLimit">/ -</span>
+                        </div>
+                        <div class="progress usage-bar">
+                            <div class="progress-bar" id="dailyProgressBar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card stats-card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted mb-2">Monthly Usage</h6>
+                        <div class="d-flex justify-content-between align-items-end mb-2">
+                            <h3 class="mb-0" id="monthlyReports">-</h3>
+                            <span class="text-muted" id="monthlyLimit">/ -</span>
+                        </div>
+                        <div class="progress usage-bar">
+                            <div class="progress-bar" id="monthlyProgressBar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card stats-card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted mb-2">Active Filters</h6>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h3 class="mb-0" id="activeFilters">-</h3>
+                            <a href="" class="btn btn-outline-primary btn-sm" id="manageFiltersBtn">
+                                <i class="fas fa-filter"></i> Manage
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Subscription & Features -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-tasks"></i> Subscription Details</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-borderless mb-0">
+                            <tr>
+                                <td class="text-muted">Tier</td>
+                                <td class="text-end"><span id="subTier">-</span></td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Status</td>
+                                <td class="text-end"><span id="subStatus">-</span></td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Start Date</td>
+                                <td class="text-end" id="subStartDate">-</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Expires</td>
+                                <td class="text-end" id="subExpiresAt">-</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Cooldown</td>
+                                <td class="text-end" id="subCooldown">-</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-toggle-on"></i> Features</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <div class="d-flex align-items-center">
+                                    <i class="fas fa-map-marker-alt me-2" id="featureMapIcon"></i>
+                                    <span>Maps</span>
+                                </div>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <div class="d-flex align-items-center">
+                                    <i class="fas fa-image me-2" id="featureImageIcon"></i>
+                                    <span>Aircraft Images</span>
+                                </div>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <div class="d-flex align-items-center">
+                                    <i class="fas fa-robot me-2" id="featureAnalysisIcon"></i>
+                                    <span>Deep Analysis</span>
+                                </div>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <div class="d-flex align-items-center">
+                                    <i class="fas fa-filter me-2" id="featureFilterIcon"></i>
+                                    <span id="maxFiltersText">Max Filters: -</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Report Settings -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-cog"></i> Report Settings</h5>
+                <button class="btn btn-light btn-sm" id="editSettingsBtn">
+                    <i class="fas fa-pencil"></i> Edit
+                </button>
+            </div>
+            <div class="card-body">
+                <!-- View Mode -->
+                <div id="settingsViewMode">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="text-muted small">Cooldown Hours</label>
+                                <p class="mb-0 fw-bold" id="viewCooldownHours">-</p>
+                                <small class="text-muted" id="viewCooldownDefault"></small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="text-muted small">Daily Report Limit</label>
+                                <p class="mb-0 fw-bold" id="viewDailyLimit">-</p>
+                                <small class="text-muted" id="viewDailyDefault"></small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="text-muted small">Monthly Report Limit</label>
+                                <p class="mb-0 fw-bold" id="viewMonthlyLimit">-</p>
+                                <small class="text-muted" id="viewMonthlyDefault"></small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="viewEnableMaps" disabled>
+                                <label class="form-check-label">
+                                    <i class="fas fa-map"></i> Maps
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="viewEnableAircraftImages" disabled>
+                                <label class="form-check-label">
+                                    <i class="fas fa-image"></i> Aircraft Images
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Edit Mode (hidden by default) -->
+                <div id="settingsEditMode" style="display: none;">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="editCooldownHours" class="form-label">
+                                    Cooldown Hours
+                                    <small class="text-muted" id="editCooldownDefault"></small>
+                                </label>
+                                <input type="number" class="form-control" id="editCooldownHours" step="0.5" min="0" placeholder="Use tier default">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="editDailyLimit" class="form-label">
+                                    Daily Report Limit
+                                    <small class="text-muted" id="editDailyDefault"></small>
+                                </label>
+                                <input type="number" class="form-control" id="editDailyLimit" min="-1" placeholder="Use tier default (-1 = unlimited)">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="editMonthlyLimit" class="form-label">
+                                    Monthly Report Limit
+                                    <small class="text-muted" id="editMonthlyDefault"></small>
+                                </label>
+                                <input type="number" class="form-control" id="editMonthlyLimit" min="-1" placeholder="Use tier default (-1 = unlimited)">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="editEnableMaps">
+                                <label class="form-check-label" for="editEnableMaps">
+                                    <i class="fas fa-map"></i> Enable Maps
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="editEnableAircraftImages">
+                                <label class="form-check-label" for="editEnableAircraftImages">
+                                    <i class="fas fa-image"></i> Enable Aircraft Images
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-primary" id="saveSettingsBtn">
+                            <i class="fas fa-save"></i> Save
+                        </button>
+                        <button class="btn btn-secondary" id="cancelSettingsBtn">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-history"></i> Recent Cooldowns</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Aircraft</th>
+                                <th>Last Report</th>
+                                <th>Hours Ago</th>
+                                <th>Report Count</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cooldownsTableBody">
+                            <tr>
+                                <td colspan="4" class="text-center py-4">
+                                    <div class="spinner-border text-primary spinner-border-sm" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Get email from URL
+        const pathParts = window.location.pathname.split('/');
+        const userEmail = decodeURIComponent(pathParts[2]);
+
+        // Store user data globally
+        let currentUserData = null;
+        let currentFeatures = null;
+
+        // Default configuration
+        const defaultConfig = {
+            cooldown_hours: 12.0,
+            daily_limit: -1,
+            monthly_limit: -1,
+            max_filters: -1
+        };
+
+        document.getElementById('navUserEmail').textContent = userEmail;
+        document.getElementById('userEmail').textContent = userEmail;
+        document.getElementById('manageFiltersBtn').href = `/user/${encodeURIComponent(userEmail)}/filters`;
+
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUserData();
+            loadUsageStats();
+            loadCooldowns();
+
+            // Settings edit/save/cancel buttons
+            document.getElementById('editSettingsBtn').addEventListener('click', enterEditMode);
+            document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
+            document.getElementById('cancelSettingsBtn').addEventListener('click', exitEditMode);
+        });
+
+        async function loadUserData() {
+            try {
+                const response = await fetch(`/api/user/${encodeURIComponent(userEmail)}/profile`);
+                const data = await response.json();
+
+                if (data.success) {
+                    const user = data.user;
+                    currentUserData = user;
+                    document.getElementById('userName').textContent = user.name || user.email;
+
+                    // Subscription info
+                    const sub = user.active_subscription;
+                    if (sub) {
+                        const tierBadge = document.getElementById('tierBadge');
+                        tierBadge.textContent = sub.tier.toUpperCase();
+                        tierBadge.className = `badge fs-6 tier-${sub.tier}`;
+
+                        document.getElementById('subTier').textContent = sub.tier;
+                        document.getElementById('subStatus').innerHTML = sub.is_active
+                            ? '<span class="badge bg-success">Active</span>'
+                            : '<span class="badge bg-danger">Inactive</span>';
+                        document.getElementById('subStartDate').textContent = formatDate(sub.starts_at);
+                        document.getElementById('subExpiresAt').textContent = sub.expires_at
+                            ? formatDate(sub.expires_at)
+                            : 'Never';
+
+                        // Features
+                        updateFeatureIcon('featureMapIcon', sub.enable_maps);
+                        updateFeatureIcon('featureImageIcon', sub.enable_aircraft_images);
+                    }
+
+                    // Features from tier config
+                    const features = data.features;
+                    currentFeatures = features;
+                    if (features) {
+                        document.getElementById('subCooldown').textContent = `${features.cooldown_hours}h`;
+                        document.getElementById('maxFiltersText').textContent =
+                            `Max Filters: ${features.max_filters === -1 ? 'Unlimited' : features.max_filters}`;
+                        updateFeatureIcon('featureFilterIcon', features.max_filters !== 0);
+
+                        // Update Report Settings view
+                        updateSettingsView(sub, features);
+                    }
+
+                    // Active filters count
+                    document.getElementById('activeFilters').textContent = data.active_filters_count || 0;
+                } else {
+                    console.error('Failed to load user data:', data.error);
+                }
+            } catch (error) {
+                console.error('Error loading user data:', error);
+            }
+        }
+
+        function updateSettingsView(sub, features) {
+            // Display current values (all settings are user-specific)
+            document.getElementById('viewCooldownHours').textContent = `${features.cooldown_hours}h`;
+            document.getElementById('viewDailyLimit').textContent = features.daily_report_limit === -1 ? 'Unlimited' : features.daily_report_limit;
+            document.getElementById('viewMonthlyLimit').textContent = features.monthly_report_limit === -1 ? 'Unlimited' : features.monthly_report_limit;
+
+            // Hide default text since all settings are now directly configurable
+            document.getElementById('viewCooldownDefault').textContent = '';
+            document.getElementById('viewDailyDefault').textContent = '';
+            document.getElementById('viewMonthlyDefault').textContent = '';
+
+            // Feature checkboxes
+            document.getElementById('viewEnableMaps').checked = sub ? sub.enable_maps !== false : true;
+            document.getElementById('viewEnableAircraftImages').checked = sub ? sub.enable_aircraft_images !== false : true;
+
+            // Update edit form placeholders
+            document.getElementById('editCooldownDefault').textContent = `(Default: ${defaultConfig.cooldown_hours}h)`;
+            document.getElementById('editDailyDefault').textContent = `(Default: ${defaultConfig.daily_limit === -1 ? 'Unlimited' : defaultConfig.daily_limit})`;
+            document.getElementById('editMonthlyDefault').textContent = `(Default: ${defaultConfig.monthly_limit === -1 ? 'Unlimited' : defaultConfig.monthly_limit})`;
+        }
+
+        function enterEditMode() {
+            const sub = currentUserData?.active_subscription;
+            const features = currentFeatures;
+
+            if (sub) {
+                // Populate edit form with current values
+                document.getElementById('editCooldownHours').value = sub.cooldown_hours ?? defaultConfig.cooldown_hours;
+                document.getElementById('editDailyLimit').value = sub.daily_report_limit ?? defaultConfig.daily_limit;
+                document.getElementById('editMonthlyLimit').value = sub.monthly_report_limit ?? defaultConfig.monthly_limit;
+                document.getElementById('editEnableMaps').checked = sub.enable_maps !== false;
+                document.getElementById('editEnableAircraftImages').checked = sub.enable_aircraft_images !== false;
+            }
+
+            document.getElementById('settingsViewMode').style.display = 'none';
+            document.getElementById('settingsEditMode').style.display = 'block';
+            document.getElementById('editSettingsBtn').style.display = 'none';
+        }
+
+        function exitEditMode() {
+            document.getElementById('settingsViewMode').style.display = 'block';
+            document.getElementById('settingsEditMode').style.display = 'none';
+            document.getElementById('editSettingsBtn').style.display = 'inline-block';
+        }
+
+        async function saveSettings() {
+            const cooldownHours = document.getElementById('editCooldownHours').value;
+            const dailyLimit = document.getElementById('editDailyLimit').value;
+            const monthlyLimit = document.getElementById('editMonthlyLimit').value;
+            const enableMaps = document.getElementById('editEnableMaps').checked;
+            const enableAircraftImages = document.getElementById('editEnableAircraftImages').checked;
+
+            try {
+                const response = await fetch(`/api/user/${encodeURIComponent(userEmail)}/settings`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cooldown_hours: cooldownHours === '' ? defaultConfig.cooldown_hours : parseFloat(cooldownHours),
+                        daily_report_limit: dailyLimit === '' ? defaultConfig.daily_limit : parseInt(dailyLimit),
+                        monthly_report_limit: monthlyLimit === '' ? defaultConfig.monthly_limit : parseInt(monthlyLimit),
+                        enable_maps: enableMaps,
+                        enable_aircraft_images: enableAircraftImages
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    alert('Settings saved successfully!');
+                    exitEditMode();
+                    loadUserData(); // Reload to show updated values
+                } else {
+                    alert('Failed to save settings: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error saving settings:', error);
+                alert('Failed to save settings');
+            }
+        }
+
+        async function loadUsageStats() {
+            try {
+                const response = await fetch(`/api/user/${encodeURIComponent(userEmail)}/usage`);
+                const data = await response.json();
+
+                if (data.success) {
+                    const stats = data.usage;
+
+                    // Daily
+                    document.getElementById('dailyReports').textContent = stats.daily.reports_sent;
+                    document.getElementById('dailyLimit').textContent =
+                        stats.daily.unlimited ? '/ Unlimited' : `/ ${stats.daily.limit}`;
+                    updateProgressBar('dailyProgressBar', stats.daily.reports_sent, stats.daily.limit, stats.daily.unlimited);
+
+                    // Monthly
+                    document.getElementById('monthlyReports').textContent = stats.monthly.reports_sent;
+                    document.getElementById('monthlyLimit').textContent =
+                        stats.monthly.unlimited ? '/ Unlimited' : `/ ${stats.monthly.limit}`;
+                    updateProgressBar('monthlyProgressBar', stats.monthly.reports_sent, stats.monthly.limit, stats.monthly.unlimited);
+                }
+            } catch (error) {
+                console.error('Error loading usage stats:', error);
+            }
+        }
+
+        async function loadCooldowns() {
+            try {
+                const response = await fetch(`/api/user/${encodeURIComponent(userEmail)}/cooldowns`);
+                const data = await response.json();
+
+                const tbody = document.getElementById('cooldownsTableBody');
+
+                if (data.success && data.cooldowns && data.cooldowns.length > 0) {
+                    tbody.innerHTML = data.cooldowns.map(cd => `
+                        <tr>
+                            <td><code>${cd.aircraft_hex}</code></td>
+                            <td>${formatDateTime(cd.last_report_time)}</td>
+                            <td>${cd.hours_since_last_report.toFixed(1)}h</td>
+                            <td>${cd.report_count}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="4" class="text-center py-4 text-muted">
+                                No recent reports
+                            </td>
+                        </tr>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading cooldowns:', error);
+                document.getElementById('cooldownsTableBody').innerHTML = `
+                    <tr>
+                        <td colspan="4" class="text-center py-4 text-danger">
+                            Failed to load cooldowns
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        function updateFeatureIcon(elementId, enabled) {
+            const icon = document.getElementById(elementId);
+            if (enabled) {
+                icon.classList.add('feature-enabled');
+                icon.classList.remove('feature-disabled');
+            } else {
+                icon.classList.add('feature-disabled');
+                icon.classList.remove('feature-enabled');
+            }
+        }
+
+        function updateProgressBar(elementId, value, limit, unlimited) {
+            const bar = document.getElementById(elementId);
+            if (unlimited) {
+                bar.style.width = '10%';
+                bar.className = 'progress-bar progress-bar-success';
+            } else {
+                const percent = Math.min((value / limit) * 100, 100);
+                bar.style.width = `${percent}%`;
+
+                if (percent >= 90) {
+                    bar.className = 'progress-bar progress-bar-danger';
+                } else if (percent >= 70) {
+                    bar.className = 'progress-bar progress-bar-warning';
+                } else {
+                    bar.className = 'progress-bar progress-bar-success';
+                }
+            }
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+            });
+        }
+
+        function formatDateTime(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleString('zh-CN', {
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+    </script>
+
+    <!-- Token Refresh -->
+    {% include '_token_refresh.html' %}
+</body>
+</html>

@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>抓取数据查询 - FlightMatrix Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-dark: #1a1a2e;
+            --bg-dark-secondary: #16213e;
+            --card-bg: rgba(255, 255, 255, 0.95);
+            --text-light: #ffffff;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-secondary) 100%);
+            min-height: 100vh;
+        }
+
+        .navbar {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
+        }
+
+        .page-header {
+            color: var(--text-light);
+            padding: 20px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            font-weight: 600;
+            border-radius: 0.5rem 0.5rem 0 0 !important;
+        }
+
+        .nav-tabs .nav-link {
+            color: rgba(255,255,255,0.7);
+            border: none;
+            padding: 1rem 1.5rem;
+        }
+
+        .nav-tabs .nav-link:hover {
+            color: rgba(255,255,255,0.9);
+            border: none;
+        }
+
+        .nav-tabs .nav-link.active {
+            background: rgba(255,255,255,0.1);
+            color: #ffffff;
+            border: none;
+            border-bottom: 3px solid #0d6efd;
+        }
+
+        .tab-icon {
+            margin-right: 0.5rem;
+        }
+
+        .tab-icon.xiaohongshu { color: #ff2442; }
+        .tab-icon.fr24 { color: #f5a623; }
+        .tab-icon.jetphotos { color: #3498db; }
+
+        .stats-row {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .stat-card {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 0.5rem;
+            padding: 1rem 1.5rem;
+            color: var(--text-light);
+            flex: 1;
+            min-width: 150px;
+        }
+
+        .stat-card .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .stat-card .stat-label {
+            font-size: 0.85rem;
+            opacity: 0.8;
+        }
+
+        .table-container {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .table th {
+            position: sticky;
+            top: 0;
+            background: #f8f9fa;
+            z-index: 10;
+        }
+
+        .table td {
+            vertical-align: middle;
+            font-size: 0.9rem;
+        }
+
+        .text-truncate-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            max-width: 300px;
+        }
+
+        .image-thumb {
+            width: 60px;
+            height: 45px;
+            object-fit: cover;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .filter-bar {
+            background: rgba(255,255,255,0.05);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .filter-bar .form-control,
+        .filter-bar .form-select {
+            background: rgba(255,255,255,0.9);
+        }
+
+        .badge-source {
+            font-size: 0.7rem;
+        }
+
+        .json-preview {
+            max-height: 200px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            padding: 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-family: monospace;
+        }
+
+        .back-link {
+            color: rgba(255,255,255,0.8);
+            text-decoration: none;
+        }
+
+        .back-link:hover {
+            color: #ffffff;
+        }
+
+        .loading-spinner {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 3rem;
+            color: #6c757d;
+        }
+
+        .xhs-detail-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 8px;
+            margin-bottom: 1rem;
+        }
+
+        .xhs-detail-gallery img {
+            width: 100%;
+            aspect-ratio: 1;
+            object-fit: cover;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .xhs-detail-gallery img:hover {
+            transform: scale(1.03);
+        }
+
+        .xhs-detail-content {
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 400px;
+            overflow-y: auto;
+            line-height: 1.8;
+            font-size: 0.95rem;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        .xhs-detail-stats {
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            padding: 0.75rem 0;
+            margin-bottom: 1rem;
+            border-top: 1px solid #eee;
+            border-bottom: 1px solid #eee;
+        }
+
+        .xhs-detail-stats .stat-item {
+            font-size: 0.9rem;
+            color: #555;
+        }
+
+        .xhs-detail-stats .stat-item i {
+            margin-right: 4px;
+        }
+
+        .xhs-comment-item {
+            border-left: 3px solid #dee2e6;
+            padding: 0.5rem 0.75rem;
+            margin-bottom: 0.5rem;
+            font-size: 0.85rem;
+        }
+
+        .xhs-reply-item {
+            margin-left: 1.5rem;
+            border-left: 2px solid #e9ecef;
+            padding: 0.4rem 0.6rem;
+            margin-top: 0.3rem;
+            font-size: 0.8rem;
+            color: #666;
+        }
+
+        .xhs-detail-meta {
+            font-size: 0.8rem;
+            color: #999;
+            margin-top: 1rem;
+        }
+
+        #imageModal ~ .modal-backdrop,
+        .modal-backdrop ~ .modal-backdrop {
+            z-index: 1065;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand navbar-dark mb-0">
+        <div class="container-fluid px-3">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-plane"></i> FlightMatrix
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/admin"><i class="fas fa-cog"></i> Admin</a>
+                {% if current_user %}
+                <span class="navbar-text me-3">
+                    <i class="fas fa-user"></i> {{ current_user.email }}
+                </span>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs px-3" id="dataTabs" role="tablist">
+        <li class="nav-item">
+            <button class="nav-link active" id="xiaohongshu-tab" data-bs-toggle="tab" data-bs-target="#xiaohongshu" type="button">
+                <i class="fab fa-redhat tab-icon xiaohongshu"></i>小红书
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" id="fr24-tab" data-bs-toggle="tab" data-bs-target="#fr24" type="button">
+                <i class="fas fa-plane tab-icon fr24"></i>FR24 航班
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" id="jetphotos-tab" data-bs-toggle="tab" data-bs-target="#jetphotos" type="button">
+                <i class="fas fa-camera tab-icon jetphotos"></i>JetPhotos
+            </button>
+        </li>
+    </ul>
+
+    <div class="container-fluid p-3">
+        <div class="tab-content" id="dataTabContent">
+            <!-- Xiaohongshu Tab -->
+            <div class="tab-pane fade show active" id="xiaohongshu" role="tabpanel">
+                <div class="stats-row" id="xhsStats">
+                    <div class="stat-card">
+                        <div class="stat-value" id="xhsNotesCount">-</div>
+                        <div class="stat-label">笔记数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="xhsAuthorsCount">-</div>
+                        <div class="stat-label">作者数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="xhsImagesCount">-</div>
+                        <div class="stat-label">图片数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="xhsLatestScrape">-</div>
+                        <div class="stat-label">最近抓取</div>
+                    </div>
+                </div>
+
+                <div class="filter-bar">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-auto">
+                            <input type="text" class="form-control form-control-sm" id="xhsSearchAuthor" placeholder="搜索作者...">
+                        </div>
+                        <div class="col-auto">
+                            <input type="text" class="form-control form-control-sm" id="xhsSearchTitle" placeholder="搜索标题...">
+                        </div>
+                        <div class="col-auto">
+                            <select class="form-select form-select-sm" id="xhsLimit">
+                                <option value="20">20条</option>
+                                <option value="50" selected>50条</option>
+                                <option value="100">100条</option>
+                            </select>
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-primary btn-sm" onclick="loadXiaohongshuData()">
+                                <i class="fas fa-search"></i> 查询
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-body p-0">
+                        <div class="table-container">
+                            <table class="table table-hover table-sm mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>笔记ID</th>
+                                        <th>标题</th>
+                                        <th>作者</th>
+                                        <th>图片</th>
+                                        <th>互动</th>
+                                        <th>抓取时间</th>
+                                        <th>更新时间</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="xhsTableBody">
+                                    <tr><td colspan="8" class="text-center text-muted py-4">点击查询加载数据</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div id="xhsPagination" class="d-flex justify-content-between align-items-center mt-2 px-2" style="display:none!important">
+                    <small class="text-muted" id="xhsTotal"></small>
+                    <div>
+                        <button class="btn btn-sm btn-outline-secondary" id="xhsPrevBtn" onclick="xhsPageChange(-1)" disabled>
+                            <i class="fas fa-chevron-left"></i> 上一页
+                        </button>
+                        <span class="mx-2 small" id="xhsPageInfo"></span>
+                        <button class="btn btn-sm btn-outline-secondary" id="xhsNextBtn" onclick="xhsPageChange(1)" disabled>
+                            下一页 <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FR24 Tab -->
+            <div class="tab-pane fade" id="fr24" role="tabpanel">
+                <div class="stats-row" id="fr24Stats">
+                    <div class="stat-card">
+                        <div class="stat-value" id="fr24FlightsCount">-</div>
+                        <div class="stat-label">航班记录数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="fr24AirportsCount">-</div>
+                        <div class="stat-label">机场数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="fr24TodayCount">-</div>
+                        <div class="stat-label">今日航班</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="fr24LatestScrape">-</div>
+                        <div class="stat-label">最近抓取</div>
+                    </div>
+                </div>
+
+                <div class="filter-bar">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-auto">
+                            <input type="text" class="form-control form-control-sm" id="fr24SearchAirport" placeholder="机场代码 (如 PEK)">
+                        </div>
+                        <div class="col-auto">
+                            <input type="text" class="form-control form-control-sm" id="fr24SearchReg" placeholder="注册号...">
+                        </div>
+                        <div class="col-auto">
+                            <select class="form-select form-select-sm" id="fr24FlightType">
+                                <option value="">全部类型</option>
+                                <option value="arrival">进港</option>
+                                <option value="departure">离港</option>
+                            </select>
+                        </div>
+                        <div class="col-auto">
+                            <select class="form-select form-select-sm" id="fr24Limit">
+                                <option value="20">20条</option>
+                                <option value="50" selected>50条</option>
+                                <option value="100">100条</option>
+                            </select>
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-primary btn-sm" onclick="loadFR24Data()">
+                                <i class="fas fa-search"></i> 查询
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-body p-0">
+                        <div class="table-container">
+                            <table class="table table-hover table-sm mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>FR24 ID</th>
+                                        <th>类型</th>
+                                        <th>机场</th>
+                                        <th>航班号</th>
+                                        <th>注册号</th>
+                                        <th>机型</th>
+                                        <th>航线</th>
+                                        <th>计划时间</th>
+                                        <th>状态</th>
+                                        <th>抓取时间</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="fr24TableBody">
+                                    <tr><td colspan="10" class="text-center text-muted py-4">点击查询加载数据</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- JetPhotos Tab -->
+            <div class="tab-pane fade" id="jetphotos" role="tabpanel">
+                <div class="stats-row" id="jpStats">
+                    <div class="stat-card">
+                        <div class="stat-value" id="jpImagesCount">-</div>
+                        <div class="stat-label">图片总数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="jpAircraftCount">-</div>
+                        <div class="stat-label">飞机数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="jpPhotographersCount">-</div>
+                        <div class="stat-label">摄影师数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="jpLatestScrape">-</div>
+                        <div class="stat-label">最近抓取</div>
+                    </div>
+                </div>
+
+                <div class="filter-bar">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-auto">
+                            <input type="text" class="form-control form-control-sm" id="jpSearchReg" placeholder="注册号...">
+                        </div>
+                        <div class="col-auto">
+                            <input type="text" class="form-control form-control-sm" id="jpSearchPhotographer" placeholder="摄影师...">
+                        </div>
+                        <div class="col-auto">
+                            <input type="text" class="form-control form-control-sm" id="jpSearchAirport" placeholder="机场代码...">
+                        </div>
+                        <div class="col-auto">
+                            <select class="form-select form-select-sm" id="jpLimit">
+                                <option value="20">20条</option>
+                                <option value="50" selected>50条</option>
+                                <option value="100">100条</option>
+                            </select>
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-primary btn-sm" onclick="loadJetPhotosData()">
+                                <i class="fas fa-search"></i> 查询
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-body p-0">
+                        <div class="table-container">
+                            <table class="table table-hover table-sm mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>图片</th>
+                                        <th>JetPhotos ID</th>
+                                        <th>注册号</th>
+                                        <th>摄影师</th>
+                                        <th>拍摄地点</th>
+                                        <th>拍摄日期</th>
+                                        <th>尺寸</th>
+                                        <th>抓取时间</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="jpTableBody">
+                                    <tr><td colspan="9" class="text-center text-muted py-4">点击查询加载数据</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detail Modal -->
+    <div class="modal fade" id="detailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="detailModalTitle">详情</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <pre class="json-preview" id="detailModalContent"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Modal (z-index above note detail modal) -->
+    <div class="modal fade" id="imageModal" tabindex="-1" style="z-index: 1070;">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content bg-dark">
+                <div class="modal-body p-0 text-center" style="cursor: pointer;" onclick="bootstrap.Modal.getInstance(document.getElementById('imageModal')).hide()">
+                    <img id="imageModalImg" src="" class="img-fluid" style="max-height: 90vh;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- XHS Note Detail Modal -->
+    <div class="modal fade" id="xhsNoteDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="xhsNoteDetailTitle">笔记详情</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="xhsNoteDetailBody">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadAllStats();
+        });
+
+        // Load all stats
+        async function loadAllStats() {
+            loadXiaohongshuStats();
+            loadFR24Stats();
+            loadJetPhotosStats();
+        }
+
+        // ========== Xiaohongshu ==========
+        async function loadXiaohongshuStats() {
+            try {
+                const response = await fetch('/api/admin/scraped-data/xiaohongshu/stats');
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('xhsNotesCount').textContent = data.notes_count?.toLocaleString() || '0';
+                    document.getElementById('xhsAuthorsCount').textContent = data.authors_count?.toLocaleString() || '0';
+                    document.getElementById('xhsImagesCount').textContent = data.images_count?.toLocaleString() || '0';
+                    document.getElementById('xhsLatestScrape').textContent = data.latest_scrape || '-';
+                }
+            } catch (e) {
+                console.error('Failed to load XHS stats:', e);
+            }
+        }
+
+        let xhsCurrentOffset = 0;
+        let xhsCurrentTotal = 0;
+
+        async function loadXiaohongshuData(offset) {
+            const author = document.getElementById('xhsSearchAuthor').value;
+            const title = document.getElementById('xhsSearchTitle').value;
+            const limit = parseInt(document.getElementById('xhsLimit').value);
+            if (offset === undefined) offset = 0;
+            xhsCurrentOffset = offset;
+
+            const tbody = document.getElementById('xhsTableBody');
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div> 加载中...</td></tr>';
+
+            try {
+                const params = new URLSearchParams({ limit, offset });
+                if (author) params.append('author', author);
+                if (title) params.append('title', title);
+
+                const response = await fetch(`/api/admin/scraped-data/xiaohongshu/notes?${params}`);
+                const data = await response.json();
+
+                xhsCurrentTotal = data.total || 0;
+                const pagination = document.getElementById('xhsPagination');
+
+                if (data.success && data.notes.length > 0) {
+                    tbody.innerHTML = data.notes.map(note => `
+                        <tr>
+                            <td><code class="small">${note.note_id || '-'}</code></td>
+                            <td class="text-truncate-2">${escapeHtml(note.title || '-')}</td>
+                            <td>${escapeHtml(note.author_name || '-')}</td>
+                            <td>${note.image_count || 0}</td>
+                            <td>
+                                <small>
+                                    <i class="fas fa-heart text-danger"></i> ${note.like_count || 0}
+                                    <i class="fas fa-bookmark text-warning ms-2"></i> ${note.collect_count || 0}
+                                    <i class="fas fa-comment text-info ms-2"></i> ${note.comment_count || 0}
+                                </small>
+                            </td>
+                            <td><small>${formatDate(note.scraped_at)}</small></td>
+                            <td><small>${formatDate(note.updated_at)}</small></td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary" onclick="showXhsNoteDetail('${note.note_id}')">
+                                    <i class="fas fa-eye"></i> 查看
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('');
+
+                    const page = Math.floor(offset / limit) + 1;
+                    const totalPages = Math.ceil(xhsCurrentTotal / limit);
+                    document.getElementById('xhsTotal').textContent = `共 ${xhsCurrentTotal} 条`;
+                    document.getElementById('xhsPageInfo').textContent = `${page} / ${totalPages}`;
+                    document.getElementById('xhsPrevBtn').disabled = offset <= 0;
+                    document.getElementById('xhsNextBtn').disabled = offset + limit >= xhsCurrentTotal;
+                    pagination.style.cssText = '';
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">无数据</td></tr>';
+                    pagination.style.cssText = 'display:none!important';
+                }
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">加载失败: ${e.message}</td></tr>`;
+            }
+        }
+
+        function xhsPageChange(direction) {
+            const limit = parseInt(document.getElementById('xhsLimit').value);
+            const newOffset = xhsCurrentOffset + direction * limit;
+            if (newOffset >= 0 && newOffset < xhsCurrentTotal) {
+                loadXiaohongshuData(newOffset);
+            }
+        }
+
+        // ========== FR24 ==========
+        async function loadFR24Stats() {
+            try {
+                const response = await fetch('/api/admin/scraped-data/fr24/stats');
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('fr24FlightsCount').textContent = data.flights_count?.toLocaleString() || '0';
+                    document.getElementById('fr24AirportsCount').textContent = data.airports_count?.toLocaleString() || '0';
+                    document.getElementById('fr24TodayCount').textContent = data.today_count?.toLocaleString() || '0';
+                    document.getElementById('fr24LatestScrape').textContent = data.latest_scrape || '-';
+                }
+            } catch (e) {
+                console.error('Failed to load FR24 stats:', e);
+            }
+        }
+
+        async function loadFR24Data() {
+            const airport = document.getElementById('fr24SearchAirport').value;
+            const reg = document.getElementById('fr24SearchReg').value;
+            const flightType = document.getElementById('fr24FlightType').value;
+            const limit = document.getElementById('fr24Limit').value;
+
+            const tbody = document.getElementById('fr24TableBody');
+            tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div> 加载中...</td></tr>';
+
+            try {
+                const params = new URLSearchParams({ limit });
+                if (airport) params.append('airport', airport);
+                if (reg) params.append('registration', reg);
+                if (flightType) params.append('flight_type', flightType);
+
+                const response = await fetch(`/api/admin/scraped-data/fr24/flights?${params}`);
+                const data = await response.json();
+
+                if (data.success && data.flights.length > 0) {
+                    tbody.innerHTML = data.flights.map(f => `
+                        <tr>
+                            <td><code class="small">${f.fr24_flight_id || '-'}</code></td>
+                            <td>
+                                <span class="badge ${f.flight_type === 'arrival' ? 'bg-success' : 'bg-warning'}">
+                                    ${f.flight_type === 'arrival' ? '进港' : '离港'}
+                                </span>
+                            </td>
+                            <td><strong>${f.airport_iata || f.airport_icao || '-'}</strong></td>
+                            <td>${f.flight_number || f.callsign || '-'}</td>
+                            <td>${f.aircraft_registration ? `<a href="/aircraft/${f.aircraft_registration}">${f.aircraft_registration}</a>` : '-'}</td>
+                            <td>${f.aircraft_type || '-'}</td>
+                            <td>${f.remote_airport_iata || '-'} ${f.remote_airport_name ? `<small class="text-muted">${f.remote_airport_name}</small>` : ''}</td>
+                            <td><small>${formatDate(f.scheduled_time)}</small></td>
+                            <td><span class="badge bg-secondary">${f.status || '-'}</span></td>
+                            <td><small>${formatDate(f.scraped_at)}</small></td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">无数据</td></tr>';
+                }
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="10" class="text-center text-danger py-4">加载失败: ${e.message}</td></tr>`;
+            }
+        }
+
+        // ========== JetPhotos ==========
+        async function loadJetPhotosStats() {
+            try {
+                const response = await fetch('/api/admin/scraped-data/jetphotos/stats');
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('jpImagesCount').textContent = data.images_count?.toLocaleString() || '0';
+                    document.getElementById('jpAircraftCount').textContent = data.aircraft_count?.toLocaleString() || '0';
+                    document.getElementById('jpPhotographersCount').textContent = data.photographers_count?.toLocaleString() || '0';
+                    document.getElementById('jpLatestScrape').textContent = data.latest_scrape || '-';
+                }
+            } catch (e) {
+                console.error('Failed to load JetPhotos stats:', e);
+            }
+        }
+
+        async function loadJetPhotosData() {
+            const reg = document.getElementById('jpSearchReg').value;
+            const photographer = document.getElementById('jpSearchPhotographer').value;
+            const airport = document.getElementById('jpSearchAirport').value;
+            const limit = document.getElementById('jpLimit').value;
+
+            const tbody = document.getElementById('jpTableBody');
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div> 加载中...</td></tr>';
+
+            try {
+                const params = new URLSearchParams({ limit });
+                if (reg) params.append('registration', reg);
+                if (photographer) params.append('photographer', photographer);
+                if (airport) params.append('airport', airport);
+
+                const response = await fetch(`/api/admin/scraped-data/jetphotos/images?${params}`);
+                const data = await response.json();
+
+                if (data.success && data.images.length > 0) {
+                    tbody.innerHTML = data.images.map(img => `
+                        <tr>
+                            <td>
+                                ${img.image_url ? `<img src="${img.image_url}" class="image-thumb" onclick="showImage('${img.image_url}')" onerror="this.style.display='none'">` : '-'}
+                            </td>
+                            <td><code class="small">${img.jetphotos_id || '-'}</code></td>
+                            <td>${img.registration ? `<a href="/aircraft/${img.registration}">${img.registration}</a>` : '-'}</td>
+                            <td>${escapeHtml(img.photographer || '-')}</td>
+                            <td>${escapeHtml(img.location || '-')} ${img.airport_icao ? `<small class="text-muted">(${img.airport_icao})</small>` : ''}</td>
+                            <td><small>${img.photo_date || '-'}</small></td>
+                            <td><small>${img.width && img.height ? `${img.width}x${img.height}` : '-'}</small></td>
+                            <td><small>${formatDate(img.created_at)}</small></td>
+                            <td>
+                                ${img.source_url ? `<a href="${img.source_url}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="fas fa-external-link-alt"></i></a>` : ''}
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">无数据</td></tr>';
+                }
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger py-4">加载失败: ${e.message}</td></tr>`;
+            }
+        }
+
+        // ========== XHS Note Detail ==========
+        async function showXhsNoteDetail(noteId) {
+            const modal = new bootstrap.Modal(document.getElementById('xhsNoteDetailModal'));
+            document.getElementById('xhsNoteDetailTitle').textContent = '笔记详情';
+            document.getElementById('xhsNoteDetailBody').innerHTML = '<div class="text-center py-5"><div class="spinner-border"></div><div class="mt-2 text-muted">加载中...</div></div>';
+            modal.show();
+
+            try {
+                const response = await fetch(`/api/admin/scraped-data/xiaohongshu/notes/${noteId}`);
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('xhsNoteDetailTitle').textContent = data.note.title || '笔记详情';
+                    document.getElementById('xhsNoteDetailBody').innerHTML = renderNoteDetail(data.note);
+                } else {
+                    document.getElementById('xhsNoteDetailBody').innerHTML = `<div class="text-center text-danger py-4">加载失败: ${data.error || '未知错误'}</div>`;
+                }
+            } catch (e) {
+                document.getElementById('xhsNoteDetailBody').innerHTML = `<div class="text-center text-danger py-4">加载失败: ${e.message}</div>`;
+            }
+        }
+
+        function renderNoteDetail(note) {
+            let html = '';
+
+            // Author & location
+            html += `<div class="d-flex align-items-center mb-3">`;
+            html += `<strong class="me-2">${escapeHtml(note.author_name || '未知作者')}</strong>`;
+            if (note.location) {
+                html += `<span class="badge bg-secondary"><i class="fas fa-map-marker-alt"></i> ${escapeHtml(note.location)}</span>`;
+            }
+            html += `</div>`;
+
+            // Image gallery
+            if (note.image_urls && note.image_urls.length > 0) {
+                html += `<div class="xhs-detail-gallery">`;
+                note.image_urls.forEach(url => {
+                    html += `<img src="${escapeHtml(url)}" onclick="showImage('${escapeHtml(url)}')" onerror="this.style.display='none'" loading="lazy">`;
+                });
+                html += `</div>`;
+            }
+
+            // Video indicator
+            if (note.video_url) {
+                html += `<div class="mb-3"><span class="badge bg-danger"><i class="fas fa-video"></i> 包含视频</span></div>`;
+            }
+
+            // Content
+            if (note.content) {
+                const contentHtml = escapeHtml(note.content).replace(/\n/g, '<br>');
+                html += `<div class="xhs-detail-content">${contentHtml}</div>`;
+            }
+
+            // Tags
+            if (note.tags && note.tags.length > 0) {
+                html += `<div class="mb-3">`;
+                note.tags.forEach(tag => {
+                    html += `<span class="badge bg-info me-1 mb-1">#${escapeHtml(tag)}</span>`;
+                });
+                html += `</div>`;
+            }
+
+            // Engagement stats
+            html += `<div class="xhs-detail-stats">`;
+            html += `<span class="stat-item"><i class="fas fa-heart text-danger"></i> ${note.like_count || 0}</span>`;
+            html += `<span class="stat-item"><i class="fas fa-bookmark text-warning"></i> ${note.collect_count || 0}</span>`;
+            html += `<span class="stat-item"><i class="fas fa-comment text-info"></i> ${note.comment_count || 0}</span>`;
+            html += `<span class="stat-item"><i class="fas fa-share text-success"></i> ${note.share_count || 0}</span>`;
+            html += `</div>`;
+
+            // Comments section
+            if (note.comments && note.comments.length > 0) {
+                html += `<div class="mb-3">`;
+                html += `<button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#noteComments">`;
+                html += `<i class="fas fa-comments"></i> 评论 (${note.comments.length}条)</button>`;
+                html += `<div class="collapse mt-2" id="noteComments">`;
+                note.comments.forEach(c => {
+                    html += `<div class="xhs-comment-item">`;
+                    html += `<strong>${escapeHtml(c.author_name || '匿名')}</strong>`;
+                    if (c.ip_location) html += ` <small class="text-muted">${escapeHtml(c.ip_location)}</small>`;
+                    html += `<div>${escapeHtml(c.content || '')}</div>`;
+                    if (c.like_count) html += `<small class="text-muted"><i class="fas fa-heart"></i> ${c.like_count}</small>`;
+                    // Replies
+                    if (c.replies && c.replies.length > 0) {
+                        c.replies.forEach(r => {
+                            html += `<div class="xhs-reply-item">`;
+                            html += `<strong>${escapeHtml(r.author_name || '匿名')}</strong>`;
+                            if (r.reply_to_user) html += ` <i class="fas fa-reply fa-xs"></i> ${escapeHtml(r.reply_to_user)}`;
+                            html += `<div>${escapeHtml(r.content || '')}</div>`;
+                            html += `</div>`;
+                        });
+                    }
+                    html += `</div>`;
+                });
+                html += `</div></div>`;
+            }
+
+            // Metadata
+            html += `<div class="xhs-detail-meta">`;
+            if (note.note_created_at) html += `<div>发布时间: ${formatDate(note.note_created_at)}</div>`;
+            html += `<div>抓取时间: ${formatDate(note.scraped_at)}</div>`;
+            if (note.updated_at) html += `<div>更新时间: ${formatDate(note.updated_at)}</div>`;
+            html += `<div>笔记ID: <code>${escapeHtml(note.note_id)}</code>`;
+            if (note.source_url) html += ` <a href="${escapeHtml(note.source_url)}" target="_blank" class="ms-2"><i class="fas fa-external-link-alt"></i> 原文链接</a>`;
+            html += `</div>`;
+            html += `</div>`;
+
+            return html;
+        }
+
+        // ========== Utilities ==========
+        function showDetail(title, jsonStr) {
+            document.getElementById('detailModalTitle').textContent = title;
+            try {
+                const obj = JSON.parse(jsonStr);
+                document.getElementById('detailModalContent').textContent = JSON.stringify(obj, null, 2);
+            } catch (e) {
+                document.getElementById('detailModalContent').textContent = jsonStr;
+            }
+            new bootstrap.Modal(document.getElementById('detailModal')).show();
+        }
+
+        function showImage(url) {
+            document.getElementById('imageModalImg').src = url;
+            new bootstrap.Modal(document.getElementById('imageModal')).show();
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return dateStr;
+            return d.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+# =================================
+# Xiaohongshu (Little Red Book) Scraper Configuration
+# =================================
+scraper:
+  scrapers:
+    # Xiaohongshu note scraper
+    xiaohongshu:
+      enabled: true
+      max_notes: 10000                    # Max notes per author (set smaller for local testing)
+      skip_video_notes: true              # Skip video notes, only download image+text notes
+      skip_existing_notes: true           # Skip already successfully scraped notes (cross-session)
+      images_dir: "data/xiaohongshu_images"
+      screenshots_dir: "data/xiaohongshu_screenshots"
+      wait_for_login: true                # Wait for manual login when required
+      login_timeout: 300                  # Login wait timeout (seconds)
+      # Comment scraping configuration
+      extract_comments: true              # Extract comment content
+      max_comments_per_note: 10           # Max comments per note
+      max_replies_per_comment: 50         # Max replies per comment
+      expand_replies: false               # Expand replies
+      # S3 upload configuration
+      s3_upload: true                     # Enable S3 upload
+      s3_bucket: "${S3_BUCKET_NAME}"
+      s3_prefix: "data/xiaohongshu_images"
+      delete_local_after_upload: true     # Delete local file after successful upload
+      # Existing browser connection configuration (for local debugging or reusing login session)
+      use_existing_browser: true          # Connect to running Chrome browser
+      chrome_debug_port: 9222             # Chrome remote debugging port
+
+    # Xiaohongshu Following List Scraper
+    xiaohongshu_following:
+      enabled: false
+      max_following: 1000                 # Max following to scrape per account
+      screenshots_dir: "data/xiaohongshu_screenshots"
+      wait_for_login: true
+      login_timeout: 300
+
+    # Xiaohongshu Trending Aircraft Search
+    # Weekly automatic search for highest trending aircraft, discovered authors are then scraped by XiaohongshuAuthorSource
+    xiaohongshu_trending:
+      enabled: true
+      min_cycle_gap: 604800               # 7 days in seconds (search once per week)
+      top_count: 10                       # Top 10 aircraft by trending score
+      search_max_results: 10              # Max search results per aircraft
+      priority: 5                         # Task priority
+
+    # Xiaohongshu Closed-Loop Cycle Scheduler
+    # Automated full workflow: Trending aircraft -> Search authors -> Scrape notes -> Analyze notes -> Update trending
+    xiaohongshu_cycle:
+      enabled: true
+      # Phase 1: Trending aircraft selection
+      top_aircraft_count: 10              # Trending aircraft per cycle
+      min_trending_score: 10              # Minimum trending score threshold
+
+      # Phase 2: Author search
+      search_max_results: 10              # Max search results per aircraft
+      search_interval_days: 7             # Search dedup interval (days), skip registrations searched within N days
+
+      # Phase 3: Note scraping
+      top_author_count: 10                # Authors to scrape per cycle
+      max_notes_per_author: 100           # Max notes per author
+      author_scrape_interval_days: 7      # Author re-scrape interval (days)
+
+      # Phase 4: Note analysis
+      analysis_batch_size: 50             # Notes per analysis batch
+
+      # Cycle control
+      min_cycle_gap: 604800               # Cycle interval (seconds) - 7 days

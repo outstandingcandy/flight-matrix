@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>报告管理 - 飞机追踪系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Leaflet CSS for flight track map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { border: none; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .card-header { background-color: #0d6efd; color: white; }
+        .stats-card { border-left: 4px solid #0d6efd; }
+        .table th { background-color: #f8f9fa; }
+        .aircraft-image {
+            width: 60px;
+            height: 40px;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+        .badge-military { background-color: #e74c3c; }
+        .report-row { cursor: pointer; transition: background-color 0.2s; }
+        .report-row:hover { background-color: #e3f2fd; }
+        .detail-card {
+            border-left: 4px solid #27ae60;
+        }
+        .analysis-badge { font-size: 0.75rem; }
+        .snapshot-item {
+            border-left: 3px solid #3498db;
+            padding-left: 10px;
+            margin-bottom: 10px;
+        }
+        .modal-header { background-color: #0d6efd; color: white; }
+        .loading-spinner { display: none; }
+        .loading-spinner.active { display: inline-block; }
+
+        /* Email-style report sections */
+        .report-section {
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .report-section.aircraft-info {
+            border: 2px solid #3498db;
+        }
+        .report-section.position-info {
+            border: 2px solid #27ae60;
+        }
+        .report-section.static-info {
+            border: 2px solid #9b59b6;
+        }
+        .report-section.report-stats {
+            border: 2px solid #e67e22;
+        }
+        .report-section.history-section {
+            border: 2px solid #95a5a6;
+        }
+        .report-section h3 {
+            color: #2c3e50;
+            margin-top: 0;
+            padding-bottom: 8px;
+            font-size: 1.2em;
+            margin-bottom: 15px;
+        }
+        .report-section.aircraft-info h3 {
+            border-bottom: 2px solid #3498db;
+        }
+        .report-section.position-info h3 {
+            border-bottom: 2px solid #27ae60;
+        }
+        .report-section.static-info h3 {
+            border-bottom: 2px solid #9b59b6;
+        }
+        .report-section.report-stats h3 {
+            border-bottom: 2px solid #e67e22;
+        }
+        .report-section.history-section h3 {
+            border-bottom: 2px solid #95a5a6;
+        }
+        .report-section ul {
+            list-style-type: none;
+            padding-left: 0;
+            margin: 10px 0 0 0;
+        }
+        .report-section ul li {
+            margin: 6px 0;
+            line-height: 1.4;
+        }
+        .report-section ul li strong {
+            color: #34495e;
+        }
+        .report-header {
+            text-align: center;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+        }
+        .report-header h2 {
+            color: #2c3e50;
+            margin-bottom: 8px;
+            font-size: 1.5em;
+        }
+        .report-header p {
+            font-size: 1em;
+            color: #34495e;
+            margin: 0;
+        }
+        .aircraft-images-row {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+            flex-wrap: wrap;
+        }
+        .aircraft-images-row img {
+            max-width: calc(50% - 5px);
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .analysis-list-item {
+            padding: 10px;
+            margin-bottom: 8px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 3px solid #3498db;
+        }
+        .analysis-list-item:hover {
+            background: #e9ecef;
+        }
+        .track-item {
+            padding: 8px 10px;
+            margin-bottom: 6px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border-left: 3px solid #27ae60;
+            font-size: 0.9em;
+        }
+        /* Flight track map styles */
+        #flightTrackMap {
+            height: 250px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        .report-section.map-section {
+            border: 2px solid #2ecc71;
+        }
+        .report-section.map-section h3 {
+            border-bottom: 2px solid #2ecc71;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-3">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-plane"></i> 飞机追踪系统
+            </a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/admin/track">轨迹查询</a>
+                <a class="nav-link" href="/flight-schedules">航班计划</a>
+                <a class="nav-link active" href="/admin/reports"><i class="fas fa-file-alt"></i> 报告</a>
+                <a class="nav-link" href="/admin/users"><i class="fas fa-users"></i> 用户</a>
+                <a class="nav-link" href="/admin/scraper-status"><i class="fas fa-robot"></i> 抓取</a>
+            </div>
+            <div class="navbar-nav ms-auto">
+                {% if current_user %}
+                    <span class="navbar-text me-3">
+                        <i class="fas fa-user"></i> {{ current_user.email }}
+                    </span>
+                    <a class="nav-link" href="/logout">
+                        <i class="fas fa-sign-out-alt"></i> 退出
+                    </a>
+                {% else %}
+                    <a class="nav-link" href="/login">
+                        <i class="fas fa-sign-in-alt"></i> 登录
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <!-- Stats Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h6 class="text-muted">追踪记录</h6>
+                        <h3 id="totalTracked">-</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h6 class="text-muted">今日报告</h6>
+                        <h3 id="reportsToday">-</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h6 class="text-muted">累计发送</h6>
+                        <h3 id="totalSent">-</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h6 class="text-muted">独立飞机</h6>
+                        <h3 id="uniqueAircraft">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Report List -->
+            <div class="col-md-7">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-list"></i> 报告历史</h5>
+                        <button class="btn btn-light btn-sm" onclick="loadReports()">
+                            <i class="fas fa-sync"></i> 刷新
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <!-- Search -->
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" class="form-control" id="searchInput"
+                                           placeholder="搜索 HEX/注册号/航班号...">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-primary w-100" onclick="loadReports()">搜索</button>
+                            </div>
+                        </div>
+
+                        <!-- Report Table -->
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>图片</th>
+                                        <th>飞机信息</th>
+                                        <th>最后报告</th>
+                                        <th>报告次数</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="reportTableBody">
+                                    <tr>
+                                        <td colspan="5" class="text-center text-muted py-4">
+                                            加载中...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination -->
+                        <nav id="pagination" class="d-flex justify-content-between align-items-center">
+                            <div class="text-muted" id="pageInfo">第 1 页，共 1 页</div>
+                            <ul class="pagination mb-0" id="paginationList">
+                            </ul>
+                        </nav>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detail Panel -->
+            <div class="col-md-5">
+                <div class="card detail-card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="fas fa-info-circle"></i> 详细信息</h5>
+                    </div>
+                    <div class="card-body" id="detailPanel" style="max-height: 700px; overflow-y: auto;">
+                        <div class="text-center text-muted py-5">
+                            <i class="fas fa-mouse-pointer fa-3x mb-3"></i>
+                            <p>点击左侧列表中的报告查看详情</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Leaflet JS for flight track map -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        let currentPage = 1;
+        let currentHex = null;
+        let flightTrackMap = null;
+        let trackLine = null;
+        let startMarker = null;
+        let endMarker = null;
+
+        // Load stats
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/admin/reports/stats');
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('totalTracked').textContent = data.stats.total_tracked;
+                    document.getElementById('reportsToday').textContent = data.stats.reports_today;
+                    document.getElementById('totalSent').textContent = data.stats.total_sent;
+                    document.getElementById('uniqueAircraft').textContent = data.stats.unique_aircraft;
+                }
+            } catch (error) {
+                console.error('Load stats error:', error);
+            }
+        }
+
+        // Load reports
+        async function loadReports(page = 1) {
+            currentPage = page;
+            const search = document.getElementById('searchInput').value;
+            const tableBody = document.getElementById('reportTableBody');
+
+            tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>';
+
+            try {
+                let url = `/api/admin/reports?page=${page}&limit=15`;
+                if (search) {
+                    url += `&search=${encodeURIComponent(search)}`;
+                }
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.success && data.reports.length > 0) {
+                    tableBody.innerHTML = data.reports.map(report => `
+                        <tr class="report-row" onclick="loadDetail('${report.aircraft_hex}')">
+                            <td>
+                                ${report.image_url
+                                    ? `<img src="${report.image_url}" class="aircraft-image" alt="aircraft">`
+                                    : '<div class="aircraft-image bg-light d-flex align-items-center justify-content-center"><i class="fas fa-plane text-muted"></i></div>'
+                                }
+                            </td>
+                            <td>
+                                <strong>${report.registration || report.aircraft_hex}</strong>
+                                ${report.is_military ? '<span class="badge badge-military ms-1">军机</span>' : ''}
+                                <br>
+                                <small class="text-muted">
+                                    ${report.aircraft_type || '-'} |
+                                    ${report.flight_number || '-'} |
+                                    ${report.current_country || '-'}
+                                </small>
+                            </td>
+                            <td>
+                                <small>${report.last_report_time_beijing || '-'}</small>
+                            </td>
+                            <td>
+                                <span class="badge bg-primary">${report.report_count}</span>
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation(); showAnalysisModal('${report.aircraft_hex}', '${report.registration || ''}', '${report.aircraft_type || ''}')">
+                                    <i class="fas fa-brain"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('');
+
+                    // Update pagination
+                    updatePagination(data.page, data.pages, data.total);
+                } else {
+                    tableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">暂无报告记录</td></tr>';
+                }
+            } catch (error) {
+                tableBody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-4">加载失败: ${error.message}</td></tr>`;
+            }
+        }
+
+        // Update pagination
+        function updatePagination(page, pages, total) {
+            document.getElementById('pageInfo').textContent = `第 ${page} 页，共 ${pages} 页 (${total} 条记录)`;
+
+            const paginationList = document.getElementById('paginationList');
+            let html = '';
+
+            // Previous button
+            html += `<li class="page-item ${page <= 1 ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="loadReports(${page - 1}); return false;">上一页</a>
+            </li>`;
+
+            // Page numbers
+            const startPage = Math.max(1, page - 2);
+            const endPage = Math.min(pages, page + 2);
+
+            for (let i = startPage; i <= endPage; i++) {
+                html += `<li class="page-item ${i === page ? 'active' : ''}">
+                    <a class="page-link" href="#" onclick="loadReports(${i}); return false;">${i}</a>
+                </li>`;
+            }
+
+            // Next button
+            html += `<li class="page-item ${page >= pages ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="loadReports(${page + 1}); return false;">下一页</a>
+            </li>`;
+
+            paginationList.innerHTML = html;
+        }
+
+        // Load detail (邮件风格)
+        async function loadDetail(aircraftHex) {
+            currentHex = aircraftHex;
+            const detailPanel = document.getElementById('detailPanel');
+
+            detailPanel.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-success" role="status"></div></div>';
+
+            try {
+                const response = await fetch(`/api/admin/reports/${aircraftHex}/detail`);
+                const data = await response.json();
+
+                if (data.success) {
+                    const detail = data.detail;
+                    const cooldown = detail.cooldown;
+                    const snapshots = detail.recent_snapshots;
+                    const analyses = detail.deep_analyses;
+
+                    let latestSnapshot = snapshots.length > 0 ? snapshots[0] : null;
+
+                    // 构建飞机信息项
+                    let aircraftInfoItems = '';
+                    if (latestSnapshot?.registration) {
+                        aircraftInfoItems += `<li><strong>注册号:</strong> ${latestSnapshot.registration}</li>`;
+                    }
+                    aircraftInfoItems += `<li><strong>ICAO:</strong> ${cooldown.aircraft_hex.toUpperCase()}</li>`;
+                    if (latestSnapshot?.aircraft_type) {
+                        aircraftInfoItems += `<li><strong>机型:</strong> ${latestSnapshot.aircraft_type}</li>`;
+                    }
+                    if (latestSnapshot?.flight_number) {
+                        aircraftInfoItems += `<li><strong>航班号:</strong> ${latestSnapshot.flight_number}</li>`;
+                    }
+                    if (latestSnapshot?.is_military) {
+                        aircraftInfoItems += `<li><strong>类型:</strong> <span class="badge badge-military">军用飞机</span></li>`;
+                    }
+
+                    // 构建飞机图片
+                    let imagesHtml = '';
+                    const imageUrls = [latestSnapshot?.image_url_1, latestSnapshot?.image_url_2, latestSnapshot?.image_url_3].filter(Boolean);
+                    if (imageUrls.length > 0) {
+                        imagesHtml = `
+                            <div class="aircraft-images-row">
+                                ${imageUrls.map(url => `<img src="${url}" alt="Aircraft">`).join('')}
+                            </div>
+                        `;
+                    }
+
+                    // 构建位置信息项
+                    let positionInfoItems = '';
+                    if (latestSnapshot?.current_country) {
+                        positionInfoItems += `<li><strong>当前国家:</strong> ${latestSnapshot.current_country}</li>`;
+                    }
+                    if (latestSnapshot?.latitude && latestSnapshot?.longitude) {
+                        positionInfoItems += `<li><strong>坐标:</strong> ${latestSnapshot.latitude.toFixed(4)}, ${latestSnapshot.longitude.toFixed(4)}</li>`;
+                    }
+                    if (latestSnapshot?.altitude) {
+                        positionInfoItems += `<li><strong>高度:</strong> ${latestSnapshot.altitude} 英尺</li>`;
+                    }
+                    if (latestSnapshot?.ground_speed) {
+                        positionInfoItems += `<li><strong>地面速度:</strong> ${latestSnapshot.ground_speed} 节</li>`;
+                    }
+
+                    let html = `
+                        <!-- 报告头部 -->
+                        <div class="report-header">
+                            <h2>✈️ 简报详情</h2>
+                            <p>${latestSnapshot?.registration || cooldown.aircraft_hex.toUpperCase()}</p>
+                        </div>
+
+                        <!-- 飞机信息 -->
+                        <div class="report-section aircraft-info">
+                            <h3>🛩️ 飞机信息</h3>
+                            ${imagesHtml}
+                            <ul>
+                                ${aircraftInfoItems}
+                            </ul>
+                        </div>
+
+                        <!-- 位置信息 -->
+                        ${positionInfoItems ? `
+                        <div class="report-section position-info">
+                            <h3>📍 位置信息</h3>
+                            <ul>
+                                ${positionInfoItems}
+                            </ul>
+                        </div>
+                        ` : ''}
+
+                        <!-- 飞行轨迹地图 -->
+                        <div class="report-section map-section">
+                            <h3>🗺️ 飞行轨迹</h3>
+                            <div id="flightTrackMap"></div>
+                            <div id="mapLoading" class="text-center py-3">
+                                <div class="spinner-border spinner-border-sm text-success" role="status"></div>
+                                <small class="text-muted ms-2">加载轨迹数据...</small>
+                            </div>
+                        </div>
+
+                        <!-- 报告统计 -->
+                        <div class="report-section report-stats">
+                            <h3>📊 报告统计</h3>
+                            <ul>
+                                <li><strong>最后报告时间:</strong> ${cooldown.last_report_time_beijing || '-'}</li>
+                                <li><strong>报告次数:</strong> <span class="badge bg-primary">${cooldown.report_count}</span></li>
+                                ${cooldown.last_latitude && cooldown.last_longitude ? `
+                                    <li><strong>最后位置:</strong> ${cooldown.last_latitude.toFixed(4)}, ${cooldown.last_longitude.toFixed(4)}</li>
+                                ` : ''}
+                            </ul>
+                        </div>
+
+                        <!-- 最近追踪记录 -->
+                        <div class="report-section history-section">
+                            <h3>📝 最近追踪记录</h3>
+                            ${snapshots.length > 0 ? `
+                                ${snapshots.slice(0, 5).map(s => `
+                                    <div class="track-item">
+                                        <div class="d-flex justify-content-between">
+                                            <small class="text-muted">${s.snapshot_time_beijing}</small>
+                                            ${s.current_country ? `<small class="text-muted">${s.current_country}</small>` : ''}
+                                        </div>
+                                        <div class="mt-1">
+                                            <span><i class="fas fa-plane"></i> ${s.flight_number || '-'}</span>
+                                            <span class="ms-2"><i class="fas fa-mountain"></i> ${s.altitude || '-'} ft</span>
+                                            <span class="ms-2"><i class="fas fa-tachometer-alt"></i> ${s.ground_speed || '-'} kts</span>
+                                        </div>
+                                        <small class="text-muted">
+                                            <i class="fas fa-map-marker-alt"></i>
+                                            ${s.latitude?.toFixed(4) || '-'}, ${s.longitude?.toFixed(4) || '-'}
+                                        </small>
+                                    </div>
+                                `).join('')}
+                            ` : '<p class="text-muted small mb-0">暂无追踪记录</p>'}
+                        </div>
+                    `;
+
+                    detailPanel.innerHTML = html;
+
+                    // Load flight track map after DOM is updated
+                    setTimeout(() => {
+                        loadFlightTrackMap(cooldown.aircraft_hex);
+                    }, 100);
+                } else {
+                    detailPanel.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                }
+            } catch (error) {
+                detailPanel.innerHTML = `<div class="alert alert-danger">加载失败: ${error.message}</div>`;
+            }
+        }
+
+        // Load flight track map
+        async function loadFlightTrackMap(aircraftHex) {
+            const mapContainer = document.getElementById('flightTrackMap');
+            const loadingEl = document.getElementById('mapLoading');
+
+            if (!mapContainer) return;
+
+            try {
+                // Fetch track history data
+                const response = await fetch(`/api/aircraft/${aircraftHex}/history?limit=500`);
+                const data = await response.json();
+
+                if (loadingEl) loadingEl.style.display = 'none';
+
+                if (data.success && data.tracks && data.tracks.length > 0) {
+                    initFlightMap(data.tracks);
+                } else {
+                    mapContainer.innerHTML = '<div class="text-center text-muted py-3"><i class="fas fa-map-marker-alt"></i> 暂无轨迹数据</div>';
+                    mapContainer.style.height = 'auto';
+                }
+            } catch (error) {
+                console.error('Error loading flight track:', error);
+                if (loadingEl) loadingEl.style.display = 'none';
+                mapContainer.innerHTML = '<div class="text-center text-danger py-3"><i class="fas fa-exclamation-triangle"></i> 加载轨迹失败</div>';
+                mapContainer.style.height = 'auto';
+            }
+        }
+
+        // Initialize flight map with track data
+        function initFlightMap(tracks) {
+            const mapContainer = document.getElementById('flightTrackMap');
+            if (!mapContainer) return;
+
+            // Clean up existing map
+            if (flightTrackMap) {
+                flightTrackMap.remove();
+                flightTrackMap = null;
+            }
+
+            // Initialize map
+            flightTrackMap = L.map('flightTrackMap').setView([35, 105], 4);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap'
+            }).addTo(flightTrackMap);
+
+            // Create track coordinates
+            const coords = tracks.map(t => [t.latitude, t.longitude]);
+
+            // Draw track line
+            trackLine = L.polyline(coords, {
+                color: '#0d6efd',
+                weight: 3,
+                opacity: 0.8
+            }).addTo(flightTrackMap);
+
+            // Start marker (green circle)
+            const startPoint = tracks[0];
+            startMarker = L.circleMarker([startPoint.latitude, startPoint.longitude], {
+                radius: 6,
+                color: '#28a745',
+                fillColor: '#28a745',
+                fillOpacity: 0.8
+            }).bindPopup(`<strong>起点</strong><br>${startPoint.datetime_beijing || startPoint.datetime || ''}`).addTo(flightTrackMap);
+
+            // End marker (aircraft icon)
+            const endPoint = tracks[tracks.length - 1];
+            const rotation = endPoint.track || 0;
+            const icon = L.divIcon({
+                className: 'aircraft-marker',
+                html: `<i class="fas fa-plane" style="color: #dc3545; font-size: 16px; transform: rotate(${rotation}deg);"></i>`,
+                iconSize: [16, 16],
+                iconAnchor: [8, 8]
+            });
+
+            endMarker = L.marker([endPoint.latitude, endPoint.longitude], { icon: icon })
+                .bindPopup(`<strong>终点</strong><br>${endPoint.datetime_beijing || endPoint.datetime || ''}<br>高度: ${endPoint.altitude_baro || '-'} ft`)
+                .addTo(flightTrackMap);
+
+            // Fit map bounds to track
+            flightTrackMap.fitBounds(trackLine.getBounds(), { padding: [20, 20] });
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStats();
+            loadReports();
+
+            // Search on Enter
+            document.getElementById('searchInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    loadReports();
+                }
+            });
+        });
+    </script>
+
+    <!-- Token Refresh -->
+    {% include '_token_refresh.html' %}
+</body>
+</html>

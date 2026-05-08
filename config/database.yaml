@@ -1,0 +1,12 @@
+# =================================
+# Database Configuration
+# =================================
+database:
+  # Default: read connection URL from DATABASE_URL env var.
+  # Examples (for reference — set via env, not here):
+  #   sqlite:///aircraft_data.db
+  #   postgresql+psycopg2://USER:PASSWORD@HOST:5432/DBNAME
+  url: "${DATABASE_URL}"
+  cleanup_enabled: false               # Enable data cleanup (false=keep all historical data)
+  cleanup_interval_hours: 24           # Data retention time (hours); only effective when cleanup_enabled=true
+  max_connections: 10                  # Maximum connections

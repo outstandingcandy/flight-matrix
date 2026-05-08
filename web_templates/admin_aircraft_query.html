@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aircraft Query - FlightMatrix Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-dark: #1a1a2e;
+            --bg-dark-secondary: #16213e;
+            --card-bg: rgba(255, 255, 255, 0.95);
+            --text-light: #ffffff;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-secondary) 100%);
+            min-height: 100vh;
+        }
+
+        .navbar {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
+        }
+
+        .page-header {
+            color: var(--text-light);
+            padding: 20px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            font-weight: 600;
+            border-radius: 0.5rem 0.5rem 0 0 !important;
+        }
+
+        .search-container {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .search-input {
+            background: rgba(255,255,255,0.9);
+            border: none;
+            border-radius: 0.5rem;
+            padding: 0.75rem 1rem;
+            font-size: 1.1rem;
+        }
+
+        .search-input:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.25);
+        }
+
+        .aircraft-header {
+            background: linear-gradient(135deg, #0d6efd 0%, #0b5ed7 100%);
+            color: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .aircraft-header .registration {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .aircraft-header .aircraft-type {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .badge-attention {
+            font-size: 0.85rem;
+            padding: 0.4rem 0.8rem;
+        }
+
+        .accordion-button {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+
+        .accordion-button:not(.collapsed) {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+        }
+
+        .accordion-button:focus {
+            box-shadow: none;
+        }
+
+        .data-count {
+            font-size: 0.85rem;
+            opacity: 0.8;
+        }
+
+        .table-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .table th {
+            position: sticky;
+            top: 0;
+            background: #f8f9fa;
+            z-index: 10;
+            font-size: 0.85rem;
+        }
+
+        .table td {
+            vertical-align: middle;
+            font-size: 0.85rem;
+        }
+
+        .image-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .image-card {
+            border-radius: 0.5rem;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .image-card img {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+            cursor: pointer;
+        }
+
+        .image-card .image-info {
+            padding: 0.5rem;
+            font-size: 0.8rem;
+            background: #f8f9fa;
+        }
+
+        .stat-card {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            color: var(--text-light);
+            text-align: center;
+        }
+
+        .stat-card .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .stat-card .stat-label {
+            font-size: 0.85rem;
+            opacity: 0.8;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 0.75rem;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .info-label {
+            font-size: 0.75rem;
+            color: #6c757d;
+            text-transform: uppercase;
+        }
+
+        .info-value {
+            font-size: 0.95rem;
+            font-weight: 500;
+        }
+
+        .mention-card {
+            border-left: 4px solid #0d6efd;
+            padding: 0.75rem;
+            margin-bottom: 0.75rem;
+            background: #f8f9fa;
+            border-radius: 0 0.5rem 0.5rem 0;
+        }
+
+        .mention-card.high {
+            border-left-color: #dc3545;
+        }
+
+        .mention-card.medium {
+            border-left-color: #ffc107;
+        }
+
+        .mention-images {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            margin-top: 0.75rem;
+            padding: 0.5rem;
+            background: #fff;
+            border-radius: 0.5rem;
+            border: 1px solid #e9ecef;
+        }
+
+        .mention-thumb {
+            width: 120px;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            border: 2px solid #dee2e6;
+            transition: all 0.2s ease;
+        }
+
+        .mention-thumb:hover {
+            opacity: 0.9;
+            transform: scale(1.05);
+            border-color: #0d6efd;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .images-expired {
+            padding: 1rem;
+            color: #6c757d;
+            font-size: 0.85rem;
+            text-align: center;
+            background: #f8f9fa;
+            border-radius: 0.5rem;
+            border: 1px dashed #dee2e6;
+        }
+
+        .images-expired i {
+            margin-right: 0.5rem;
+        }
+
+        .content-preview {
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: #333;
+            background: #fff;
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            border: 1px solid #e9ecef;
+            white-space: pre-wrap;
+        }
+
+        .engagement-stats {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.85rem;
+        }
+
+        .engagement-stats .stat-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .bg-outline-secondary {
+            background: transparent;
+            border: 1px solid #6c757d;
+            color: #6c757d;
+        }
+
+        .mention-card.low {
+            border-left-color: #28a745;
+        }
+
+        .back-link {
+            color: rgba(255,255,255,0.8);
+            text-decoration: none;
+        }
+
+        .back-link:hover {
+            color: #ffffff;
+        }
+
+        .loading-spinner {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 3rem;
+            color: #6c757d;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 2rem;
+            color: #6c757d;
+        }
+
+        .topic-badge {
+            font-size: 0.75rem;
+            margin: 0.1rem;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 1rem;
+        }
+
+        .metric-card {
+            background: #f8f9fa;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #0d6efd;
+        }
+
+        .metric-label {
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+
+        /* Modal for image preview */
+        .image-modal {
+            display: none;
+            position: fixed;
+            z-index: 1050;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+        }
+
+        .image-modal img {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            max-width: 90%;
+            max-height: 90%;
+            border-radius: 0.5rem;
+        }
+
+        .image-modal .close {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            color: white;
+            font-size: 2rem;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand navbar-dark mb-0">
+        <div class="container-fluid px-3">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-plane"></i> FlightMatrix
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/admin"><i class="fas fa-cog"></i> Admin</a>
+                {% if current_user %}
+                <span class="navbar-text me-3">
+                    <i class="fas fa-user"></i> {{ current_user.email }}
+                </span>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid p-3">
+        <!-- Header -->
+        <div class="page-header">
+            <a href="/admin" class="back-link"><i class="fas fa-arrow-left"></i> Back to Admin</a>
+            <h2 class="mt-2"><i class="fas fa-search"></i> Aircraft Query</h2>
+            <p class="text-light opacity-75">Search for aircraft by registration number to view comprehensive data</p>
+        </div>
+
+        <!-- Search Container -->
+        <div class="search-container">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <input type="text" id="registrationInput" class="form-control search-input"
+                           placeholder="Enter registration number (e.g., B-1234, N12345)">
+                </div>
+                <div class="col-md-4 mt-2 mt-md-0">
+                    <button class="btn btn-primary btn-lg w-100" onclick="searchAircraft()">
+                        <i class="fas fa-search"></i> Search
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="loading-spinner" style="display: none;">
+            <div class="spinner-border text-primary me-2" role="status"></div>
+            <span>Searching...</span>
+        </div>
+
+        <!-- Results Container -->
+        <div id="resultsContainer" style="display: none;">
+            <!-- Aircraft Header Card -->
+            <div id="aircraftHeader" class="aircraft-header">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <div class="registration" id="headerRegistration">-</div>
+                        <div class="aircraft-type">
+                            <span id="headerType">-</span>
+                            <span class="ms-2" id="headerOwner"></span>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-md-end mt-2 mt-md-0" id="headerBadges">
+                        <!-- Dynamic badges will be inserted here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Accordion -->
+            <div class="accordion" id="dataAccordion">
+                <!-- Static Information -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#staticInfo">
+                            <i class="fas fa-info-circle me-2"></i> Static Information
+                            <span class="data-count ms-2" id="staticInfoCount"></span>
+                        </button>
+                    </h2>
+                    <div id="staticInfo" class="accordion-collapse collapse show" data-bs-parent="#dataAccordion">
+                        <div class="accordion-body" id="staticInfoBody">
+                            <div class="no-data">No static information available</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ADS-B Position History -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#snapshotsSection">
+                            <i class="fas fa-satellite me-2"></i> ADS-B Position History
+                            <span class="data-count ms-2" id="snapshotsCount"></span>
+                        </button>
+                    </h2>
+                    <div id="snapshotsSection" class="accordion-collapse collapse" data-bs-parent="#dataAccordion">
+                        <div class="accordion-body" id="snapshotsBody">
+                            <div class="no-data">No ADS-B snapshots available</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FR24 Realtime Positions -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#realtimeSection">
+                            <i class="fas fa-broadcast-tower me-2"></i> FR24 Realtime Positions
+                            <span class="data-count ms-2" id="realtimeCount"></span>
+                        </button>
+                    </h2>
+                    <div id="realtimeSection" class="accordion-collapse collapse" data-bs-parent="#dataAccordion">
+                        <div class="accordion-body" id="realtimeBody">
+                            <div class="no-data">No FR24 realtime positions available</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Aircraft Images -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#imagesSection">
+                            <i class="fas fa-camera me-2"></i> Aircraft Images
+                            <span class="data-count ms-2" id="imagesCount"></span>
+                        </button>
+                    </h2>
+                    <div id="imagesSection" class="accordion-collapse collapse" data-bs-parent="#dataAccordion">
+                        <div class="accordion-body" id="imagesBody">
+                            <div class="no-data">No images available</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Flight Schedules -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#schedulesSection">
+                            <i class="fas fa-calendar-alt me-2"></i> Flight Schedules
+                            <span class="data-count ms-2" id="schedulesCount"></span>
+                        </button>
+                    </h2>
+                    <div id="schedulesSection" class="accordion-collapse collapse" data-bs-parent="#dataAccordion">
+                        <div class="accordion-body" id="schedulesBody">
+                            <div class="no-data">No flight schedules available</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Social Media Mentions -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#mentionsSection">
+                            <i class="fas fa-comments me-2"></i> Social Media Mentions
+                            <span class="data-count ms-2" id="mentionsCount"></span>
+                        </button>
+                    </h2>
+                    <div id="mentionsSection" class="accordion-collapse collapse" data-bs-parent="#dataAccordion">
+                        <div class="accordion-body" id="mentionsBody">
+                            <div class="no-data">No social media mentions found</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Attention Metrics -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#metricsSection">
+                            <i class="fas fa-chart-line me-2"></i> Attention Metrics
+                            <span class="data-count ms-2" id="metricsCount"></span>
+                        </button>
+                    </h2>
+                    <div id="metricsSection" class="accordion-collapse collapse" data-bs-parent="#dataAccordion">
+                        <div class="accordion-body" id="metricsBody">
+                            <div class="no-data">No attention metrics available</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- No Results Message -->
+        <div id="noResultsMessage" class="card" style="display: none;">
+            <div class="card-body text-center py-5">
+                <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                <h4 class="text-muted">No data found</h4>
+                <p class="text-muted">No records found for this registration number.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Modal -->
+    <div id="imageModal" class="image-modal" onclick="closeImageModal()">
+        <span class="close">&times;</span>
+        <img id="modalImage" src="">
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Search on Enter key
+        document.getElementById('registrationInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                searchAircraft();
+            }
+        });
+
+        async function searchAircraft() {
+            const registration = document.getElementById('registrationInput').value.trim();
+            if (!registration) {
+                alert('Please enter a registration number');
+                return;
+            }
+
+            // Show loading, hide results
+            document.getElementById('loadingState').style.display = 'flex';
+            document.getElementById('resultsContainer').style.display = 'none';
+            document.getElementById('noResultsMessage').style.display = 'none';
+
+            try {
+                const response = await fetch(`/api/admin/aircraft-query/${encodeURIComponent(registration)}`);
+                const data = await response.json();
+
+                document.getElementById('loadingState').style.display = 'none';
+
+                if (!data.success) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                // Check if any data was found
+                const hasData = data.static_info ||
+                               data.snapshots.count > 0 ||
+                               data.realtime_positions.count > 0 ||
+                               data.images.count > 0 ||
+                               data.flight_schedules.total > 0 ||
+                               data.social_mentions.count > 0 ||
+                               data.attention_metrics;
+
+                if (!hasData) {
+                    document.getElementById('noResultsMessage').style.display = 'block';
+                    return;
+                }
+
+                // Populate results
+                populateResults(data);
+                document.getElementById('resultsContainer').style.display = 'block';
+
+            } catch (error) {
+                document.getElementById('loadingState').style.display = 'none';
+                alert('Error fetching data: ' + error.message);
+            }
+        }
+
+        function populateResults(data) {
+            // Header
+            document.getElementById('headerRegistration').textContent = data.registration;
+
+            if (data.static_info) {
+                const type = data.static_info.aircraft_type || '-';
+                const manufacturer = data.static_info.manufacturer || '';
+                const model = data.static_info.model || '';
+                document.getElementById('headerType').textContent = manufacturer && model ? `${manufacturer} ${model} (${type})` : type;
+                document.getElementById('headerOwner').textContent = data.static_info.ad_owner || data.static_info.owner || '';
+            } else {
+                document.getElementById('headerType').textContent = '-';
+                document.getElementById('headerOwner').textContent = '';
+            }
+
+            // Badges
+            const badgesContainer = document.getElementById('headerBadges');
+            badgesContainer.innerHTML = '';
+
+            if (data.attention_metrics) {
+                const level = data.attention_metrics.avg_attention_index >= 70 ? 'danger' :
+                             data.attention_metrics.avg_attention_index >= 40 ? 'warning' : 'success';
+                badgesContainer.innerHTML += `<span class="badge bg-${level} badge-attention me-2">
+                    <i class="fas fa-fire"></i> Attention: ${data.attention_metrics.avg_attention_index?.toFixed(1) || '-'}
+                </span>`;
+            }
+
+            if (data.social_mentions.count > 0) {
+                badgesContainer.innerHTML += `<span class="badge bg-info badge-attention">
+                    <i class="fas fa-comments"></i> ${data.social_mentions.count} mentions
+                </span>`;
+            }
+
+            // Static Info
+            populateStaticInfo(data.static_info);
+
+            // Snapshots
+            populateSnapshots(data.snapshots);
+
+            // Realtime Positions
+            populateRealtimePositions(data.realtime_positions);
+
+            // Images
+            populateImages(data.images);
+
+            // Flight Schedules
+            populateSchedules(data.flight_schedules);
+
+            // Social Mentions
+            populateMentions(data.social_mentions);
+
+            // Attention Metrics
+            populateMetrics(data.attention_metrics);
+        }
+
+        function populateStaticInfo(info) {
+            const container = document.getElementById('staticInfoBody');
+            const countEl = document.getElementById('staticInfoCount');
+
+            if (!info) {
+                container.innerHTML = '<div class="no-data">No static information available</div>';
+                countEl.textContent = '';
+                return;
+            }
+
+            countEl.textContent = '(found)';
+            container.innerHTML = `
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Registration</span>
+                        <span class="info-value">${info.registration || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Hex Code</span>
+                        <span class="info-value">${info.hex_code || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Type</span>
+                        <span class="info-value">${info.aircraft_type || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Manufacturer</span>
+                        <span class="info-value">${info.manufacturer || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Model</span>
+                        <span class="info-value">${info.model || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Serial Number</span>
+                        <span class="info-value">${info.serial_number || info.jp_cn || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Year Built</span>
+                        <span class="info-value">${info.year_built || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Owner</span>
+                        <span class="info-value">${info.ad_owner || info.owner || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Operator</span>
+                        <span class="info-value">${info.operator || info.ps_airline || info.jp_airline || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Status</span>
+                        <span class="info-value">${info.ad_status || info.ps_status || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Country</span>
+                        <span class="info-value">${info.country_of_registration || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Location</span>
+                        <span class="info-value">${info.ad_location || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Seats</span>
+                        <span class="info-value">${info.ad_seats || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Engines</span>
+                        <span class="info-value">${info.ad_engines || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Delivery Date</span>
+                        <span class="info-value">${info.ad_delivery_date || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Data Source</span>
+                        <span class="info-value">${info.data_source || '-'}</span>
+                    </div>
+                </div>
+                ${info.ai_analysis ? `
+                <div class="mt-3">
+                    <span class="info-label">AI Analysis</span>
+                    <div class="mt-1 p-2 bg-light rounded" style="white-space: pre-wrap; font-size: 0.85rem;">${info.ai_analysis}</div>
+                </div>
+                ` : ''}
+            `;
+        }
+
+        function populateSnapshots(snapshots) {
+            const container = document.getElementById('snapshotsBody');
+            const countEl = document.getElementById('snapshotsCount');
+
+            countEl.textContent = `(${snapshots.count} total)`;
+
+            if (snapshots.recent.length === 0) {
+                container.innerHTML = '<div class="no-data">No ADS-B snapshots available</div>';
+                return;
+            }
+
+            let html = `
+                <div class="table-container">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Flight</th>
+                                <th>Lat/Lon</th>
+                                <th>Alt (ft)</th>
+                                <th>Speed (kts)</th>
+                                <th>Track</th>
+                                <th>Squawk</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            for (const s of snapshots.recent) {
+                const time = s.snapshot_time ? new Date(s.snapshot_time).toLocaleString() : '-';
+                html += `
+                    <tr>
+                        <td>${time}</td>
+                        <td>${s.flight_number || '-'}</td>
+                        <td>${s.latitude?.toFixed(4) || '-'}, ${s.longitude?.toFixed(4) || '-'}</td>
+                        <td>${s.altitude_baro || s.altitude_geom || '-'}</td>
+                        <td>${s.ground_speed?.toFixed(0) || '-'}</td>
+                        <td>${s.track?.toFixed(0) || '-'}</td>
+                        <td>${s.squawk || '-'}</td>
+                    </tr>
+                `;
+            }
+
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        function populateRealtimePositions(positions) {
+            const container = document.getElementById('realtimeBody');
+            const countEl = document.getElementById('realtimeCount');
+
+            countEl.textContent = `(${positions.count} total)`;
+
+            if (positions.recent.length === 0) {
+                container.innerHTML = '<div class="no-data">No FR24 realtime positions available</div>';
+                return;
+            }
+
+            let html = `
+                <div class="table-container">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>Scraped At</th>
+                                <th>Flight</th>
+                                <th>Route</th>
+                                <th>Lat/Lon</th>
+                                <th>Alt (ft)</th>
+                                <th>Speed</th>
+                                <th>Heading</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            for (const p of positions.recent) {
+                const time = p.scraped_at ? new Date(p.scraped_at).toLocaleString() : '-';
+                const route = [p.origin_iata, p.destination_iata].filter(Boolean).join(' -> ') || '-';
+                html += `
+                    <tr>
+                        <td>${time}</td>
+                        <td>${p.flight_number || p.callsign || '-'}</td>
+                        <td>${route}</td>
+                        <td>${p.latitude?.toFixed(4) || '-'}, ${p.longitude?.toFixed(4) || '-'}</td>
+                        <td>${p.altitude || '-'}</td>
+                        <td>${p.ground_speed || '-'}</td>
+                        <td>${p.heading || '-'}</td>
+                    </tr>
+                `;
+            }
+
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        function populateImages(images) {
+            const container = document.getElementById('imagesBody');
+            const countEl = document.getElementById('imagesCount');
+
+            // Filter out items without actual image URLs
+            const validImages = images.items.filter(img => img.image_url && img.image_url.trim() !== '');
+
+            countEl.textContent = `(${validImages.length} images)`;
+
+            if (validImages.length === 0) {
+                container.innerHTML = '<div class="no-data">No images available</div>';
+                return;
+            }
+
+            let html = '<div class="image-gallery">';
+            for (const img of validImages) {
+                html += `
+                    <div class="image-card">
+                        <img src="${img.image_url}" alt="${img.registration}"
+                             onclick="openImageModal('${img.image_url}')"
+                             onerror="this.parentElement.style.display='none'">
+                        <div class="image-info">
+                            <div><strong>${img.photographer || 'Unknown'}</strong></div>
+                            <div>${img.location || img.airport_name || '-'}</div>
+                            <div class="text-muted">${img.photo_date || '-'}</div>
+                        </div>
+                    </div>
+                `;
+            }
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function populateSchedules(schedules) {
+            const container = document.getElementById('schedulesBody');
+            const countEl = document.getElementById('schedulesCount');
+
+            countEl.textContent = `(${schedules.total} total)`;
+
+            if (schedules.items.length === 0) {
+                container.innerHTML = '<div class="no-data">No flight schedules available</div>';
+                return;
+            }
+
+            let html = `
+                <div class="table-container">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Flight</th>
+                                <th>Airport</th>
+                                <th>Remote</th>
+                                <th>Scheduled</th>
+                                <th>Status</th>
+                                <th>Airline</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            for (const f of schedules.items) {
+                const typeIcon = f.flight_type === 'arrival' ? '<i class="fas fa-plane-arrival text-success"></i>' : '<i class="fas fa-plane-departure text-primary"></i>';
+                const time = f.scheduled_time ? new Date(f.scheduled_time).toLocaleString() : '-';
+                html += `
+                    <tr>
+                        <td>${typeIcon}</td>
+                        <td><strong>${f.flight_number || '-'}</strong></td>
+                        <td>${f.airport_iata || f.airport_icao || '-'}</td>
+                        <td>${f.remote_airport_iata || '-'} <small class="text-muted">${f.remote_airport_name || ''}</small></td>
+                        <td>${time}</td>
+                        <td><span class="badge bg-secondary">${f.status || '-'}</span></td>
+                        <td>${f.airline_name || '-'}</td>
+                    </tr>
+                `;
+            }
+
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        function populateMentions(mentions) {
+            const container = document.getElementById('mentionsBody');
+            const countEl = document.getElementById('mentionsCount');
+
+            countEl.textContent = `(${mentions.count} mentions)`;
+
+            if (mentions.items.length === 0) {
+                container.innerHTML = '<div class="no-data">No social media mentions found</div>';
+                return;
+            }
+
+            let html = '';
+            for (const m of mentions.items) {
+                const level = m.attention_level || 'low';
+                const time = m.analyzed_at ? new Date(m.analyzed_at).toLocaleString() : '-';
+                const scrapedTime = m.note_scraped_at ? new Date(m.note_scraped_at).toLocaleString() : '-';
+                const topics = m.topics ? m.topics.map(t => `<span class="badge bg-secondary topic-badge">${t}</span>`).join(' ') : '';
+                const tags = m.tags ? m.tags.map(t => `<span class="badge bg-outline-secondary topic-badge">#${t}</span>`).join(' ') : '';
+
+                // Build images HTML
+                let imagesHtml = '';
+                if (m.image_urls && m.image_urls.length > 0) {
+                    const containerId = `images-${m.id}`;
+                    imagesHtml = `<div class="mention-images mt-2" id="${containerId}" data-total="${m.image_urls.length}" data-failed="0">`;
+                    for (let i = 0; i < m.image_urls.length; i++) {
+                        const url = m.image_urls[i];
+                        imagesHtml += `<img src="${url}" class="mention-thumb" onclick="openImageModal('${url}')" onerror="handleImageError(this, '${containerId}')">`;
+                    }
+                    imagesHtml += '</div>';
+                }
+
+                // Show full content (already limited by API)
+                const contentPreview = m.content || '';
+
+                html += `
+                    <div class="mention-card ${level}">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div style="flex: 1;">
+                                <strong>${m.title || 'Untitled'}</strong>
+                                <div class="text-muted small">
+                                    <i class="fas fa-user"></i> ${m.author_name || 'Unknown'}
+                                    <span class="ms-2"><i class="fas fa-map-marker-alt"></i> ${m.location || '-'}</span>
+                                    <span class="ms-2 badge bg-light text-dark">${m.source_type || '-'}</span>
+                                </div>
+                            </div>
+                            <div class="text-end">
+                                <span class="badge bg-${level === 'high' ? 'danger' : level === 'medium' ? 'warning' : 'success'}" style="font-size: 1rem;">
+                                    ${m.attention_index || '-'}
+                                </span>
+                            </div>
+                        </div>
+
+                        ${contentPreview ? `<div class="mt-2 content-preview">${contentPreview}</div>` : ''}
+
+                        ${imagesHtml}
+
+                        <div class="mt-2 engagement-stats">
+                            <span class="stat-item"><i class="fas fa-heart text-danger"></i> ${m.like_count || 0}</span>
+                            <span class="stat-item"><i class="fas fa-star text-warning"></i> ${m.collect_count || 0}</span>
+                            <span class="stat-item"><i class="fas fa-comment text-primary"></i> ${m.comment_count || 0}</span>
+                            <span class="stat-item"><i class="fas fa-share text-success"></i> ${m.share_count || 0}</span>
+                        </div>
+
+                        <div class="mt-2">
+                            <span class="badge bg-info">${m.content_type || '-'}</span>
+                            <span class="badge bg-secondary">${m.sentiment || '-'}</span>
+                            ${topics}
+                        </div>
+
+                        ${tags ? `<div class="mt-1">${tags}</div>` : ''}
+
+                        ${m.attention_reason ? `<div class="mt-2 small text-muted"><i class="fas fa-robot"></i> ${m.attention_reason}</div>` : ''}
+
+                        <div class="mt-2 small text-muted">
+                            <i class="fas fa-clock"></i> 分析时间: ${time} | 抓取时间: ${scrapedTime}
+                        </div>
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        function populateMetrics(metrics) {
+            const container = document.getElementById('metricsBody');
+            const countEl = document.getElementById('metricsCount');
+
+            if (!metrics) {
+                container.innerHTML = '<div class="no-data">No attention metrics available</div>';
+                countEl.textContent = '';
+                return;
+            }
+
+            countEl.textContent = '(aggregated)';
+
+            let topicsHtml = '';
+            if (metrics.top_topics && metrics.top_topics.length > 0) {
+                topicsHtml = '<div class="mt-3"><strong>Top Topics:</strong><br>';
+                for (const topic of metrics.top_topics) {
+                    topicsHtml += `<span class="badge bg-primary topic-badge me-1">${topic.topic || topic} (${topic.count || '-'})</span>`;
+                }
+                topicsHtml += '</div>';
+            }
+
+            let sentimentHtml = '';
+            if (metrics.sentiment_distribution) {
+                const sd = metrics.sentiment_distribution;
+                sentimentHtml = `
+                    <div class="mt-3"><strong>Sentiment:</strong>
+                        <span class="badge bg-success ms-2">Positive: ${sd.positive || 0}</span>
+                        <span class="badge bg-secondary ms-1">Neutral: ${sd.neutral || 0}</span>
+                        <span class="badge bg-danger ms-1">Negative: ${sd.negative || 0}</span>
+                    </div>
+                `;
+            }
+
+            let sourceHtml = '';
+            if (metrics.source_distribution) {
+                sourceHtml = '<div class="mt-3"><strong>Sources:</strong>';
+                for (const [source, count] of Object.entries(metrics.source_distribution)) {
+                    sourceHtml += `<span class="badge bg-info ms-2">${source}: ${count}</span>`;
+                }
+                sourceHtml += '</div>';
+            }
+
+            container.innerHTML = `
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">${metrics.total_mentions || 0}</div>
+                        <div class="metric-label">Total Mentions</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${metrics.avg_attention_index?.toFixed(1) || '-'}</div>
+                        <div class="metric-label">Avg Attention</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${metrics.max_attention_index || '-'}</div>
+                        <div class="metric-label">Max Attention</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${metrics.mentions_7d || 0}</div>
+                        <div class="metric-label">Last 7 Days</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${metrics.mentions_30d || 0}</div>
+                        <div class="metric-label">Last 30 Days</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${metrics.trending_score?.toFixed(1) || '-'}</div>
+                        <div class="metric-label">Trending Score</div>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <small class="text-muted">
+                        First seen: ${metrics.first_seen ? new Date(metrics.first_seen).toLocaleDateString() : '-'} |
+                        Last seen: ${metrics.last_seen ? new Date(metrics.last_seen).toLocaleDateString() : '-'} |
+                        Updated: ${metrics.updated_at ? new Date(metrics.updated_at).toLocaleString() : '-'}
+                    </small>
+                </div>
+                ${topicsHtml}
+                ${sentimentHtml}
+                ${sourceHtml}
+            `;
+        }
+
+        function openImageModal(url) {
+            document.getElementById('modalImage').src = url;
+            document.getElementById('imageModal').style.display = 'block';
+        }
+
+        function closeImageModal() {
+            document.getElementById('imageModal').style.display = 'none';
+        }
+
+        function handleImageError(img, containerId) {
+            img.style.display = 'none';
+            const container = document.getElementById(containerId);
+            if (container) {
+                const total = parseInt(container.dataset.total);
+                const failed = parseInt(container.dataset.failed) + 1;
+                container.dataset.failed = failed;
+                // If all images failed, show a message
+                if (failed >= total && !container.querySelector('.images-expired')) {
+                    container.innerHTML = `<div class="images-expired"><i class="fas fa-image text-muted"></i> ${total} 张图片 (已过期或无法加载)</div>`;
+                }
+            }
+        }
+
+        // Close modal on escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeImageModal();
+            }
+        });
+    </script>
+</body>
+</html>

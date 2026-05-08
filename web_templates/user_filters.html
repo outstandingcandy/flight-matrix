@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>过滤器管理 - 飞机追踪系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { border: none; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .card-header { background-color: #0d6efd; color: white; }
+        .modal-header { background-color: #0d6efd; color: white; }
+        .filter-sql {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.9rem;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            padding: 10px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .badge-active { background-color: #27ae60; }
+        .badge-inactive { background-color: #95a5a6; }
+        .test-result {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .sql-help {
+            font-size: 0.85rem;
+            background-color: #e8f4f8;
+            border-left: 4px solid #0d6efd;
+            padding: 15px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><i class="fas fa-plane"></i> 飞机追踪系统</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/admin/track">轨迹查询</a>
+                <a class="nav-link" href="/flight-schedules">航班计划</a>
+                <a class="nav-link" href="/admin/reports"><i class="fas fa-file-alt"></i> 报告</a>
+                <a class="nav-link" href="/admin/users"><i class="fas fa-users"></i> 用户</a>
+                <a class="nav-link" href="/admin/scraper-status"><i class="fas fa-robot"></i> 抓取</a>
+            </div>
+            <div class="navbar-nav ms-auto">
+                {% if current_user %}
+                    <span class="navbar-text me-3">
+                        <i class="fas fa-user"></i> {{ current_user.email }}
+                    </span>
+                    <a class="nav-link" href="/logout">
+                        <i class="fas fa-sign-out-alt"></i> 退出
+                    </a>
+                {% else %}
+                    <a class="nav-link" href="/login">
+                        <i class="fas fa-sign-in-alt"></i> 登录
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- User Info Header -->
+        <div class="card mb-4">
+            <div class="card-body d-flex justify-content-between align-items-center">
+                <div>
+                    <h4 class="mb-1"><i class="fas fa-filter"></i> Filter Management</h4>
+                    <p class="text-muted mb-0">Manage your custom aircraft filters</p>
+                </div>
+                <a href="/user/{{ email }}/dashboard" class="btn btn-outline-primary">
+                    <i class="fas fa-tachometer-alt"></i> Dashboard
+                </a>
+            </div>
+        </div>
+
+        <!-- SQL Help -->
+        <div class="sql-help mb-4">
+            <h6><i class="fas fa-info-circle"></i> Available Filter Fields</h6>
+            <div class="row">
+                <div class="col-md-4">
+                    <strong>Aircraft:</strong>
+                    <ul class="mb-0">
+                        <li><code>registration</code> - e.g., 'N12345'</li>
+                        <li><code>aircraft_type</code> - e.g., 'B738'</li>
+                        <li><code>hex</code> - ICAO hex code</li>
+                    </ul>
+                </div>
+                <div class="col-md-4">
+                    <strong>Location:</strong>
+                    <ul class="mb-0">
+                        <li><code>current_country</code> - e.g., 'China'</li>
+                        <li><code>country_of_registration</code></li>
+                        <li><code>latitude</code>, <code>longitude</code></li>
+                    </ul>
+                </div>
+                <div class="col-md-4">
+                    <strong>Status:</strong>
+                    <ul class="mb-0">
+                        <li><code>is_military</code> - 1 or 0</li>
+                        <li><code>squawk</code> - e.g., '7700'</li>
+                        <li><code>altitude_baro</code></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter List -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Your Filters</h5>
+                <button class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#createFilterModal">
+                    <i class="fas fa-plus"></i> Add Filter
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="filterList">
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Filter Modal -->
+    <div class="modal fade" id="createFilterModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-plus-circle"></i> Create Filter</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="createFilterForm">
+                        <div class="mb-3">
+                            <label for="filterName" class="form-label">Filter Name *</label>
+                            <input type="text" class="form-control" id="filterName" required
+                                   placeholder="e.g., Military Aircraft in China">
+                        </div>
+                        <div class="mb-3">
+                            <label for="filterDescription" class="form-label">Description</label>
+                            <textarea class="form-control" id="filterDescription" rows="2"
+                                      placeholder="Optional description of what this filter does"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="filterSql" class="form-label">SQL Filter Condition *</label>
+                            <textarea class="form-control filter-sql" id="filterSql" rows="5" required
+                                      placeholder="is_military = 1 AND current_country = 'China'"></textarea>
+                            <div class="form-text">
+                                Enter a SQL WHERE clause condition. Do not include "WHERE".
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="filterPriority" class="form-label">Priority</label>
+                            <input type="number" class="form-control" id="filterPriority" value="0"
+                                   min="0" max="100">
+                            <div class="form-text">Higher priority filters are processed first.</div>
+                        </div>
+                    </form>
+                    <div id="createTestResult" class="test-result mt-3" style="display: none;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" id="testFilterBtn">
+                        <i class="fas fa-play"></i> Test Filter
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="createFilterBtn">Create Filter</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Filter Modal -->
+    <div class="modal fade" id="editFilterModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-pencil"></i> Edit Filter</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editFilterForm">
+                        <input type="hidden" id="editFilterId">
+                        <div class="mb-3">
+                            <label for="editFilterName" class="form-label">Filter Name *</label>
+                            <input type="text" class="form-control" id="editFilterName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editFilterDescription" class="form-label">Description</label>
+                            <textarea class="form-control" id="editFilterDescription" rows="2"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editFilterSql" class="form-label">SQL Filter Condition *</label>
+                            <textarea class="form-control filter-sql" id="editFilterSql" rows="5" required></textarea>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="editFilterPriority" class="form-label">Priority</label>
+                                    <input type="number" class="form-control" id="editFilterPriority" min="0" max="100">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Status</label>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="editFilterActive">
+                                        <label class="form-check-label" for="editFilterActive">Active</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="editTestResult" class="test-result mt-3" style="display: none;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-danger me-auto" id="deleteFilterBtn">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" id="editTestFilterBtn">
+                        <i class="fas fa-play"></i> Test Filter
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="saveFilterBtn">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Get email from URL
+        const pathParts = window.location.pathname.split('/');
+        const userEmail = decodeURIComponent(pathParts[2]);
+        document.getElementById('userEmail').textContent = userEmail;
+
+        // Load filters on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadFilters();
+
+            // Event handlers
+            document.getElementById('createFilterBtn').addEventListener('click', createFilter);
+            document.getElementById('testFilterBtn').addEventListener('click', () => testFilter('create'));
+            document.getElementById('saveFilterBtn').addEventListener('click', saveFilter);
+            document.getElementById('editTestFilterBtn').addEventListener('click', () => testFilter('edit'));
+            document.getElementById('deleteFilterBtn').addEventListener('click', deleteFilter);
+        });
+
+        async function loadFilters() {
+            try {
+                const response = await fetch(`/api/user/${encodeURIComponent(userEmail)}/filters`);
+                const data = await response.json();
+
+                if (data.success) {
+                    renderFilters(data.filters);
+                } else {
+                    showError('Failed to load filters: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error loading filters:', error);
+                showError('Failed to load filters');
+            }
+        }
+
+        function renderFilters(filters) {
+            const container = document.getElementById('filterList');
+
+            if (!filters || filters.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-4 text-muted">
+                        <i class="fas fa-inbox fa-2x"></i>
+                        <p class="mt-2">No filters yet. Create your first filter to start receiving aircraft reports.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = filters.map(filter => `
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="mb-1">
+                                    ${filter.name}
+                                    <span class="badge ${filter.is_active ? 'badge-active' : 'badge-inactive'}">
+                                        ${filter.is_active ? 'Active' : 'Inactive'}
+                                    </span>
+                                    <small class="text-muted ms-2">Priority: ${filter.priority}</small>
+                                </h6>
+                                ${filter.description ? `<p class="text-muted mb-2">${filter.description}</p>` : ''}
+                            </div>
+                            <button class="btn btn-outline-primary btn-sm" onclick="editFilter(${filter.id})">
+                                <i class="fas fa-pencil"></i> Edit
+                            </button>
+                        </div>
+                        <div class="filter-sql mt-2">${escapeHtml(filter.filter_sql)}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function createFilter() {
+            const name = document.getElementById('filterName').value;
+            const description = document.getElementById('filterDescription').value;
+            const filterSql = document.getElementById('filterSql').value;
+            const priority = parseInt(document.getElementById('filterPriority').value) || 0;
+
+            if (!name || !filterSql) {
+                alert('Name and SQL filter are required');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/user/${encodeURIComponent(userEmail)}/filters`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description, filter_sql: filterSql, priority })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('createFilterModal')).hide();
+                    document.getElementById('createFilterForm').reset();
+                    document.getElementById('createTestResult').style.display = 'none';
+                    loadFilters();
+                    alert('Filter created successfully');
+                } else {
+                    alert('Failed to create filter: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error creating filter:', error);
+                alert('Failed to create filter');
+            }
+        }
+
+        async function editFilter(filterId) {
+            try {
+                const response = await fetch(`/api/user/${encodeURIComponent(userEmail)}/filters/${filterId}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    const filter = data.filter;
+                    document.getElementById('editFilterId').value = filter.id;
+                    document.getElementById('editFilterName').value = filter.name;
+                    document.getElementById('editFilterDescription').value = filter.description || '';
+                    document.getElementById('editFilterSql').value = filter.filter_sql;
+                    document.getElementById('editFilterPriority').value = filter.priority;
+                    document.getElementById('editFilterActive').checked = filter.is_active;
+                    document.getElementById('editTestResult').style.display = 'none';
+
+                    new bootstrap.Modal(document.getElementById('editFilterModal')).show();
+                } else {
+                    alert('Failed to load filter: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error loading filter:', error);
+                alert('Failed to load filter');
+            }
+        }
+
+        async function saveFilter() {
+            const filterId = document.getElementById('editFilterId').value;
+            const name = document.getElementById('editFilterName').value;
+            const description = document.getElementById('editFilterDescription').value;
+            const filterSql = document.getElementById('editFilterSql').value;
+            const priority = parseInt(document.getElementById('editFilterPriority').value) || 0;
+            const isActive = document.getElementById('editFilterActive').checked;
+
+            if (!name || !filterSql) {
+                alert('Name and SQL filter are required');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/user/${encodeURIComponent(userEmail)}/filters/${filterId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name, description, filter_sql: filterSql, priority, is_active: isActive
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('editFilterModal')).hide();
+                    loadFilters();
+                    alert('Filter updated successfully');
+                } else {
+                    alert('Failed to update filter: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error updating filter:', error);
+                alert('Failed to update filter');
+            }
+        }
+
+        async function deleteFilter() {
+            const filterId = document.getElementById('editFilterId').value;
+            if (!confirm('Are you sure you want to delete this filter?')) return;
+
+            try {
+                const response = await fetch(`/api/user/${encodeURIComponent(userEmail)}/filters/${filterId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('editFilterModal')).hide();
+                    loadFilters();
+                    alert('Filter deleted successfully');
+                } else {
+                    alert('Failed to delete filter: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error deleting filter:', error);
+                alert('Failed to delete filter');
+            }
+        }
+
+        async function testFilter(mode) {
+            const filterSql = mode === 'create'
+                ? document.getElementById('filterSql').value
+                : document.getElementById('editFilterSql').value;
+            const resultDiv = mode === 'create'
+                ? document.getElementById('createTestResult')
+                : document.getElementById('editTestResult');
+
+            if (!filterSql) {
+                alert('Please enter a filter SQL first');
+                return;
+            }
+
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<div class="text-center"><div class="spinner-border spinner-border-sm"></div> Testing...</div>';
+
+            try {
+                const response = await fetch(`/api/user/${encodeURIComponent(userEmail)}/filters/test`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filter_sql: filterSql, limit: 10 })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    if (data.results && data.results.length > 0) {
+                        resultDiv.innerHTML = `
+                            <div class="alert alert-success">
+                                <strong>Valid filter!</strong> Found ${data.results.length} matching aircraft:
+                            </div>
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr><th>Registration</th><th>Type</th><th>Country</th><th>Military</th></tr>
+                                </thead>
+                                <tbody>
+                                    ${data.results.map(r => `
+                                        <tr>
+                                            <td>${r.r || r.registration || '-'}</td>
+                                            <td>${r.t || r.aircraft_type || '-'}</td>
+                                            <td>${r.current_country || '-'}</td>
+                                            <td>${r.is_military ? 'Yes' : 'No'}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        `;
+                    } else {
+                        resultDiv.innerHTML = `
+                            <div class="alert alert-warning">
+                                Valid filter, but no aircraft currently match this criteria.
+                            </div>
+                        `;
+                    }
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-danger">
+                            <strong>Invalid filter:</strong> ${data.error}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error testing filter:', error);
+                resultDiv.innerHTML = `
+                    <div class="alert alert-danger">Error testing filter</div>
+                `;
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showError(message) {
+            const container = document.getElementById('filterList');
+            container.innerHTML = `
+                <div class="text-center py-4 text-danger">
+                    <i class="fas fa-exclamation-triangle"></i> ${message}
+                </div>
+            `;
+        }
+    </script>
+
+    <!-- Token Refresh -->
+    {% include '_token_refresh.html' %}
+</body>
+</html>

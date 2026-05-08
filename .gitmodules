@@ -1,0 +1,4 @@
+[submodule "lib/resilient-scraper"]
+	path = lib/resilient-scraper
+	url = https://github.com/outstandingcandy/resilient-scraper.git
+	branch = main

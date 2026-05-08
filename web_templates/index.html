@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>飞机追踪系统 - Aircraft Tracking System</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- Flatpickr CSS for date picker -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ static_url }}/css/style.css">
+</head>
+<body>
+    <div class="container-fluid">
+        <!-- 顶部导航 -->
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-3">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="/">
+                    <i class="fas fa-plane"></i> 飞机追踪系统
+                </a>
+                <div class="navbar-nav">
+                    <a class="nav-link" href="/"><i class="fas fa-home"></i> 首页</a>
+                    <a class="nav-link active" href="/dashboard">数据查询</a>
+                    <a class="nav-link" href="/flight-schedules">航班计划</a>
+                    <a class="nav-link" href="/admin/track">搜索追踪</a>
+                    <a class="nav-link" href="/admin/reports"><i class="fas fa-file-alt"></i> 报告</a>
+                    <a class="nav-link" href="/admin/users"><i class="fas fa-users"></i> 用户</a>
+                    <a class="nav-link" href="/admin/scraper-status"><i class="fas fa-robot"></i> 抓取</a>
+                </div>
+                <div class="navbar-nav ms-auto">
+                    {% if current_user %}
+                        <span class="navbar-text me-3">
+                            <i class="fas fa-user"></i> {{ current_user.email }}
+                        </span>
+                        <a class="nav-link" href="/logout">
+                            <i class="fas fa-sign-out-alt"></i> 退出
+                        </a>
+                    {% else %}
+                        <a class="nav-link" href="/login">
+                            <i class="fas fa-sign-in-alt"></i> 登录
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        </nav>
+
+        <div class="row">
+            <!-- 左侧控制面板 -->
+            <div class="col-md-4">
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h5><i class="fas fa-search"></i> 飞机查询</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="searchForm">
+                            <div class="mb-3">
+                                <label for="registration" class="form-label">注册号</label>
+                                <input type="text" class="form-control" id="registration" name="registration" placeholder="如: N123AB">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="hex" class="form-label">ICAO代码</label>
+                                <input type="text" class="form-control" id="hex" name="hex" placeholder="如: A12345">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="aircraft_type" class="form-label">机型</label>
+                                <input type="text" class="form-control" id="aircraft_type" name="aircraft_type" placeholder="如: B737, C17, H60">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="is_military" class="form-label">飞机类型</label>
+                                <select class="form-select" id="is_military" name="is_military">
+                                    <option value="">全部</option>
+                                    <option value="true">军用</option>
+                                    <option value="false">民用</option>
+                                </select>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-6">
+                                    <label for="start_date" class="form-label">开始时间</label>
+                                    <input type="text" class="form-control" id="start_date" name="start_date" placeholder="选择日期">
+                                </div>
+                                <div class="col-6">
+                                    <label for="end_date" class="form-label">结束时间</label>
+                                    <input type="text" class="form-control" id="end_date" name="end_date" placeholder="选择日期">
+                                </div>
+                            </div>
+                            
+                            <div class="mt-3 d-grid gap-2">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-search"></i> 搜索
+                                </button>
+                                <button type="button" class="btn btn-secondary" id="clearForm">
+                                    <i class="fas fa-eraser"></i> 清空
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- 快速查询 -->
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h5><i class="fas fa-bolt"></i> 快速查询</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-outline-primary" id="recentBtn">
+                                <i class="fas fa-clock"></i> 最近1小时
+                            </button>
+                            <button class="btn btn-outline-danger" id="militaryBtn">
+                                <i class="fas fa-fighter-jet"></i> 军用飞机
+                            </button>
+                            <button class="btn btn-outline-info" id="uniqueBtn">
+                                <i class="fas fa-list"></i> 唯一飞机列表
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 统计信息 -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-chart-bar"></i> 统计信息</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="statistics">
+                            <div class="text-center">
+                                <div class="spinner-border spinner-border-sm" role="status">
+                                    <span class="visually-hidden">加载中...</span>
+                                </div>
+                                <div>加载统计数据...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧主内容区 -->
+            <div class="col-md-8">
+                <!-- 地图区域 -->
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5><i class="fas fa-map"></i> 飞行地图</h5>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-outline-secondary" id="clearMapBtn">
+                                <i class="fas fa-eraser"></i> 清空地图
+                            </button>
+                            <button type="button" class="btn btn-outline-info" id="fitBoundsBtn">
+                                <i class="fas fa-expand-arrows-alt"></i> 适应视图
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="map" style="height: 400px;"></div>
+                    </div>
+                </div>
+
+                <!-- 结果表格 -->
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5><i class="fas fa-table"></i> 查询结果</h5>
+                        <div class="d-flex align-items-center gap-2">
+                            <button class="btn btn-sm btn-outline-primary" id="toggleFilters" title="显示/隐藏列过滤器">
+                                <i class="fas fa-filter"></i> 过滤器
+                            </button>
+                            <span class="badge bg-primary" id="resultCount">0 条记录</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover" id="resultsTable">
+                                <thead>
+                                    <tr>
+                                        <th>注册号</th>
+                                        <th>ICAO</th>
+                                        <th>航班号</th>
+                                        <th>机型</th>
+                                        <th>类型</th>
+                                        <th>位置</th>
+                                        <th>高度</th>
+                                        <th>速度</th>
+                                        <th>时间</th>
+                                        <th>操作</th>
+                                    </tr>
+                                    <!-- 列过滤器行 -->
+                                    <tr class="table-filters" id="tableFilters" style="display: none;">
+                                        <th>
+                                            <input type="text" class="form-control form-control-sm column-filter" 
+                                                   data-column="0" placeholder="过滤注册号...">
+                                        </th>
+                                        <th>
+                                            <input type="text" class="form-control form-control-sm column-filter" 
+                                                   data-column="1" placeholder="过滤ICAO...">
+                                        </th>
+                                        <th>
+                                            <input type="text" class="form-control form-control-sm column-filter" 
+                                                   data-column="2" placeholder="过滤航班号...">
+                                        </th>
+                                        <th>
+                                            <input type="text" class="form-control form-control-sm column-filter" 
+                                                   data-column="3" placeholder="过滤机型...">
+                                        </th>
+                                        <th>
+                                            <select class="form-select form-select-sm column-filter" data-column="4">
+                                                <option value="">全部类型</option>
+                                                <option value="军用">军用</option>
+                                                <option value="民用">民用</option>
+                                            </select>
+                                        </th>
+                                        <th>
+                                            <input type="text" class="form-control form-control-sm column-filter" 
+                                                   data-column="5" placeholder="过滤位置...">
+                                        </th>
+                                        <th>
+                                            <input type="text" class="form-control form-control-sm column-filter" 
+                                                   data-column="6" placeholder="过滤高度...">
+                                        </th>
+                                        <th>
+                                            <input type="text" class="form-control form-control-sm column-filter" 
+                                                   data-column="7" placeholder="过滤速度...">
+                                        </th>
+                                        <th>
+                                            <input type="text" class="form-control form-control-sm column-filter" 
+                                                   data-column="8" placeholder="过滤时间...">
+                                        </th>
+                                        <th>
+                                            <button class="btn btn-sm btn-outline-secondary" id="clearFilters" title="清空所有过滤器">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody id="resultsTableBody">
+                                    <tr>
+                                        <td colspan="10" class="text-center text-muted">
+                                            <i class="fas fa-info-circle"></i> 请使用左侧搜索功能查询飞机数据
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 轨迹详情模态框 -->
+    <div class="modal fade" id="trackModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-route"></i> 飞行轨迹 - <span id="modalAircraftInfo"></span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="trackStartDate" class="form-label">开始时间</label>
+                            <input type="text" class="form-control" id="trackStartDate">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="trackLimit" class="form-label">最大点数</label>
+                            <input type="number" class="form-control" id="trackLimit" value="1000" min="10" max="5000">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">&nbsp;</label>
+                            <button class="btn btn-primary d-block w-100" id="loadTrackBtn">
+                                <i class="fas fa-sync"></i> 加载
+                            </button>
+                        </div>
+                    </div>
+                    <div id="trackMap" style="height: 500px;"></div>
+                    <div class="mt-3">
+                        <div id="trackInfo" class="alert alert-info d-none">
+                            <strong>轨迹信息：</strong> <span id="trackDetails"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 飞机档案详情模态框 -->
+    <div class="modal fade" id="staticInfoModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-info text-white">
+                    <h5 class="modal-title">
+                        <i class="fas fa-id-card"></i> 飞机档案 - <span id="staticInfoRegistration"></span>
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="staticInfoContent">
+                        <div class="text-center py-4">
+                            <div class="spinner-border" role="status"></div>
+                            <div>加载档案信息...</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                    <button type="button" class="btn btn-primary" id="viewTracksFromStaticBtn">
+                        <i class="fas fa-route"></i> 查看轨迹
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图片灯箱模态框 -->
+    <div class="modal fade" id="imageLightboxModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content bg-dark">
+                <div class="modal-header border-0">
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center p-0">
+                    <img id="lightboxImage" src="" class="img-fluid" style="max-height: 85vh; object-fit: contain;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
+    
+    <!-- Custom JavaScript -->
+    <script src="{{ static_url }}/js/app.js"></script>
+
+    <!-- Token Refresh -->
+    {% include '_token_refresh.html' %}
+</body>
+</html>

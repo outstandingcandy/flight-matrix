@@ -1,0 +1,35 @@
+# =================================
+# JetPhotos Scraper & Image Download Configuration
+# =================================
+
+# Image download configuration
+image_download:
+  enabled: true                         # Enable image download
+  images_dir: data/jetphotos_images     # Local image save directory
+  max_images_per_aircraft: 10           # Max images per aircraft (only when download_all_images=false)
+  collect_all_metadata: true            # Collect all page metadata (including notes)
+  download_all_images: false            # Download all images (ignore max_images_per_aircraft limit)
+  max_pages: 50                         # Max page pagination (safety limit)
+  delay_min: 20.0                       # Min download interval seconds (serial mode)
+  delay_max: 40.0                       # Max download interval seconds (serial mode)
+  check_interval: 300                   # Service check interval seconds
+  parallel_workers: 3                   # Parallel download count (1=serial, >1=multi-browser parallel)
+
+  # S3 upload configuration (optional)
+  s3:
+    enabled: true                       # Enable S3 upload
+    bucket: "${S3_BUCKET_NAME}"         # S3 bucket name (set in env/.env)
+    prefix: "data/jetphotos_images"     # S3 object prefix (directory path)
+    delete_local_after_upload: false    # Delete local file after successful upload
+
+# JetPhotos scraper configuration
+scraper:
+  scrapers:
+    jetphotos:
+      enabled: true
+      max_concurrent_workers: -1        # -1 = no limit, all idle workers can process
+      # Note: Only scrapes once per aircraft (based on images_downloaded flag)
+      # These settings inherit from image_download section
+      # Override here if needed:
+      # max_images_per_aircraft: 3
+      # s3_upload: true
