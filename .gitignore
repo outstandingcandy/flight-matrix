@@ -33,6 +33,16 @@ __pycache__/
 htmlcov/
 
 # =============================================================================
+# Build artefacts
+# =============================================================================
+*.egg-info/
+build/
+dist/
+# uv.lock is intentionally NOT tracked — this is a deployed app, not a
+# published library, and we don't want the lockfile churn in review.
+uv.lock
+
+# =============================================================================
 # Database & logs
 # =============================================================================
 *.db

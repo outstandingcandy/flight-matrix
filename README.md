@@ -63,27 +63,31 @@ More detail: [docs/architecture.md](docs/architecture.md).
 ## Quick start
 
 ```bash
-# 1. Clone and install dependencies
 git clone --recurse-submodules https://github.com/outstandingcandy/flight-matrix.git
 cd flight-matrix
-uv venv && source .venv/bin/activate
-uv pip install -r requirements.txt
-
-# 2. Configure environment
-cp .env.example .env
-# Edit .env — at minimum set DATABASE_URL. SQLite works out of the box:
-#   DATABASE_URL=sqlite:///aircraft_data.db
-
-# 3. Run the Flask web app (auth bypassed for local dev)
-uv run python web_app.py --skip-auth
-# Visit http://localhost:5050
-
-# 4. (Optional) Run the scraper locally against one source
-uv run python src/scraper_main.py --local --debug --scrapers fr24_flights
+./scripts/quickstart.sh                           # one-shot local setup
+uv run python web_app.py --skip-auth              # then visit http://localhost:5000
 ```
 
-Full setup notes (including Cognito, AWS, and production SSH-tunnel access):
+`quickstart.sh` checks prerequisites (Python 3.11+, `uv`), creates a venv,
+installs dependencies, seeds `.env` with a generated `FLASK_SECRET_KEY`,
+initialises a local SQLite database, and runs the test suite as a smoke
+check. Idempotent.
+
+For manual setup or to understand what `quickstart.sh` is doing, see
 [docs/configuration.md](docs/configuration.md).
+
+## One-command AWS deploy
+
+```bash
+./scripts/deploy-aws.sh --check                   # preflight: identity, tools, .env
+./scripts/deploy-aws.sh                           # guided interactive deploy
+```
+
+`deploy-aws.sh` verifies `aws`, `cdk`, `docker`, `uv`; confirms your AWS
+identity; auto-populates `.env` with required values (generates a DB
+password and Flask secret); and hands off to the low-level `./deploy.sh`.
+See [docs/deployment.md](docs/deployment.md).
 
 ## Common commands
 
