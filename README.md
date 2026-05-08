@@ -112,10 +112,67 @@ Production uses AWS CDK in "import mode" against pre-existing VPC/Aurora/S3.
 See [docs/deployment.md](docs/deployment.md).
 
 ```bash
-./deploy.sh deploy    # First deploy or full update
-./deploy.sh update    # Lambda + scraper + static files only
-./deploy.sh status    # Show stack outputs
+./scripts/deploy-aws.sh            # guided: preflight + deploy
+./scripts/deploy-aws.sh update     # fast update (Lambda + scraper + static)
+./scripts/deploy-aws.sh status     # stack outputs + health summary
+./scripts/deploy-aws.sh destroy    # tear down (asks twice)
+./scripts/deploy-aws.sh --check    # preflight only
+./deploy.sh <subcommand>           # low-level; what deploy-aws.sh wraps
 ```
+
+## Troubleshooting
+
+### `quickstart.sh` fails at `uv: command not found`
+Install `uv` once:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+then re-run `./scripts/quickstart.sh`.
+
+### Tests fail with `ModuleNotFoundError: src`
+You're running `pytest` directly instead of via `uv run`. Either activate
+the venv (`source .venv/bin/activate && pytest tests/`) or prefix every
+command with `uv run`.
+
+### Web app boots but every page 500s
+Most likely `DATABASE_URL` isn't set. `quickstart.sh` seeds it to
+`sqlite:///aircraft_data.db`; if you wiped `.env`, re-run the quickstart
+or add the line manually.
+
+### `/login` redirects to `/login` forever (auth loop)
+This means `SKIP_AUTH` is true but Cognito env vars are half-configured.
+Either set **all** of `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`,
+`COGNITO_CLIENT_SECRET`, `COGNITO_DOMAIN`, `COGNITO_CALLBACK_URL`,
+`COGNITO_LOGOUT_URL`, or remove all of them and set `SKIP_AUTH=true`.
+
+### `deploy-aws.sh` says `aws sts get-caller-identity failed`
+Your AWS credentials aren't set up. Pick one:
+```bash
+aws configure                           # interactive profile
+export AWS_ACCESS_KEY_ID=…              # env vars
+export AWS_SECRET_ACCESS_KEY=…
+export AWS_SESSION_TOKEN=…              # if using SSO / STS
+```
+
+### CDK deploy fails with `This stack uses assets, so the toolkit stack must be deployed`
+Your region isn't bootstrapped. `deploy-aws.sh` handles this automatically,
+but if you bypassed it:
+```bash
+cdk bootstrap aws://<ACCOUNT_ID>/<REGION>
+```
+
+### Scraper can't find Chromium
+DrissionPage expects a Chromium binary. On Ubuntu:
+```bash
+sudo apt install chromium-browser
+```
+On macOS, install Chrome or set `CHROME_PATH` in `.env` to a custom binary.
+
+### I committed a secret by accident
+Don't push. Rewrite the commit(s) locally before the first push, e.g.
+`git reset --soft HEAD~1`, remove the secret, recommit. If it's already
+public, rotate the credential immediately — git rewriting after the fact
+doesn't help once a bot has scraped the value.
 
 ## Project layout
 
