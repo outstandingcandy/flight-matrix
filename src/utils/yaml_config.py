@@ -22,15 +22,60 @@ class YAMLConfig:
         self.config_file = config_file
         self.config = {}
 
-        # Load environment variables from .env file
-        # Try to find .env in the same directory as config file, or project root
-        # Use override=True to ensure .env values take priority over system env vars
+        # --- Stage-aware dotenv loading -----------------------------------
+        # Loads in priority order (later wins):
+        #
+        #   1. .env                         (shared defaults, optional)
+        #   2. .env.local | .env.prod       (stage-specific, picked by $STAGE)
+        #
+        # STAGE is read from the OS environment first (e.g. CI / Lambda sets
+        # STAGE=prod). If unset, defaults to 'prod' to match Lambda/EC2
+        # behaviour where infra always sets it explicitly — i.e. forgetting
+        # STAGE on a local box will NOT accidentally activate a local SQLite
+        # profile. The DatabaseManager guard catches the inverse direction
+        # (STAGE=local + prod URL).
+        #
+        # Why the split matters: if a developer has production Aurora
+        # credentials in .env.prod, those must NOT leak into a local SQLite
+        # dev session just because both files happen to live in the repo.
+        # The stage flag governs which credentials are active.
+        #
+        # .env files are searched in both the config dir (historical) and
+        # the project root (where quickstart.sh / deploy-aws.sh write them).
         config_dir = Path(config_file).parent.absolute()
-        env_path = config_dir / ".env"
-        if env_path.exists():
-            load_dotenv(env_path, override=True)
+        project_root = config_dir.parent if config_dir.name == "config" else config_dir
+        search_dirs = [project_root, config_dir]
+
+        def _find_env(name: str) -> Path | None:
+            for d in search_dirs:
+                p = d / name
+                if p.exists():
+                    return p
+            return None
+
+        stage = os.environ.get("STAGE", "").lower()
+
+        # Default .env (shared) first, without overriding existing env vars —
+        # we want STAGE from the shell to win if it was set explicitly.
+        base_env = _find_env(".env")
+        if base_env is not None:
+            load_dotenv(base_env, override=False)
+
+        if not stage:
+            stage = os.environ.get("STAGE", "").lower() or "prod"
+
+        # Load the stage-specific file *with* override so stage-specific
+        # values beat anything left over from .env or the parent process.
+        stage_env = _find_env(f".env.{stage}")
+        if stage_env is not None:
+            load_dotenv(stage_env, override=True)
+            logger.info(f"Loaded stage env: {stage_env.name} (STAGE={stage})")
+        elif base_env is not None:
+            # Legacy single-.env fallback — load with override for compat.
+            load_dotenv(base_env, override=True)
+            logger.info(f"Loaded legacy env: {base_env.name}")
         else:
-            # Fallback to default behavior (current working directory)
+            # Nothing project-local; fall back to cwd .env (if any).
             load_dotenv(override=True)
 
         self._load_config()

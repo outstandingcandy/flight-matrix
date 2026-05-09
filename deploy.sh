@@ -28,7 +28,12 @@ NC='\033[0m'
 # Configuration
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CDK_APP="python3 cdk_app.py"
-ENV_FILE="${PROJECT_ROOT}/.env"
+# Prefer .env.prod (stage-aware layout); fall back to legacy .env.
+if [ -f "${PROJECT_ROOT}/.env.prod" ]; then
+    ENV_FILE="${PROJECT_ROOT}/.env.prod"
+else
+    ENV_FILE="${PROJECT_ROOT}/.env"
+fi
 OUTPUTS_FILE="${PROJECT_ROOT}/cdk-outputs.json"
 
 # Existing infrastructure is discovered from `.env` at runtime via

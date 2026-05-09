@@ -70,9 +70,24 @@ uv run python web_app.py --skip-auth              # then visit http://localhost:
 ```
 
 `quickstart.sh` checks prerequisites (Python 3.11+, `uv`), creates a venv,
-installs dependencies, seeds `.env` with a generated `FLASK_SECRET_KEY`,
+installs dependencies, seeds `.env.local` with a generated `FLASK_SECRET_KEY`,
 initialises a local SQLite database, and runs the test suite as a smoke
 check. Idempotent.
+
+### Local vs production config
+
+Two env files live side by side; `STAGE` selects which one loads:
+
+- `.env.local` — SQLite, auth bypass, no external APIs. Active when
+  `STAGE=local`. Created by `quickstart.sh`.
+- `.env.prod` — Aurora, Cognito, SES, real API keys. Active when
+  `STAGE=prod` or unset. Created by `scripts/deploy-aws.sh`.
+
+`DatabaseManager` refuses to connect to an AWS-hosted database (any host
+matching `*.rds.amazonaws.com`) when `STAGE=local`, so leaving a
+production URL in the wrong file is a loud startup error rather than a
+silent data leak. Override deliberately with `ALLOW_PROD_DB_FROM_LOCAL=1`
+if you actually need that (e.g. a debugging SSH tunnel).
 
 To run the full data-ingestion stack (Xvfb + Track + Scraper worker)
 from one command:

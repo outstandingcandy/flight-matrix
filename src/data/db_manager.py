@@ -15,6 +15,7 @@ But until every caller is migrated, the facade keeps them working.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
@@ -34,6 +35,17 @@ from src.data.snapshot_repo import SnapshotRepository
 logger = logging.getLogger("database")
 
 
+_PROD_HOST_MARKERS = (
+    ".rds.amazonaws.com",  # AWS RDS / Aurora
+    ".redshift.amazonaws.com",  # Redshift, just in case
+)
+
+
+def _looks_like_prod_host(database_url: str) -> bool:
+    """Heuristic: does this URL point at a managed AWS database?"""
+    return any(marker in database_url for marker in _PROD_HOST_MARKERS)
+
+
 class DatabaseManager:
     """Engine + session factory + delegating facade over repositories."""
 
@@ -42,6 +54,27 @@ class DatabaseManager:
         self.is_postgres = self.database_url.startswith("postgresql")
         self.is_mysql = self.database_url.startswith("mysql")
         self.is_sqlite = self.database_url.startswith("sqlite")
+
+        # --- Stage safety guard -------------------------------------------
+        # When STAGE=local, refuse to connect to a production-looking DB.
+        # This catches the very easy mistake of a single shared .env with a
+        # prod DATABASE_URL that leaks into dev runs. Set
+        # ALLOW_PROD_DB_FROM_LOCAL=1 to override intentionally.
+        stage = os.environ.get("STAGE", "").lower()
+        override = os.environ.get("ALLOW_PROD_DB_FROM_LOCAL", "").lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if stage == "local" and _looks_like_prod_host(self.database_url) and not override:
+            raise RuntimeError(
+                f"Refusing to connect to what looks like a production database "
+                f"while STAGE=local.\n"
+                f"  URL host contains one of: {', '.join(_PROD_HOST_MARKERS)}\n"
+                f"  Either unset/change STAGE, or move the prod credentials out of\n"
+                f"  the local env file (use `.env.prod` instead of `.env`).\n"
+                f"  To override deliberately, set ALLOW_PROD_DB_FROM_LOCAL=1."
+            )
 
         # Ensure SQLite parent dir exists.
         if self.database_url.startswith("sqlite:///") and not self.database_url.endswith(

@@ -115,43 +115,45 @@ else
     warn "  git submodule update --init --recursive"
 fi
 
-# --- 3. .env bootstrap ------------------------------------------------------
-step "Configuring .env"
-if [[ -f .env ]]; then
-    ok ".env already exists — not touched"
+# --- 3. .env.local bootstrap ------------------------------------------------
+# Local dev config lives in `.env.local`. Production credentials live in
+# `.env.prod` and must never leak into a STAGE=local run — DatabaseManager
+# enforces that at runtime.
+step "Configuring .env.local"
+if [[ -f .env.local ]]; then
+    ok ".env.local already exists — not touched"
+elif [[ -f .env ]] && grep -q "^DB_HOST=.*rds.amazonaws" .env 2>/dev/null; then
+    # Legacy single-.env layout with prod creds: refuse to touch it.
+    die "Found a .env that looks like production config (Aurora host detected).
+    Rename it to .env.prod, then rerun this script so .env.local can be
+    created safely without risk of mixing dev/prod settings."
 else
-    cp .env.example .env
-    # Generate a random Flask secret.
+    # Seed .env.local with safe defaults: SQLite, auth bypass, no API keys.
     SECRET=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
-    # sed -i portability: GNU vs BSD.
-    if sed --version >/dev/null 2>&1; then
-        sed -i "s|^FLASK_SECRET_KEY=.*|FLASK_SECRET_KEY=$SECRET|" .env
-    else
-        sed -i '' "s|^FLASK_SECRET_KEY=.*|FLASK_SECRET_KEY=$SECRET|" .env
-    fi
-    ok "created .env with a fresh FLASK_SECRET_KEY"
-fi
+    cat > .env.local <<EOF
+# Local development config. Loaded when STAGE=local.
+# Never put production credentials here — use .env.prod for those.
 
-# Make sure SKIP_AUTH and a SQLite DATABASE_URL are set for local dev.
-ensure_env() {
-    local key="$1" value="$2"
-    if grep -q "^${key}=" .env; then
-        return
-    fi
-    printf "%s=%s\n" "$key" "$value" >> .env
-    ok "appended $key to .env"
-}
-ensure_env STAGE local
-ensure_env SKIP_AUTH true
-ensure_env DATABASE_URL "sqlite:///aircraft_data.db"
-ensure_env LOCAL_DEV_EMAIL "dev@example.com"
-ensure_env LOCAL_DEV_GROUPS "admins,flight-schedules-viewers"
+STAGE=local
+SKIP_AUTH=true
+LOCAL_DEV_EMAIL=dev@example.com
+LOCAL_DEV_GROUPS=admins,flight-schedules-viewers
+
+DATABASE_URL=sqlite:///aircraft_data.db
+FLASK_SECRET_KEY=$SECRET
+
+# Fill in if you want AI analysis / ADS-B ingest locally:
+TAVILY_API_KEY=
+ADSB_API_KEY=
+EOF
+    ok "created .env.local with a fresh FLASK_SECRET_KEY"
+fi
 
 # --- 4. Database ------------------------------------------------------------
 step "Initialising local SQLite database"
-# DatabaseManager() bootstraps the schema in __init__; just instantiating it
-# is enough to create aircraft_data.db with all tables.
-uv run python3 -c "
+# Force STAGE=local for this step so the DatabaseManager prod-URL guard
+# is active even if the shell has STAGE=prod exported.
+STAGE=local uv run python3 -c "
 from src.data.db_manager import DatabaseManager
 dm = DatabaseManager('sqlite:///aircraft_data.db')
 dm.ensure_multi_user_tables_exist()

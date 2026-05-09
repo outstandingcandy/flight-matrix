@@ -72,7 +72,13 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT"
-ENV_FILE="$PROJECT_ROOT/.env"
+# Production config lives in .env.prod. Legacy single-file .env is still
+# accepted if it exists and .env.prod doesn't (warn the operator).
+ENV_FILE="$PROJECT_ROOT/.env.prod"
+if [[ ! -f $ENV_FILE ]] && [[ -f "$PROJECT_ROOT/.env" ]]; then
+    warn "Using legacy .env — rename to .env.prod to make the dev/prod split explicit."
+    ENV_FILE="$PROJECT_ROOT/.env"
+fi
 
 # --- 1. Prerequisites -------------------------------------------------------
 step "Checking AWS prerequisites"
