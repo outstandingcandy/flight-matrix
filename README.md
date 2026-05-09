@@ -103,6 +103,16 @@ PIDs and logs live in `./logs/`. Add `--no-track` or `--no-scraper` to
 skip a service, `--scrapers fr24_airport,jetphotos` to override which
 scrapers run.
 
+To configure which sources to scrape, how often, and how to enqueue
+ad-hoc jobs, see [docs/scraping.md](docs/scraping.md). For a full
+end-to-end walkthrough that boots the stack, seeds a handful of tasks,
+and prints a before/after diff:
+
+```bash
+./scripts/demo.sh                            # default demo
+./scripts/demo.sh --registration B-1020      # one specific aircraft
+```
+
 For manual setup or to understand what `quickstart.sh` is doing, see
 [docs/configuration.md](docs/configuration.md).
 

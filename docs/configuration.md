@@ -119,6 +119,10 @@ config/
     └── other.yaml         # Remaining sources
 ```
 
+For how the scraper YAMLs translate into actual download tasks — and
+how to enqueue ad-hoc jobs during development — see
+[scraping.md](scraping.md).
+
 Values containing `${VAR}` are resolved via `YAMLConfig._resolve_env_vars()`
 lazily at read time. Anything else is a literal.
 
