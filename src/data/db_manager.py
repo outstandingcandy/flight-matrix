@@ -69,22 +69,33 @@ class DatabaseManager:
         return f"sqlite:///{database_url}"
 
     def _bootstrap_schema(self) -> None:
-        """Create every table this manager owns, idempotently."""
+        """Create every table this manager owns, idempotently.
+
+        Two-step on SQLite:
+
+        1. Raw CREATE TABLE for `aircraft_snapshots` when it's missing, because
+           SQLAlchemy's `create_all` does not emit the AUTOINCREMENT clause
+           that the ingest path depends on.
+        2. `Base.metadata.create_all()` to bring up every other ORM-declared
+           table (`aircraft_static_info`, `airports`, `flight_schedules`,
+           multi-user tables, etc.). It is idempotent.
+
+        On Postgres/MySQL only step 2 is needed — there's no AUTOINCREMENT
+        quirk to work around.
+        """
         if self.is_sqlite:
-            # SQLite needs explicit AUTOINCREMENT on aircraft_snapshots; test whether
-            # the core table exists and only build the raw-SQL schema if it doesn't.
             session = self.SessionLocal()
             try:
                 session.execute(text("SELECT COUNT(*) FROM aircraft_snapshots LIMIT 1"))
-                logger.info("SQLite tables already exist")
+                logger.info("SQLite core tables already exist")
             except Exception:
                 create_sqlite_tables(session)
             finally:
                 session.close()
-        else:
-            # Postgres/MySQL: SQLAlchemy's create_all is enough; it skips existing.
-            create_core_tables(self.engine)
-            logger.info("All tables ensured (including models.py)")
+
+        # Bring up every other ORM-declared table (idempotent on every dialect).
+        create_core_tables(self.engine)
+        logger.info("All tables ensured (including models.py)")
 
     # ------------------------------------------------------------------
     # Session management

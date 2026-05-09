@@ -61,6 +61,64 @@ class TestSchemaBootstrap:
         with db_manager.get_session() as session:
             session.execute(text("SELECT COUNT(*) FROM users"))
 
+    def test_orm_tables_bootstrapped_on_sqlite(self, db_manager: DatabaseManager) -> None:
+        """Regression: before the fix, _bootstrap_schema on SQLite only created
+        the three tables from `create_sqlite_tables` (aircraft_snapshots,
+        geographic_regions, report_cooldowns) and skipped
+        `Base.metadata.create_all`, leaving aircraft_static_info, airports,
+        flight_schedules, aircraft_images, etc. missing. That broke
+        `batch_insert_aircraft` (it tries to auto-populate aircraft_static_info
+        and swallowed the OperationalError silently).
+        """
+        from sqlalchemy import text
+
+        expected_orm_tables = [
+            "aircraft_snapshots",  # raw-SQL path
+            "geographic_regions",  # raw-SQL path
+            "report_cooldowns",  # raw-SQL path
+            "aircraft_static_info",  # ORM-only — was missing pre-fix
+            "aircraft_images",  # ORM-only
+            "airports",  # ORM-only
+            "flight_schedules",  # ORM-only
+            "note_aircraft_analysis",  # ORM-only
+            "aircraft_attention_aggregate",  # ORM-only
+        ]
+
+        with db_manager.get_session() as session:
+            for table in expected_orm_tables:
+                # Raises OperationalError if the table is missing.
+                session.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
+
+    def test_batch_insert_does_not_log_missing_table_errors(
+        self, db_manager: DatabaseManager
+    ) -> None:
+        """Regression: batch_insert_aircraft should not hit
+        'no such table: aircraft_static_info' during _auto_create_static_info.
+        """
+        sample = [
+            {
+                "hex": "abc123",
+                "flight": "VIP123",
+                "r": "N-TEST1",
+                "t": "A380",
+                "lat": 37.5,
+                "lon": -122.3,
+                "alt_baro": 35000,
+                "gs": 480.5,
+            }
+        ]
+        inserted = db_manager.batch_insert_aircraft(sample)
+        assert inserted == 1
+
+        # aircraft_static_info row should have been created by _auto_create_static_info.
+        from sqlalchemy import text
+
+        with db_manager.get_session() as session:
+            count = session.execute(
+                text("SELECT COUNT(*) FROM aircraft_static_info WHERE registration = 'N-TEST1'")
+            ).scalar()
+            assert count == 1, "auto_create_static_info should have inserted a row"
+
 
 class TestRepositoryProperties:
     def test_snapshots_returns_repo(self, db_manager: DatabaseManager) -> None:
