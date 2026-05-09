@@ -74,6 +74,20 @@ installs dependencies, seeds `.env` with a generated `FLASK_SECRET_KEY`,
 initialises a local SQLite database, and runs the test suite as a smoke
 check. Idempotent.
 
+To run the full data-ingestion stack (Xvfb + Track + Scraper worker)
+from one command:
+
+```bash
+./scripts/start-all.sh              # launch everything in the background
+./scripts/start-all.sh --status     # see what's up
+./scripts/start-all.sh --tail       # follow every log file
+./scripts/start-all.sh --stop       # stop everything
+```
+
+PIDs and logs live in `./logs/`. Add `--no-track` or `--no-scraper` to
+skip a service, `--scrapers fr24_airport,jetphotos` to override which
+scrapers run.
+
 For manual setup or to understand what `quickstart.sh` is doing, see
 [docs/configuration.md](docs/configuration.md).
 
