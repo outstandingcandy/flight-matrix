@@ -75,9 +75,19 @@ class JetPhotosScraper(BaseScraper[JetPhotosResult]):
         self.max_pages = self.config.get("max_pages", 50)  # Safety limit
         self.page_delay = self.config.get("page_delay", 3.0)  # Delay between pages
 
-        # S3 configuration
+        # S3 configuration. Disable if the bucket is empty or still contains
+        # an unresolved `${VAR}` placeholder (common in local dev where the
+        # env var isn't set).
         self.s3_enabled = self.config.get("s3_upload", False)
-        self.s3_bucket = self.config.get("s3_bucket", "")
+        self.s3_bucket = self.config.get("s3_bucket", "") or ""
+        if "${" in self.s3_bucket or not self.s3_bucket.strip():
+            if self.s3_enabled:
+                logger.info(
+                    "S3 upload auto-disabled — bucket is empty or unresolved "
+                    f"({self.s3_bucket!r}). Images will only be saved locally."
+                )
+            self.s3_enabled = False
+            self.s3_bucket = ""
         self.s3_prefix = self.config.get("s3_prefix", "data/jetphotos_images")
         self.delete_local_after_upload = self.config.get("delete_local_after_upload", False)
 

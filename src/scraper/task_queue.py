@@ -44,12 +44,13 @@ class TaskQueue:
         """Initialize the task queue.
 
         Args:
-            database_url: PostgreSQL connection URL.
+            database_url: Postgres (prod) or SQLite (local dev) URL.
         """
         self.database_url = database_url
         self.engine = create_engine(database_url, echo=False, pool_pre_ping=True)
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
-        logger.info("TaskQueue initialized with database")
+        self.is_postgres = self.engine.dialect.name == "postgresql"
+        logger.info(f"TaskQueue initialized with database (dialect={self.engine.dialect.name})")
 
     def get_session(self) -> Any:
         """Get a database session."""
@@ -331,7 +332,10 @@ class TaskQueue:
         """
         session = self.get_session()
         try:
-            # First, reset stale tasks (no heartbeat for stale_timeout_minutes)
+            # First, reset stale tasks (no heartbeat for stale_timeout_minutes).
+            # Compute the cutoff in Python so the SQL is dialect-agnostic —
+            # Postgres's `NOW() - INTERVAL` syntax does not work on SQLite.
+            stale_cutoff = datetime.utcnow() - timedelta(minutes=stale_timeout_minutes)
             stale_result = session.execute(
                 text(
                     """
@@ -342,10 +346,10 @@ class TaskQueue:
                         heartbeat_at = NULL
                     WHERE status IN ('claimed', 'processing')
                     AND heartbeat_at IS NOT NULL
-                    AND heartbeat_at < NOW() - INTERVAL :timeout
+                    AND heartbeat_at < :stale_cutoff
                     """
                 ),
-                {"timeout": f"{stale_timeout_minutes} minutes"},
+                {"stale_cutoff": stale_cutoff},
             )
             if stale_result.rowcount > 0:
                 logger.info(f"Reset {stale_result.rowcount} stale tasks (no heartbeat)")
@@ -398,49 +402,130 @@ class TaskQueue:
                 for i, tt in enumerate(available_task_types):
                     params[f"type_{i}"] = tt
 
-            # Atomic claim with SKIP LOCKED
-            result = session.execute(
-                text(
-                    f"""
-                    UPDATE scraper_tasks
-                    SET status = 'claimed',
-                        claimed_by = :worker_id,
-                        claimed_at = :now,
-                        heartbeat_at = :now,
-                        attempts = attempts + 1
-                    WHERE id IN (
+            # Atomic claim. Postgres uses `FOR UPDATE SKIP LOCKED` + `UPDATE …
+            # WHERE id IN (…) RETURNING …` in a single round-trip. SQLite
+            # doesn't support SKIP LOCKED (single-writer anyway) and its
+            # RETURNING (since 3.35) can't be used inside the IN subquery
+            # pattern safely, so we fall back to a SELECT → UPDATE → SELECT
+            # flow in a single transaction.
+            tasks = []
+            if self.is_postgres:
+                result = session.execute(
+                    text(
+                        f"""
+                        UPDATE scraper_tasks
+                        SET status = 'claimed',
+                            claimed_by = :worker_id,
+                            claimed_at = :now,
+                            heartbeat_at = :now,
+                            attempts = attempts + 1
+                        WHERE id IN (
+                            SELECT id FROM scraper_tasks
+                            WHERE status = 'pending'
+                            AND scheduled_for <= :now
+                            {type_filter}
+                            ORDER BY priority DESC, scheduled_for ASC
+                            LIMIT :limit
+                            FOR UPDATE SKIP LOCKED
+                        )
+                        RETURNING id, task_type, task_key, payload, attempts, max_attempts,
+                                  priority, created_at, scheduled_for
+                    """
+                    ),
+                    params,
+                )
+                for row in result:
+                    tasks.append(
+                        ScraperTask(
+                            id=row.id,
+                            task_type=row.task_type,
+                            task_key=row.task_key,
+                            status=TaskStatus.CLAIMED,
+                            payload=row.payload or {},
+                            attempts=row.attempts,
+                            max_attempts=row.max_attempts,
+                            priority=row.priority,
+                            claimed_by=worker_id,
+                            claimed_at=datetime.utcnow(),
+                            created_at=row.created_at,
+                            scheduled_for=row.scheduled_for,
+                        )
+                    )
+            else:
+                # SQLite path: pick candidate ids, update them, then read back.
+                candidate_rows = session.execute(
+                    text(
+                        f"""
                         SELECT id FROM scraper_tasks
                         WHERE status = 'pending'
                         AND scheduled_for <= :now
                         {type_filter}
                         ORDER BY priority DESC, scheduled_for ASC
                         LIMIT :limit
-                        FOR UPDATE SKIP LOCKED
-                    )
-                    RETURNING id, task_type, task_key, payload, attempts, max_attempts,
-                              priority, created_at, scheduled_for
-                """
-                ),
-                params,
-            )
+                        """
+                    ),
+                    params,
+                ).fetchall()
+                candidate_ids = [r.id for r in candidate_rows]
 
-            tasks = []
-            for row in result:
-                task = ScraperTask(
-                    id=row.id,
-                    task_type=row.task_type,
-                    task_key=row.task_key,
-                    status=TaskStatus.CLAIMED,
-                    payload=row.payload or {},
-                    attempts=row.attempts,
-                    max_attempts=row.max_attempts,
-                    priority=row.priority,
-                    claimed_by=worker_id,
-                    claimed_at=datetime.utcnow(),
-                    created_at=row.created_at,
-                    scheduled_for=row.scheduled_for,
-                )
-                tasks.append(task)
+                if candidate_ids:
+                    id_placeholders = ", ".join([f":id_{i}" for i in range(len(candidate_ids))])
+                    upd_params = {
+                        "worker_id": worker_id,
+                        "now": params["now"],
+                        **{f"id_{i}": cid for i, cid in enumerate(candidate_ids)},
+                    }
+                    session.execute(
+                        text(
+                            f"""
+                            UPDATE scraper_tasks
+                            SET status = 'claimed',
+                                claimed_by = :worker_id,
+                                claimed_at = :now,
+                                heartbeat_at = :now,
+                                attempts = attempts + 1
+                            WHERE id IN ({id_placeholders})
+                            """
+                        ),
+                        upd_params,
+                    )
+                    read_rows = session.execute(
+                        text(
+                            f"""
+                            SELECT id, task_type, task_key, payload, attempts, max_attempts,
+                                   priority, created_at, scheduled_for
+                            FROM scraper_tasks
+                            WHERE id IN ({id_placeholders})
+                            """
+                        ),
+                        {f"id_{i}": cid for i, cid in enumerate(candidate_ids)},
+                    ).fetchall()
+                    # SQLite stores JSON as text — decode payload.
+                    import json as _json
+
+                    for row in read_rows:
+                        payload = row.payload
+                        if isinstance(payload, str):
+                            try:
+                                payload = _json.loads(payload)
+                            except (ValueError, TypeError):
+                                payload = {}
+                        tasks.append(
+                            ScraperTask(
+                                id=row.id,
+                                task_type=row.task_type,
+                                task_key=row.task_key,
+                                status=TaskStatus.CLAIMED,
+                                payload=payload or {},
+                                attempts=row.attempts,
+                                max_attempts=row.max_attempts,
+                                priority=row.priority,
+                                claimed_by=worker_id,
+                                claimed_at=datetime.utcnow(),
+                                created_at=row.created_at,
+                                scheduled_for=row.scheduled_for,
+                            )
+                        )
 
             session.commit()
 
@@ -759,15 +844,18 @@ class TaskQueue:
         session = self.get_session()
         try:
             metadata_json = json.dumps(metadata) if metadata else "{}"
+            # `CAST(... AS jsonb)` is Postgres-only; SQLite stores JSON as
+            # TEXT so the raw string works in both places.
+            metadata_cast = "CAST(:metadata AS jsonb)" if self.is_postgres else ":metadata"
             session.execute(
                 text(
-                    """
+                    f"""
                     INSERT INTO scraper_workers (worker_id, metadata, last_heartbeat)
-                    VALUES (:worker_id, CAST(:metadata AS jsonb), CURRENT_TIMESTAMP)
+                    VALUES (:worker_id, {metadata_cast}, CURRENT_TIMESTAMP)
                     ON CONFLICT (worker_id) DO UPDATE SET
                         last_heartbeat = CURRENT_TIMESTAMP,
                         status = 'active',
-                        metadata = COALESCE(CAST(:metadata AS jsonb), scraper_workers.metadata)
+                        metadata = COALESCE({metadata_cast}, scraper_workers.metadata)
                 """
                 ),
                 {

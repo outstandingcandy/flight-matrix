@@ -79,7 +79,11 @@ class AirportDataScraper(BaseScraper[AirportDataResult]):
         # Configuration
         self.screenshots_dir = self.config.get("screenshots_dir", "data/airport_data_screenshots")
         self.s3_upload = self.config.get("s3_upload", False)
-        self.s3_bucket = self.config.get("s3_bucket", "")
+        self.s3_bucket = self.config.get("s3_bucket", "") or ""
+        # Auto-disable S3 if bucket is empty or still a `${VAR}` placeholder.
+        if "${" in self.s3_bucket or not self.s3_bucket.strip():
+            self.s3_upload = False
+            self.s3_bucket = ""
         self.s3_prefix = self.config.get("s3_prefix", "data/airport_data_raw")
         self.max_pages = self.config.get("max_pages_per_manufacturer", 500)
         self.skip_existing = self.config.get("skip_existing", True)

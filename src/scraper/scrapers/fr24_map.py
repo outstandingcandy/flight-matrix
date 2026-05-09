@@ -89,16 +89,29 @@ class FR24MapScraper(BaseScraper[FR24MapResult]):
         if not self.db_engine:
             return
 
-        create_table_sql = """
+        # Dialect-aware types so local SQLite development works.
+        is_postgres = self.db_engine.dialect.name == "postgresql"
+        if is_postgres:
+            pk = "SERIAL PRIMARY KEY"
+            ts = "TIMESTAMP WITH TIME ZONE"
+            ts_default = "TIMESTAMP WITH TIME ZONE DEFAULT NOW()"
+            dbl = "DOUBLE PRECISION"
+        else:
+            pk = "INTEGER PRIMARY KEY AUTOINCREMENT"
+            ts = "DATETIME"
+            ts_default = "DATETIME DEFAULT CURRENT_TIMESTAMP"
+            dbl = "REAL"
+
+        create_table_sql = f"""
         CREATE TABLE IF NOT EXISTS aircraft_realtime_positions (
-            id SERIAL PRIMARY KEY,
+            id {pk},
             fr24_id VARCHAR(32),
             flight_number VARCHAR(16),
             callsign VARCHAR(16),
             registration VARCHAR(16),
             aircraft_type VARCHAR(8),
-            latitude DOUBLE PRECISION,
-            longitude DOUBLE PRECISION,
+            latitude {dbl},
+            longitude {dbl},
             altitude INTEGER,
             ground_speed INTEGER,
             heading INTEGER,
@@ -107,8 +120,8 @@ class FR24MapScraper(BaseScraper[FR24MapResult]):
             origin_iata VARCHAR(4),
             destination_iata VARCHAR(4),
             on_ground BOOLEAN DEFAULT FALSE,
-            fr24_timestamp TIMESTAMP WITH TIME ZONE,
-            scraped_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            fr24_timestamp {ts},
+            scraped_at {ts_default},
             scrape_task_key VARCHAR(64),
             UNIQUE (fr24_id, fr24_timestamp)
         );

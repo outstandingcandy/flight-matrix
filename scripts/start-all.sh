@@ -156,8 +156,12 @@ start_bg() {
 check_prereqs() {
     [[ -x "$PROJECT_ROOT/.venv/bin/python3" ]] \
         || die ".venv missing. Run ./scripts/quickstart.sh first."
-    [[ -f "$PROJECT_ROOT/.env" ]] \
-        || die ".env missing. Run ./scripts/quickstart.sh first."
+    # Accept any of the stage-aware or legacy env files.
+    if [[ ! -f "$PROJECT_ROOT/.env.local" ]] \
+       && [[ ! -f "$PROJECT_ROOT/.env.prod" ]] \
+       && [[ ! -f "$PROJECT_ROOT/.env" ]]; then
+        die "no env file found (.env.local / .env.prod / .env). Run ./scripts/quickstart.sh first."
+    fi
     if (( START_SCRAPER )); then
         command -v Xvfb >/dev/null 2>&1 \
             || die "Xvfb not installed (apt install xvfb). Needed for scraper."
