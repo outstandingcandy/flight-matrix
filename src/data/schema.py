@@ -163,6 +163,192 @@ def ensure_report_cooldowns_table(session: Session) -> None:
         logger.error(f"Error creating report cooldowns table: {e}")
 
 
+def ensure_scraper_tables(session: Session, *, is_postgres: bool) -> None:
+    """Create scraper_tasks, scraper_workers, scraper_results on demand.
+
+    The scraper framework creates these via `TaskQueue.ensure_tables_exist()`
+    at worker startup using Postgres-specific DDL. The web admin pages read
+    these tables too and fail on a fresh SQLite DB without them, so this
+    helper builds them early with dialect-appropriate types.
+
+    Idempotent: returns early if the tables already exist.
+    """
+    try:
+        session.execute(text("SELECT 1 FROM scraper_tasks LIMIT 1"))
+        logger.debug("Scraper tables already exist")
+        return
+    except Exception:
+        pass
+
+    if is_postgres:
+        pk = "BIGSERIAL PRIMARY KEY"
+        ts = "TIMESTAMPTZ"
+        ts_default_now = "TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP"
+        json_col = "JSONB"
+        json_default = "JSONB NOT NULL DEFAULT '{}'"
+        numeric = "NUMERIC(10, 3)"
+    else:
+        pk = "INTEGER PRIMARY KEY AUTOINCREMENT"
+        ts = "DATETIME"
+        ts_default_now = "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"
+        json_col = "TEXT"
+        json_default = "TEXT NOT NULL DEFAULT '{}'"
+        numeric = "REAL"
+
+    try:
+        session.execute(
+            text(f"""
+                CREATE TABLE IF NOT EXISTS scraper_tasks (
+                    id {pk},
+                    task_type VARCHAR(50) NOT NULL,
+                    task_key VARCHAR(500) NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    priority INTEGER NOT NULL DEFAULT 0,
+                    payload {json_default},
+                    claimed_by VARCHAR(100),
+                    claimed_at {ts},
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    max_attempts INTEGER NOT NULL DEFAULT 3,
+                    last_error TEXT,
+                    result {json_col},
+                    scheduled_for {ts_default_now},
+                    created_at {ts_default_now},
+                    completed_at {ts},
+                    heartbeat_at {ts}
+                )
+            """)
+        )
+        session.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_scraper_tasks_status ON scraper_tasks(status)")
+        )
+        session.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_scraper_tasks_type_key "
+                "ON scraper_tasks(task_type, task_key)"
+            )
+        )
+        session.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_scraper_tasks_scheduled "
+                "ON scraper_tasks(scheduled_for)"
+            )
+        )
+
+        session.execute(
+            text(f"""
+                CREATE TABLE IF NOT EXISTS scraper_workers (
+                    id {pk},
+                    worker_id VARCHAR(100) UNIQUE NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'active',
+                    last_heartbeat {ts_default_now},
+                    tasks_completed INTEGER NOT NULL DEFAULT 0,
+                    current_task_id INTEGER,
+                    started_at {ts} DEFAULT CURRENT_TIMESTAMP,
+                    metadata {json_default}
+                )
+            """)
+        )
+
+        session.execute(
+            text(f"""
+                CREATE TABLE IF NOT EXISTS scraper_results (
+                    id {pk},
+                    task_id INTEGER REFERENCES scraper_tasks(id),
+                    worker_id VARCHAR(100) NOT NULL,
+                    success BOOLEAN NOT NULL,
+                    duration_seconds {numeric},
+                    result {json_col},
+                    error TEXT,
+                    created_at {ts_default_now}
+                )
+            """)
+        )
+        session.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_scraper_results_task ON scraper_results(task_id)")
+        )
+
+        session.commit()
+        logger.info("Scraper tables created successfully")
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error creating scraper tables: {e}")
+        raise
+
+
+def ensure_xiaohongshu_tables(session: Session, *, is_postgres: bool) -> None:
+    """Create xiaohongshu_notes / xiaohongshu_comments tables if missing.
+
+    Mirror the production schema these admin routes query. Dialect-aware.
+    """
+    try:
+        session.execute(text("SELECT 1 FROM xiaohongshu_notes LIMIT 1"))
+        return
+    except Exception:
+        pass
+
+    if is_postgres:
+        pk = "BIGSERIAL PRIMARY KEY"
+        ts = "TIMESTAMPTZ"
+        ts_default_now = "TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP"
+    else:
+        pk = "INTEGER PRIMARY KEY AUTOINCREMENT"
+        ts = "DATETIME"
+        ts_default_now = "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"
+
+    # Columns chosen to match what web_app.py's admin queries reference.
+    # Production Postgres has these as JSONB; on SQLite we store TEXT.
+    json_col = "JSONB" if is_postgres else "TEXT"
+    try:
+        session.execute(
+            text(f"""
+                CREATE TABLE IF NOT EXISTS xiaohongshu_notes (
+                    id {pk},
+                    note_id VARCHAR(100) UNIQUE NOT NULL,
+                    title TEXT,
+                    content TEXT,
+                    author_id VARCHAR(100),
+                    author_name VARCHAR(200),
+                    like_count INTEGER DEFAULT 0,
+                    comment_count INTEGER DEFAULT 0,
+                    collect_count INTEGER DEFAULT 0,
+                    share_count INTEGER DEFAULT 0,
+                    publish_time {ts},
+                    scraped_at {ts_default_now},
+                    updated_at {ts},
+                    note_created_at {ts},
+                    source_url TEXT,
+                    image_paths {json_col},
+                    image_urls {json_col},
+                    video_url TEXT,
+                    comments {json_col},
+                    tags {json_col},
+                    location VARCHAR(255)
+                )
+            """)
+        )
+        session.execute(
+            text(f"""
+                CREATE TABLE IF NOT EXISTS xiaohongshu_comments (
+                    id {pk},
+                    note_id VARCHAR(100) NOT NULL,
+                    comment_id VARCHAR(100),
+                    content TEXT,
+                    author_id VARCHAR(100),
+                    author_name VARCHAR(200),
+                    like_count INTEGER DEFAULT 0,
+                    publish_time {ts},
+                    scraped_at {ts_default_now}
+                )
+            """)
+        )
+        session.commit()
+        logger.info("Xiaohongshu tables created successfully")
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error creating xiaohongshu tables: {e}")
+        raise
+
+
 def ensure_multi_user_tables(session: Session, *, is_postgres: bool) -> None:
     """Create users, subscriptions, user_filters, user_cooldowns, user_usage.
 

@@ -518,6 +518,19 @@ class AircraftStaticInfo(Base):
     jp_cn = Column(String(50))  # Serial number from JetPhotos
     jp_updated_at = Column(DateTime)
 
+    # Enrichment fields populated by downstream workers and analysis pipelines.
+    # Historically added by ad-hoc production migrations; declared here so
+    # SQLite bootstrap (Base.metadata.create_all) also creates them.
+    is_military = Column(Boolean, default=False, index=True)
+    is_government = Column(Boolean, default=False, index=True)
+    is_vip = Column(Boolean, default=False, index=True)
+    organization = Column(String(200))
+    livery_name = Column(String(200))
+    livery_type = Column(String(100))
+    attention_level = Column(String(20), index=True)  # high, medium, low
+    # Country alias — some queries use `country`, some use `country_of_registration`.
+    country = Column(String(100), index=True)
+
     # Relationship to AircraftImage
     images = relationship(
         "AircraftImage",

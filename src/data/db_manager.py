@@ -26,6 +26,8 @@ from src.data.schema import (
     create_sqlite_tables,
     ensure_multi_user_tables,
     ensure_report_cooldowns_table,
+    ensure_scraper_tables,
+    ensure_xiaohongshu_tables,
 )
 from src.data.snapshot_repo import SnapshotRepository
 
@@ -95,6 +97,18 @@ class DatabaseManager:
 
         # Bring up every other ORM-declared table (idempotent on every dialect).
         create_core_tables(self.engine)
+
+        # Scraper and xiaohongshu tables are not ORM-declared; they are raw
+        # DDL that historically only ran via `TaskQueue.ensure_tables_exist`
+        # (scraper worker startup) or production migrations. Admin pages
+        # read from them, so bootstrap them here too.
+        session = self.SessionLocal()
+        try:
+            ensure_scraper_tables(session, is_postgres=self.is_postgres)
+            ensure_xiaohongshu_tables(session, is_postgres=self.is_postgres)
+        finally:
+            session.close()
+
         logger.info("All tables ensured (including models.py)")
 
     # ------------------------------------------------------------------

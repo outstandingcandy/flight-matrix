@@ -170,6 +170,21 @@ UTC = pytz.UTC
 BEIJING_TZ = pytz.timezone("Asia/Shanghai")
 
 
+def _table_exists(session, table_name: str) -> bool:
+    """Dialect-agnostic 'does this table exist?' check.
+
+    Originally the code used `SELECT EXISTS (SELECT FROM information_schema.tables
+    WHERE table_name = ...)`, which is Postgres-only. SQLAlchemy's Inspector
+    works across SQLite, Postgres, MySQL, etc.
+    """
+    from sqlalchemy import inspect
+
+    try:
+        return inspect(session.get_bind()).has_table(table_name)
+    except Exception:
+        return False
+
+
 def get_image_url(relative_path: str | None) -> str | None:
     """Convert relative image path to full URL based on environment.
 
@@ -873,7 +888,8 @@ def get_aircraft_type_instances(type_code: str):
         try:
             from sqlalchemy import text
 
-            # 获取该机型的飞机列表，优先显示有图片的
+            # Aircraft of this type, photo-bearing rows first. LATERAL
+            # replaced by a correlated subquery for dialect portability.
             aircraft_result = db_session.execute(
                 text("""
                 SELECT
@@ -882,18 +898,16 @@ def get_aircraft_type_instances(type_code: str):
                     asi.owner,
                     asi.operator,
                     asi.hex_code,
-                    ai.image_path
+                    (SELECT image_path FROM aircraft_images
+                     WHERE registration = asi.registration
+                     ORDER BY display_order ASC, created_at DESC
+                     LIMIT 1) AS image_path
                 FROM aircraft_static_info asi
-                LEFT JOIN LATERAL (
-                    SELECT image_path
-                    FROM aircraft_images
-                    WHERE registration = asi.registration
-                    ORDER BY display_order ASC, created_at DESC
-                    LIMIT 1
-                ) ai ON true
                 WHERE asi.aircraft_type = :type_code
                 ORDER BY
-                    CASE WHEN ai.image_path IS NOT NULL THEN 0 ELSE 1 END,
+                    CASE WHEN (SELECT image_path FROM aircraft_images
+                               WHERE registration = asi.registration
+                               LIMIT 1) IS NOT NULL THEN 0 ELSE 1 END,
                     asi.registration
                 LIMIT :limit OFFSET :offset
             """),
@@ -1411,7 +1425,7 @@ def unified_search():
                 text("""
                 SELECT registration, aircraft_type, owner, operator, hex_code
                 FROM aircraft_static_info
-                WHERE registration ILIKE :pattern
+                WHERE LOWER(registration) LIKE LOWER(:pattern)
                 ORDER BY registration
                 LIMIT :limit
             """),
@@ -1435,7 +1449,7 @@ def unified_search():
                 SELECT aircraft_type, COUNT(*) as aircraft_count
                 FROM aircraft_static_info
                 WHERE aircraft_type IS NOT NULL AND aircraft_type != ''
-                  AND aircraft_type ILIKE :pattern
+                  AND LOWER(aircraft_type) LIKE LOWER(:pattern)
                 GROUP BY aircraft_type
                 ORDER BY aircraft_count DESC
                 LIMIT :limit
@@ -2612,14 +2626,7 @@ def api_admin_aircraft_query(registration: str):
             # 3. Query aircraft_realtime_positions (FR24 positions)
             # Check if table exists first
             t0 = _time.time()
-            realtime_exists = session.execute(
-                text("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables
-                    WHERE table_name = 'aircraft_realtime_positions'
-                )
-            """)
-            ).scalar()
+            realtime_exists = _table_exists(session, "aircraft_realtime_positions")
 
             if realtime_exists:
                 # Use subquery to force registration index usage, then sort
@@ -2766,14 +2773,7 @@ def api_admin_aircraft_query(registration: str):
             # 6. Query note_aircraft_analysis (social media mentions using JSONB)
             # Check if table exists
             t0 = _time.time()
-            analysis_exists = session.execute(
-                text("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables
-                    WHERE table_name = 'note_aircraft_analysis'
-                )
-            """)
-            ).scalar()
+            analysis_exists = _table_exists(session, "note_aircraft_analysis")
 
             if analysis_exists:
                 # Use JSONB operator to search for registration in the array
@@ -2790,11 +2790,16 @@ def api_admin_aircraft_query(registration: str):
                            xn.scraped_at as note_scraped_at
                     FROM note_aircraft_analysis naa
                     LEFT JOIN xiaohongshu_notes xn ON naa.note_id = xn.note_id
-                    WHERE naa.registrations::jsonb ? :reg
+                    -- Postgres stores registrations as JSONB; SQLite as TEXT.
+                    -- `LIKE` over the serialized JSON works for both as long
+                    -- as the reg is quoted (which it is in the JSON array).
+                    WHERE CAST(naa.registrations AS TEXT) LIKE :reg_pattern
                     ORDER BY naa.analyzed_at DESC
                     LIMIT 20
                 """)
-                mentions_result = session.execute(mentions_query, {"reg": reg_upper})
+                mentions_result = session.execute(
+                    mentions_query, {"reg_pattern": f'%"{reg_upper}"%'}
+                )
                 mentions_list = []
                 for row in mentions_result:
                     # Use S3 image_paths if available, fallback to original URLs
@@ -2855,14 +2860,7 @@ def api_admin_aircraft_query(registration: str):
 
             # 7. Query aircraft_attention_aggregate
             t0 = _time.time()
-            attention_exists = session.execute(
-                text("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables
-                    WHERE table_name = 'aircraft_attention_aggregate'
-                )
-            """)
-            ).scalar()
+            attention_exists = _table_exists(session, "aircraft_attention_aggregate")
 
             if attention_exists:
                 attention_query = text("""
@@ -3171,7 +3169,9 @@ def api_admin_list_aircraft():
 
             # Search filter (registration or ICAO hex)
             if search:
-                where_clauses.append("(registration ILIKE :search OR hex_code ILIKE :search)")
+                where_clauses.append(
+                    "(LOWER(registration) LIKE LOWER(:search) OR LOWER(hex_code) LIKE LOWER(:search))"
+                )
                 params["search"] = f"%{search}%"
 
             # Aircraft type filter
@@ -3345,7 +3345,7 @@ def api_admin_aircraft_types():
                         SELECT aircraft_type, COUNT(*) as count
                         FROM aircraft_static_info
                         WHERE aircraft_type IS NOT NULL AND aircraft_type != ''
-                          AND aircraft_type ILIKE :search
+                          AND LOWER(aircraft_type) LIKE LOWER(:search)
                         GROUP BY aircraft_type
                         ORDER BY count DESC
                         LIMIT 20
@@ -3393,7 +3393,7 @@ def api_admin_aircraft_liveries():
                         SELECT livery_name, COUNT(*) as count
                         FROM aircraft_static_info
                         WHERE livery_name IS NOT NULL AND livery_name != ''
-                          AND livery_name ILIKE :search
+                          AND LOWER(livery_name) LIKE LOWER(:search)
                         GROUP BY livery_name
                         ORDER BY count DESC
                         LIMIT 20
@@ -3444,9 +3444,9 @@ def api_admin_aircraft_registrations():
                     SELECT registration, hex_code, aircraft_type
                     FROM aircraft_static_info
                     WHERE registration IS NOT NULL AND registration != ''
-                      AND (registration ILIKE :prefix OR registration ILIKE :contains OR hex_code ILIKE :contains)
+                      AND (LOWER(registration) LIKE LOWER(:prefix) OR LOWER(registration) LIKE LOWER(:contains) OR LOWER(hex_code) LIKE LOWER(:contains))
                     ORDER BY
-                        CASE WHEN registration ILIKE :prefix THEN 0 ELSE 1 END,
+                        CASE WHEN LOWER(registration) LIKE LOWER(:prefix) THEN 0 ELSE 1 END,
                         registration
                     LIMIT 15
                 """),
@@ -3514,9 +3514,17 @@ def api_admin_list_reports():
                     FROM user_cooldowns uc
                     LEFT JOIN users u ON uc.user_id = u.id
                     LEFT JOIN (
-                        SELECT DISTINCT ON (hex) hex, registration, aircraft_type, flight_number, is_military, current_country
-                        FROM aircraft_snapshots
-                        ORDER BY hex, snapshot_time DESC
+                        -- Latest snapshot per hex (dialect-agnostic alternative
+                        -- to Postgres's DISTINCT ON).
+                        SELECT a.hex, a.registration, a.aircraft_type,
+                               a.flight_number, a.is_military, a.current_country
+                        FROM aircraft_snapshots a
+                        INNER JOIN (
+                            SELECT hex, MAX(snapshot_time) AS max_ts
+                            FROM aircraft_snapshots
+                            GROUP BY hex
+                        ) latest ON a.hex = latest.hex
+                                 AND a.snapshot_time = latest.max_ts
                     ) s ON uc.aircraft_hex = s.hex
                 """
 
@@ -3527,10 +3535,10 @@ def api_admin_list_reports():
                     params["user_id"] = int(user_id)
                 if search:
                     where_clauses.append("""
-                        (uc.aircraft_hex ILIKE :search
-                        OR s.registration ILIKE :search
-                        OR s.flight_number ILIKE :search
-                        OR u.email ILIKE :search)
+                        (LOWER(uc.aircraft_hex) LIKE LOWER(:search)
+                        OR LOWER(s.registration) LIKE LOWER(:search)
+                        OR LOWER(s.flight_number) LIKE LOWER(:search)
+                        OR LOWER(u.email) LIKE LOWER(:search))
                     """)
                     params["search"] = f"%{search}%"
 
@@ -3584,7 +3592,7 @@ def api_admin_list_reports():
                         LEFT JOIN aircraft_snapshots s ON uc.aircraft_hex = s.hex
                     """
                     count_where.append(
-                        "(uc.aircraft_hex ILIKE :search OR s.registration ILIKE :search OR u.email ILIKE :search)"
+                        "(LOWER(uc.aircraft_hex) LIKE LOWER(:search) OR LOWER(s.registration) LIKE LOWER(:search) OR LOWER(u.email) LIKE LOWER(:search))"
                     )
                     count_params["search"] = f"%{search}%"
                 else:
@@ -3650,12 +3658,10 @@ def api_admin_list_reports():
                 # Add search filter
                 if search:
                     base_query += """
-                        WHERE rc.aircraft_hex ILIKE :search
-                        OR s.registration ILIKE :search
-                        OR s.flight_number ILIKE :search
+                        WHERE LOWER(rc.aircraft_hex) LIKE LOWER(:search)
+                        OR LOWER(s.registration) LIKE LOWER(:search)
+                        OR LOWER(s.flight_number) LIKE LOWER(:search)
                     """
-                    if db_manager.is_sqlite:
-                        base_query = base_query.replace("ILIKE", "LIKE")
                     params["search"] = f"%{search}%"
 
                 # Add ordering and pagination
@@ -3694,11 +3700,9 @@ def api_admin_list_reports():
                     count_query = """
                         SELECT COUNT(*) FROM report_cooldowns rc
                         LEFT JOIN aircraft_snapshots s ON rc.aircraft_hex = s.hex
-                        WHERE rc.aircraft_hex ILIKE :search
-                        OR s.registration ILIKE :search
+                        WHERE LOWER(rc.aircraft_hex) LIKE LOWER(:search)
+                        OR LOWER(s.registration) LIKE LOWER(:search)
                     """
-                    if db_manager.is_sqlite:
-                        count_query = count_query.replace("ILIKE", "LIKE")
 
                 total = (
                     session.execute(
@@ -3957,15 +3961,8 @@ def api_admin_xhs_stats():
         session = db_manager.get_session()
         try:
             # Check if tables exist
-            result = session.execute(
-                text("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables
-                    WHERE table_name = 'xiaohongshu_notes'
-                )
-            """)
-            )
-            if not result.scalar():
+            table_exists = _table_exists(session, "xiaohongshu_notes")
+            if not table_exists:
                 return jsonify(
                     {
                         "success": True,
@@ -3980,27 +3977,33 @@ def api_admin_xhs_stats():
                 session.execute(text("SELECT COUNT(*) FROM xiaohongshu_notes")).scalar() or 0
             )
 
-            authors_result = session.execute(
-                text("""
-                SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'xiaohongshu_authors')
-            """)
-            )
             authors_count = 0
-            if authors_result.scalar():
+            if _table_exists(session, "xiaohongshu_authors"):
                 authors_count = (
                     session.execute(text("SELECT COUNT(*) FROM xiaohongshu_authors")).scalar() or 0
                 )
 
-            # Count images (sum of array lengths in image_paths)
-            images_count = (
-                session.execute(
-                    text("""
-                SELECT COALESCE(SUM(jsonb_array_length(COALESCE(image_paths, '[]'::jsonb))), 0)
-                FROM xiaohongshu_notes
-            """)
-                ).scalar()
-                or 0
-            )
+            # Count images (sum of array lengths in image_paths). Compute
+            # in Python rather than using the Postgres-only
+            # `jsonb_array_length()`; the result set is small (one row per
+            # note) and this is a rarely-hit admin endpoint.
+            import json as _json_mod
+
+            image_paths_rows = session.execute(
+                text("SELECT image_paths FROM xiaohongshu_notes")
+            ).fetchall()
+            images_count = 0
+            for (raw,) in image_paths_rows:
+                if raw is None:
+                    continue
+                parsed = raw if isinstance(raw, list) else None
+                if parsed is None and isinstance(raw, str):
+                    try:
+                        parsed = _json_mod.loads(raw)
+                    except (ValueError, TypeError):
+                        parsed = None
+                if isinstance(parsed, list):
+                    images_count += len(parsed)
 
             latest = session.execute(
                 text("""
@@ -4039,25 +4042,18 @@ def api_admin_xhs_notes():
         session = db_manager.get_session()
         try:
             # Check if table exists
-            result = session.execute(
-                text("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables
-                    WHERE table_name = 'xiaohongshu_notes'
-                )
-            """)
-            )
-            if not result.scalar():
+            table_exists = _table_exists(session, "xiaohongshu_notes")
+            if not table_exists:
                 return jsonify({"success": True, "notes": []})
 
             where_clause = " WHERE 1=1"
             filter_params: dict[str, Any] = {}
 
             if author:
-                where_clause += " AND author_name ILIKE :author"
+                where_clause += " AND LOWER(author_name) LIKE LOWER(:author)"
                 filter_params["author"] = f"%{author}%"
             if title:
-                where_clause += " AND title ILIKE :title"
+                where_clause += " AND LOWER(title) LIKE LOWER(:title)"
                 filter_params["title"] = f"%{title}%"
 
             total = (
@@ -4070,7 +4066,7 @@ def api_admin_xhs_notes():
 
             query = f"""
                 SELECT note_id, source_url, title, author_name, author_id,
-                       jsonb_array_length(COALESCE(image_paths, '[]'::jsonb)) as image_count,
+                       image_paths,
                        like_count, collect_count, comment_count, share_count,
                        location, scraped_at, updated_at, content, tags
                 FROM xiaohongshu_notes{where_clause}
@@ -4078,6 +4074,21 @@ def api_admin_xhs_notes():
                 LIMIT :limit OFFSET :offset
             """
             params = {**filter_params, "limit": limit, "offset": offset}
+
+            import json as _json_mod
+
+            def _count_images(raw):
+                if raw is None:
+                    return 0
+                if isinstance(raw, list):
+                    return len(raw)
+                if isinstance(raw, str):
+                    try:
+                        parsed = _json_mod.loads(raw)
+                    except (ValueError, TypeError):
+                        return 0
+                    return len(parsed) if isinstance(parsed, list) else 0
+                return 0
 
             result = session.execute(text(query), params)
             notes = []
@@ -4089,7 +4100,7 @@ def api_admin_xhs_notes():
                         "title": row.title,
                         "author_name": row.author_name,
                         "author_id": row.author_id,
-                        "image_count": row.image_count,
+                        "image_count": _count_images(row.image_paths),
                         "like_count": row.like_count,
                         "collect_count": row.collect_count,
                         "comment_count": row.comment_count,
@@ -4123,15 +4134,8 @@ def api_admin_xhs_note_detail(note_id: str):
     try:
         session = db_manager.get_session()
         try:
-            result = session.execute(
-                text("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables
-                    WHERE table_name = 'xiaohongshu_notes'
-                )
-            """)
-            )
-            if not result.scalar():
+            table_exists = _table_exists(session, "xiaohongshu_notes")
+            if not table_exists:
                 return jsonify({"success": False, "error": "Note not found"}), 404
 
             result = session.execute(
@@ -4269,10 +4273,10 @@ def api_admin_fr24_flights():
             params: dict[str, Any] = {"limit": limit, "offset": offset}
 
             if airport:
-                query += " AND (airport_iata ILIKE :airport OR airport_icao ILIKE :airport)"
+                query += " AND (LOWER(airport_iata) LIKE LOWER(:airport) OR LOWER(airport_icao) LIKE LOWER(:airport))"
                 params["airport"] = f"{airport}%"
             if registration:
-                query += " AND aircraft_registration ILIKE :registration"
+                query += " AND LOWER(aircraft_registration) LIKE LOWER(:registration)"
                 params["registration"] = f"%{registration}%"
             if flight_type:
                 query += " AND flight_type = :flight_type"
@@ -4396,13 +4400,13 @@ def api_admin_jetphotos_images():
             params: dict[str, Any] = {"limit": limit, "offset": offset}
 
             if registration:
-                query += " AND registration ILIKE :registration"
+                query += " AND LOWER(registration) LIKE LOWER(:registration)"
                 params["registration"] = f"%{registration}%"
             if photographer:
-                query += " AND photographer ILIKE :photographer"
+                query += " AND LOWER(photographer) LIKE LOWER(:photographer)"
                 params["photographer"] = f"%{photographer}%"
             if airport:
-                query += " AND airport_icao ILIKE :airport"
+                query += " AND LOWER(airport_icao) LIKE LOWER(:airport)"
                 params["airport"] = f"{airport}%"
 
             query += " ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
@@ -4890,7 +4894,9 @@ def get_flight_schedules():
                 params["flight_type"] = flight_type
 
             if aircraft_type:
-                where_conditions.append("fs.aircraft_type ILIKE :aircraft_type_pattern")
+                where_conditions.append(
+                    "LOWER(fs.aircraft_type) LIKE LOWER(:aircraft_type_pattern)"
+                )
                 params["aircraft_type_pattern"] = f"%{aircraft_type}%"
 
             # NOTE: livery filtering is done in outer query for better performance
@@ -5014,7 +5020,9 @@ def get_flight_schedules():
                     "end_time": utc_end,
                 }
                 if aircraft_type:
-                    base_where_conditions.append("fs.aircraft_type ILIKE :aircraft_type_pattern")
+                    base_where_conditions.append(
+                        "LOWER(fs.aircraft_type) LIKE LOWER(:aircraft_type_pattern)"
+                    )
                     type_count_params["aircraft_type_pattern"] = f"%{aircraft_type}%"
 
                 base_where_clause = " AND ".join(base_where_conditions)
@@ -5302,23 +5310,17 @@ def get_flight_schedule_filter_options():
 
 
 def get_scraper_db_session():
-    """Get a database session for scraper queries (without pydantic dependency)."""
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
+    """Get a database session for scraper queries.
 
-    db_url = os.environ.get("DATABASE_URL")
-    if not db_url:
-        # Try to get from config
+    Reuses the shared `db_manager` engine — it's critical for SQLite where
+    in-memory databases are per-connection, but also the right thing for
+    Postgres (reuses the connection pool instead of spinning up a second one).
+    """
+    if db_manager is None:
+        # Lazy init for code paths that call this before init_app()
+        # (e.g. a request arriving before cold-start finished).
         init_app()
-        if config:
-            db_config = config.get("database", {})
-            db_url = db_config.get("url")
-    if not db_url:
-        raise RuntimeError("DATABASE_URL not configured")
-
-    engine = create_engine(db_url, echo=False, pool_pre_ping=True)
-    Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    return Session()
+    return db_manager.get_session()
 
 
 @app.route("/admin/scraper-status")
@@ -5349,16 +5351,20 @@ def api_admin_scraper_stats():
             )
             status_counts = {row.status: row.count for row in result}
 
-            # Active workers
+            # Active workers — compute the cutoff in Python so the SQL is
+            # dialect-agnostic (Postgres's NOW() - INTERVAL and SQLite's
+            # datetime() have different syntax).
+            cutoff = datetime.utcnow() - timedelta(minutes=5)
             result = session.execute(
                 text(
                     """
                     SELECT COUNT(*) as count
                     FROM scraper_workers
                     WHERE status = 'active'
-                    AND last_heartbeat > NOW() - INTERVAL '5 minutes'
+                    AND last_heartbeat > :cutoff
                 """
-                )
+                ),
+                {"cutoff": cutoff},
             )
             active_workers = result.fetchone().count
 
@@ -5403,33 +5409,44 @@ def api_admin_scraper_workers():
 
         session = get_scraper_db_session()
         try:
+            # Compute `seconds_since_heartbeat` in Python to keep the SQL
+            # dialect-agnostic (no EXTRACT(EPOCH FROM ...)).
             result = session.execute(
                 text(
                     """
                     SELECT worker_id, status, last_heartbeat, tasks_completed,
-                           current_task_id, metadata,
-                           EXTRACT(EPOCH FROM (NOW() - last_heartbeat)) as seconds_since_heartbeat
+                           current_task_id, metadata
                     FROM scraper_workers
                     ORDER BY last_heartbeat DESC
                     LIMIT 50
                 """
                 )
             )
+            now = datetime.utcnow()
             workers = []
             for row in result:
+                secs = None
+                if row.last_heartbeat:
+                    hb = row.last_heartbeat
+                    # SQLite returns strings; Postgres returns datetime.
+                    if isinstance(hb, str):
+                        try:
+                            hb = datetime.fromisoformat(hb)
+                        except ValueError:
+                            hb = None
+                    if hb is not None:
+                        secs = (now - hb).total_seconds()
                 workers.append(
                     {
                         "worker_id": row.worker_id,
                         "status": row.status,
                         "last_heartbeat": row.last_heartbeat.isoformat()
-                        if row.last_heartbeat
-                        else None,
+                        if row.last_heartbeat and not isinstance(row.last_heartbeat, str)
+                        else row.last_heartbeat,
                         "tasks_completed": row.tasks_completed,
                         "current_task_id": row.current_task_id,
                         "metadata": row.metadata or {},
-                        "seconds_since_heartbeat": float(row.seconds_since_heartbeat)
-                        if row.seconds_since_heartbeat
-                        else None,
+                        "seconds_since_heartbeat": secs,
                     }
                 )
             return jsonify({"success": True, "workers": workers})
@@ -5463,22 +5480,21 @@ def api_admin_scraper_recent_tasks():
                 status_clause = "WHERE t.status = :status"
                 params["status"] = status_filter
 
-            # Get tasks
+            # Get tasks. Use correlated subqueries instead of LATERAL JOIN
+            # (SQLite doesn't have LATERAL; Postgres accepts both).
             result = session.execute(
                 text(
                     f"""
                     SELECT t.id, t.task_type, t.task_key, t.status, t.attempts,
                            t.max_attempts, t.last_error, t.created_at, t.completed_at,
                            t.claimed_by,
-                           r.duration_seconds, r.success as result_success
+                           (SELECT duration_seconds FROM scraper_results
+                            WHERE task_id = t.id
+                            ORDER BY created_at DESC LIMIT 1) AS duration_seconds,
+                           (SELECT success FROM scraper_results
+                            WHERE task_id = t.id
+                            ORDER BY created_at DESC LIMIT 1) AS result_success
                     FROM scraper_tasks t
-                    LEFT JOIN LATERAL (
-                        SELECT duration_seconds, success
-                        FROM scraper_results
-                        WHERE task_id = t.id
-                        ORDER BY created_at DESC
-                        LIMIT 1
-                    ) r ON true
                     {status_clause}
                     ORDER BY COALESCE(t.completed_at, t.created_at) DESC
                     LIMIT :limit OFFSET :offset

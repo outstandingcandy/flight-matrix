@@ -75,10 +75,6 @@ def test_page_route_renders(app_client, path: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-# Routes marked `xfail` emit Postgres-specific SQL or reference columns that
-# don't live in the SQLAlchemy ORM models (only in Postgres migrations).
-# They pass against real Postgres in production; SQLite 500s. Tracked as
-# portability debt — remove the xfail once the SQL is dialect-agnostic.
 API_AIRCRAFT_GET_ROUTES = [
     "/api/aircraft/search",
     "/api/aircraft/search?q=test",
@@ -86,27 +82,18 @@ API_AIRCRAFT_GET_ROUTES = [
     "/api/aircraft/recent",
     "/api/aircraft/types",
     "/api/aircraft/types/A380",
-    pytest.param(
-        "/api/aircraft/types/A380/instances",
-        marks=pytest.mark.xfail(reason="Postgres-only SQL"),
-    ),
+    "/api/aircraft/types/A380/instances",
     "/api/aircraft/unique",
     "/api/aircraft/static",
     "/api/aircraft/static/N703PA",
-    pytest.param(
-        "/api/aircraft/static/stats",
-        marks=pytest.mark.xfail(reason="aircraft_static_info.is_military column not in ORM"),
-    ),
+    "/api/aircraft/static/stats",
     "/api/aircraft/N703PA/live",
     "/api/aircraft/N703PA/details",
     "/api/aircraft/N703PA/history",
     "/api/aircraft/N703PA/flight-dates",
     "/api/aircraft/N703PA/recent-flights",
     "/api/aircraft/N703PA/images",
-    pytest.param(
-        "/api/aircraft/N703PA/static-info",
-        marks=pytest.mark.xfail(reason="Postgres-only SQL or missing columns"),
-    ),
+    "/api/aircraft/N703PA/static-info",
 ]
 
 
@@ -159,10 +146,7 @@ def test_api_airport_get(app_client, path: str) -> None:
 
 
 API_SEARCH_GET_ROUTES = [
-    pytest.param(
-        "/api/search/unified?q=test",
-        marks=pytest.mark.xfail(reason="Postgres-only SQL"),
-    ),
+    "/api/search/unified?q=test",
     "/api/search/suggestions?q=test",
     "/api/search/aircraft?q=test",
 ]
@@ -258,30 +242,29 @@ def test_api_user_test_filter(app_client) -> None:
 # ---------------------------------------------------------------------------
 
 
-XFAIL_PG_ONLY = pytest.mark.xfail(reason="Postgres-only SQL")
 API_ADMIN_GET_ROUTES = [
-    pytest.param("/api/admin/aircraft-query/N703PA", marks=XFAIL_PG_ONLY),
+    "/api/admin/aircraft-query/N703PA",
     "/api/admin/users",
     "/api/admin/users/stats",
     "/api/admin/users/999",
-    pytest.param("/api/admin/aircraft", marks=XFAIL_PG_ONLY),
-    pytest.param("/api/admin/aircraft/stats", marks=XFAIL_PG_ONLY),
+    "/api/admin/aircraft",
+    "/api/admin/aircraft/stats",
     "/api/admin/aircraft/types",
-    pytest.param("/api/admin/aircraft/liveries", marks=XFAIL_PG_ONLY),
+    "/api/admin/aircraft/liveries",
     "/api/admin/aircraft/registrations",
-    pytest.param("/api/admin/reports", marks=XFAIL_PG_ONLY),
+    "/api/admin/reports",
     "/api/admin/reports/stats",
     "/api/admin/reports/abc123/detail",
-    pytest.param("/api/admin/scraped-data/xiaohongshu/stats", marks=XFAIL_PG_ONLY),
-    pytest.param("/api/admin/scraped-data/xiaohongshu/notes", marks=XFAIL_PG_ONLY),
-    pytest.param("/api/admin/scraped-data/xiaohongshu/notes/note123", marks=XFAIL_PG_ONLY),
+    "/api/admin/scraped-data/xiaohongshu/stats",
+    "/api/admin/scraped-data/xiaohongshu/notes",
+    "/api/admin/scraped-data/xiaohongshu/notes/note123",
     "/api/admin/scraped-data/fr24/stats",
     "/api/admin/scraped-data/fr24/flights",
     "/api/admin/scraped-data/jetphotos/stats",
     "/api/admin/scraped-data/jetphotos/images",
-    pytest.param("/api/admin/scraper/stats", marks=XFAIL_PG_ONLY),
-    pytest.param("/api/admin/scraper/workers", marks=XFAIL_PG_ONLY),
-    pytest.param("/api/admin/scraper/recent-tasks", marks=XFAIL_PG_ONLY),
+    "/api/admin/scraper/stats",
+    "/api/admin/scraper/workers",
+    "/api/admin/scraper/recent-tasks",
 ]
 
 
