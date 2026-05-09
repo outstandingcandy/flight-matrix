@@ -9,20 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-
-@pytest.fixture
-def app_client(monkeypatch: pytest.MonkeyPatch):
-    """Fresh Flask test client with auth disabled."""
-    monkeypatch.setenv("STAGE", "local")
-    monkeypatch.setenv("SKIP_AUTH", "true")
-    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
-
-    import importlib
-
-    import web_app
-
-    importlib.reload(web_app)
-    return web_app.app.test_client()
+# app_client fixture comes from tests/web/conftest.py — it boots the app
+# with skip-auth enabled, an in-memory SQLite DB, and init_app() already run.
 
 
 class TestAuthBlueprintRegistered:
