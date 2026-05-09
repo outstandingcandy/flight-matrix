@@ -135,7 +135,7 @@ class TestAirportDataExtractor:
 
     def test_version(self) -> None:
         """Test that version is set."""
-        assert self.extractor.version == "1.0.0"
+        assert self.extractor.version == "1.1.0"
 
     def test_extract_empty_html(self) -> None:
         """Test extraction from empty HTML returns default fields."""
@@ -229,4 +229,4 @@ class TestAirportDataExtractor:
         """Test get_version_info method."""
         info = self.extractor.get_version_info()
         assert info["extractor"] == "AirportDataExtractor"
-        assert info["version"] == "1.0.0"
+        assert info["version"] == "1.1.0"

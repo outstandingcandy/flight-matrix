@@ -199,10 +199,15 @@ addopts = [
     "-ra",
     "--strict-markers",
     "--strict-config",
+    # Integration tests hit real third-party websites and need Xvfb + Chrome
+    # to run. They're skipped by default; invoke them explicitly:
+    #   pytest -m integration tests/scraper/test_live_scrapers.py
+    "-m",
+    "not integration",
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests that require external services",
+    "integration: marks tests that require external services (deselected by default)",
 ]
 
 # ---------------------------------------------------------------------------
