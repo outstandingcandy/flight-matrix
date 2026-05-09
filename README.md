@@ -168,6 +168,21 @@ sudo apt install chromium-browser
 ```
 On macOS, install Chrome or set `CHROME_PATH` in `.env` to a custom binary.
 
+### A Cloudflare-protected scraper (JetPhotos / FR24) returns CloudflareBlockedError locally
+This is almost always a test-harness mistake, not a real block. The
+project's anti-scraping strategy depends on DrissionPage running
+**non-headless** under an **Xvfb virtual display**. If you wrote your own
+snippet with `BrowserPool(drission_options={"headless": True})`, Cloudflare
+will reject it.
+
+Use the proven smoke-test script instead:
+```bash
+./scripts/test-scrapers.sh            # all 3 core sources
+./scripts/test-scrapers.sh jetphotos  # just JetPhotos
+```
+It starts Xvfb on `:55`, keeps `headless=False`, and asserts real data
+comes back. See `src/scraper/CLAUDE.md` for the config invariants.
+
 ### I committed a secret by accident
 Don't push. Rewrite the commit(s) locally before the first push, e.g.
 `git reset --soft HEAD~1`, remove the secret, recommit. If it's already
