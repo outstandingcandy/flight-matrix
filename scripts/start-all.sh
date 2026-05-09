@@ -59,9 +59,13 @@ mkdir -p "$LOGS_DIR"
 
 # ---- Defaults --------------------------------------------------------------
 DISPLAY_NUM=55
-# Default scrapers: all that don't require interactive QR login or AWS secrets.
-# Xiaohongshu needs a manual QR scan, so it's off by default.
+# Default scrapers: all that don't require interactive QR login or AWS secrets,
+# AND don't require the optional resilient-scraper submodule.
+# Xiaohongshu needs a manual QR scan; Planespotters lives in the submodule.
 DEFAULT_SCRAPERS="fr24_airport,jetphotos,airport_data,fr24_map"
+
+# Scrapers that live in the resilient-scraper submodule.
+SUBMODULE_SCRAPERS_RE="planespotters|xiaohongshu|xiaohongshu_following|xiaohongshu_search_author"
 
 # ---- Arg parsing -----------------------------------------------------------
 ACTION=start
@@ -160,6 +164,22 @@ check_prereqs() {
         command -v chromium-browser >/dev/null 2>&1 \
             || command -v google-chrome >/dev/null 2>&1 \
             || die "No Chromium/Chrome found. apt install chromium-browser."
+
+        # If any of the requested scrapers live in the submodule, verify the
+        # module is installed before starting the worker.
+        if [[ "$SCRAPERS" =~ $SUBMODULE_SCRAPERS_RE ]]; then
+            if ! "$PROJECT_ROOT/.venv/bin/python3" -c "import resilient_scraper" 2>/dev/null; then
+                fail "one of the requested scrapers needs the resilient-scraper submodule"
+                fail "  requested: $SCRAPERS"
+                echo
+                echo "    Install with:" >&2
+                echo "      git submodule update --init --recursive" >&2
+                echo "      uv pip install -e ./lib/resilient-scraper" >&2
+                echo "    Or, to skip those scrapers for now:" >&2
+                echo "      $0 --scrapers fr24_airport,jetphotos,airport_data,fr24_map" >&2
+                exit 1
+            fi
+        fi
     fi
 }
 
@@ -186,11 +206,15 @@ start_track() {
 
 start_scraper() {
     local worker_id="local-$(hostname -s 2>/dev/null || echo host)-$$"
+    # --scrapers accepts nargs='+' (space-separated), but we take comma-separated
+    # on the command line. Split on commas so each scraper becomes its own argv.
+    local IFS=','
+    local -a scraper_args=($SCRAPERS)
     start_bg scraper \
         env DISPLAY=":${DISPLAY_NUM}" \
         "$PROJECT_ROOT/.venv/bin/python3" -u src/scraper_main.py \
             --config config/config.yaml \
-            --scrapers "$SCRAPERS" \
+            --scrapers "${scraper_args[@]}" \
             --worker-id "$worker_id"
 }
 
@@ -276,10 +300,12 @@ action_foreground() {
             # Make sure Xvfb is up (but don't track it).
             [[ -e "/tmp/.X11-unix/X${DISPLAY_NUM}" ]] \
                 || die "Xvfb :${DISPLAY_NUM} not running. Start it first or run without --foreground."
+            local IFS=','
+            local -a scraper_args=($SCRAPERS)
             exec env DISPLAY=":${DISPLAY_NUM}" \
                 "$PROJECT_ROOT/.venv/bin/python3" -u src/scraper_main.py \
                 --config config/config.yaml \
-                --scrapers "$SCRAPERS" \
+                --scrapers "${scraper_args[@]}" \
                 --debug
             ;;
         *)

@@ -299,12 +299,10 @@ async def run_worker(
         max_replies: Optional override for max replies per comment (xiaohongshu).
         from_queue: If True in local mode, pull tasks from database queue.
     """
-    from resilient_scraper.scrapers.planespotters import PlanespottersScraper
-    from resilient_scraper.scrapers.xiaohongshu import (
-        XiaohongshuFollowingScraper,
-        XiaohongshuScraper,
-        XiaohongshuSearchAuthorScraper,
-    )
+    # resilient_scraper is installed as an optional extra (`pip install -e
+    # ./lib/resilient-scraper`). We import it lazily inside the Planespotters
+    # and Xiaohongshu branches below so users who don't run those scrapers
+    # don't need the submodule installed.
 
     from src.scraper.scrapers.fr24_aircraft import FR24AircraftScraper
     from src.scraper.scrapers.fr24_airport import (
@@ -438,6 +436,14 @@ async def run_worker(
             worker.register_scraper(FR24AircraftScraper, merged_config)
 
         elif scraper_type == "xiaohongshu":
+            try:
+                from resilient_scraper.scrapers.xiaohongshu import XiaohongshuScraper
+            except ModuleNotFoundError as e:
+                raise RuntimeError(
+                    "xiaohongshu scraper requires the resilient-scraper submodule. "
+                    "Install with: pip install -e ./lib/resilient-scraper"
+                ) from e
+
             # Xiaohongshu scraper config
             xhs_config = scraper_config.get("xiaohongshu", {})
             email_config = config.get("email", {}).get("smtp", {})
@@ -486,6 +492,14 @@ async def run_worker(
             worker.register_scraper(XiaohongshuScraper, merged_config)
 
         elif scraper_type == "xiaohongshu_following":
+            try:
+                from resilient_scraper.scrapers.xiaohongshu import XiaohongshuFollowingScraper
+            except ModuleNotFoundError as e:
+                raise RuntimeError(
+                    "xiaohongshu_following scraper requires the resilient-scraper submodule. "
+                    "Install with: pip install -e ./lib/resilient-scraper"
+                ) from e
+
             # Xiaohongshu following scraper config
             xhs_following_config = scraper_config.get("xiaohongshu_following", {})
             email_config = config.get("email", {}).get("smtp", {})
@@ -510,6 +524,14 @@ async def run_worker(
             worker.register_scraper(XiaohongshuFollowingScraper, merged_config)
 
         elif scraper_type == "xiaohongshu_search_author":
+            try:
+                from resilient_scraper.scrapers.xiaohongshu import XiaohongshuSearchAuthorScraper
+            except ModuleNotFoundError as e:
+                raise RuntimeError(
+                    "xiaohongshu_search_author scraper requires the resilient-scraper "
+                    "submodule. Install with: pip install -e ./lib/resilient-scraper"
+                ) from e
+
             # Xiaohongshu search author scraper config
             xhs_search_config = scraper_config.get("xiaohongshu_search_author", {})
             email_config = config.get("email", {}).get("smtp", {})
@@ -534,6 +556,14 @@ async def run_worker(
             worker.register_scraper(XiaohongshuSearchAuthorScraper, merged_config)
 
         elif scraper_type == "planespotters":
+            try:
+                from resilient_scraper.scrapers.planespotters import PlanespottersScraper
+            except ModuleNotFoundError as e:
+                raise RuntimeError(
+                    "planespotters scraper requires the resilient-scraper submodule. "
+                    "Install with: pip install -e ./lib/resilient-scraper"
+                ) from e
+
             # Planespotters scraper config
             ps_config = scraper_config.get("planespotters", {})
             s3_config = config.get("image_download", {}).get("s3", {})

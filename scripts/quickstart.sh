@@ -97,6 +97,24 @@ if ! uv pip install --quiet -e '.[dev]'; then
 fi
 ok "dependencies installed"
 
+# Install the resilient-scraper submodule if it's been checked out.
+# Scrapers for Planespotters + Xiaohongshu live there. The main scraper
+# worker lazily imports them, so this is optional — but if the submodule
+# is present, installing it means `./scripts/start-all.sh` with those
+# scrapers just works.
+if [[ -f lib/resilient-scraper/pyproject.toml ]]; then
+    step "Installing resilient-scraper submodule"
+    if uv pip install --quiet -e ./lib/resilient-scraper; then
+        ok "resilient-scraper installed"
+    else
+        warn "resilient-scraper install failed — Planespotters/Xiaohongshu scrapers"
+        warn "will fail at runtime; everything else still works."
+    fi
+else
+    warn "lib/resilient-scraper not found — skipping. Clone with:"
+    warn "  git submodule update --init --recursive"
+fi
+
 # --- 3. .env bootstrap ------------------------------------------------------
 step "Configuring .env"
 if [[ -f .env ]]; then
