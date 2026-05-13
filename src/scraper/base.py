@@ -453,55 +453,20 @@ class BaseScraper(ABC, Generic[T]):
             logger.warning(f"[{self.task_type}] Failed to save screenshot: {e}")
 
 
-class ScraperError(Exception):
-    """Base exception for scraper errors."""
+# Exception classes re-exported from resilient_scraper for backward compatibility.
+# The submodule owns the canonical definitions; this indirection will be removed
+# once all scrapers migrate to `from resilient_scraper.errors import ...`.
+from resilient_scraper.errors import (  # noqa: E402
+    CloudflareBlockedError,
+    NoDataFoundError,
+    PageLoadError,
+    ScraperError,
+)
 
-    def __init__(
-        self,
-        message: str,
-        task_key: str | None = None,
-        retryable: bool = True,
-    ) -> None:
-        """Initialize the scraper error.
-
-        Args:
-            message: Error message.
-            task_key: Key of the task that failed.
-            retryable: Whether this error is recoverable by retrying.
-        """
-        super().__init__(message)
-        self.task_key = task_key
-        self.retryable = retryable
-
-
-class CloudflareBlockedError(ScraperError):
-    """Raised when Cloudflare blocks the request."""
-
-    def __init__(self, task_key: str | None = None) -> None:
-        super().__init__(
-            "Request blocked by Cloudflare",
-            task_key=task_key,
-            retryable=True,
-        )
-
-
-class PageLoadError(ScraperError):
-    """Raised when a page fails to load properly."""
-
-    def __init__(self, url: str, task_key: str | None = None) -> None:
-        super().__init__(
-            f"Failed to load page: {url}",
-            task_key=task_key,
-            retryable=True,
-        )
-
-
-class NoDataFoundError(ScraperError):
-    """Raised when no data is found on the page."""
-
-    def __init__(self, task_key: str | None = None) -> None:
-        super().__init__(
-            "No data found on page",
-            task_key=task_key,
-            retryable=False,
-        )
+__all__ = [
+    "BaseScraper",
+    "CloudflareBlockedError",
+    "NoDataFoundError",
+    "PageLoadError",
+    "ScraperError",
+]

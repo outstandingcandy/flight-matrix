@@ -49,7 +49,12 @@ dependencies = [
     "tavily-python>=0.3.0",
     # Browser automation
     "DrissionPage>=4.0.0",
+    # Unified scraper framework (local submodule)
+    "resilient-scraper",
 ]
+
+[tool.uv.sources]
+resilient-scraper = { path = "lib/resilient-scraper", editable = true }
 
 [project.optional-dependencies]
 dev = [

@@ -195,9 +195,73 @@ class ScraperWorker:
         if self.database_url:
             merged_config["database_url"] = self.database_url
 
+        # Wire up flight-matrix DB sinks for aviation scrapers. Sinks own all
+        # application-table writes; the submodule scraper only produces
+        # structured Pydantic results.
+        sink = self._build_sink_for(scraper_type, merged_config)
+
         scraper = scraper_class(merged_config)
+        if sink is not None:
+            from src.scraper.sinks import bind_sink
+
+            bind_sink(scraper, sink)
         self._scrapers[scraper_type] = scraper
         logger.info(f"Registered scraper: {scraper_type}")
+
+    def _build_sink_for(
+        self, scraper_type: str, merged_config: dict[str, Any]
+    ) -> Any:
+        """Instantiate the flight-matrix sink for this scraper type.
+
+        Also injects scraper-specific callbacks (``persist_*_callback``,
+        ``add_task_callback``) into ``merged_config`` so the scraper can call
+        them during its run.
+        """
+        if not self.database_url:
+            return None
+
+        db_url = self.database_url
+
+        if scraper_type == "fr24_map":
+            from src.scraper.sinks.fr24_map_sink import FR24MapSink
+
+            return FR24MapSink(db_url)
+
+        if scraper_type == "fr24_aircraft":
+            from src.scraper.sinks.fr24_aircraft_sink import FR24AircraftSink
+
+            return FR24AircraftSink(db_url)
+
+        if scraper_type in ("fr24_airport", "fr24_arrivals", "fr24_departures"):
+            from src.scraper.sinks.fr24_airport_sink import FR24AirportSink
+
+            hint = (
+                "arrival"
+                if scraper_type == "fr24_arrivals"
+                else "departure"
+                if scraper_type == "fr24_departures"
+                else ""
+            )
+            return FR24AirportSink(db_url, flight_type_hint=hint)
+
+        if scraper_type == "airport_data":
+            from src.scraper.sinks.airport_data_sink import AirportDataSink
+            from src.scraper.task_queue import TaskQueue
+
+            task_queue = TaskQueue(db_url) if db_url else None
+            sink = AirportDataSink(db_url, task_queue=task_queue)
+            merged_config.setdefault("persist_aircraft_callback", sink.persist_aircraft)
+            merged_config.setdefault("add_task_callback", sink.add_tasks)
+            return sink
+
+        if scraper_type == "jetphotos":
+            from src.scraper.sinks.jetphotos_sink import JetPhotosSink
+
+            sink = JetPhotosSink(db_url)
+            merged_config.setdefault("persist_images_callback", sink.persist_images)
+            return sink
+
+        return None
 
     def _start_xvfb(self) -> None:
         """Start Xvfb if configured and not already running."""
