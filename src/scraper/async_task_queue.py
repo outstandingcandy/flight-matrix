@@ -137,9 +137,14 @@ class AsyncTaskQueue:
     async def update_worker_heartbeat(
         self, worker_id: str, current_task_id: int | None = None
     ) -> None:
-        await asyncio.to_thread(
-            self._q.update_worker_heartbeat, worker_id, current_task_id
-        )
+        # Main-repo signature is (worker_id, status=..., current_task_id=...);
+        # only pass current_task_id by keyword so `status` keeps its default.
+        def _call() -> None:
+            self._q.update_worker_heartbeat(
+                worker_id, current_task_id=current_task_id
+            )
+
+        await asyncio.to_thread(_call)
 
     async def increment_worker_completed(self, worker_id: str) -> None:
         await asyncio.to_thread(self._q.increment_worker_completed, worker_id)

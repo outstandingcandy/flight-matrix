@@ -568,8 +568,14 @@ def _build_service_settings(
         max_tasks_per_browser=browser_cfg.get("max_tasks_per_browser", 50),
         headless=browser_cfg.get("headless", False),
     )
+    # Drop unresolved ${VAR} placeholders — common in local dev where the
+    # real S3 bucket env var isn't set. Otherwise the submodule Worker would
+    # force-enable S3 with a literal "${S3_BUCKET_NAME}" and every upload
+    # would fail boto3 parameter validation.
+    raw_bucket = image_cfg.get("bucket", "") or ""
+    resolved_bucket = "" if ("${" in raw_bucket or not raw_bucket.strip()) else raw_bucket
     s3_settings = S3Settings(
-        bucket=image_cfg.get("bucket", ""),
+        bucket=resolved_bucket,
         prefix=image_cfg.get("prefix", ""),
         delete_local_after_upload=image_cfg.get("delete_local_after_upload", False),
     )
@@ -647,10 +653,27 @@ async def run_worker(
                 "--task requires exactly one scraper type via --scrapers"
             )
             return
-        cli_queue = CLITaskQueue(active_types[0], task_key)
+        scraper_type = active_types[0]
+        # fr24_map expects coordinates in its payload, not its task_key.
+        # Accept task_key in the shape "lat,lon[,zoom]" and split it apart.
+        cli_payload: dict[str, Any] = {}
+        if scraper_type == "fr24_map" and "," in task_key:
+            parts = [p.strip() for p in task_key.split(",")]
+            try:
+                cli_payload["lat"] = float(parts[0])
+                cli_payload["lon"] = float(parts[1])
+                if len(parts) >= 3:
+                    cli_payload["zoom"] = int(parts[2])
+            except (ValueError, IndexError):
+                logger.error(
+                    "fr24_map --task must be 'lat,lon[,zoom]' (got %r)",
+                    task_key,
+                )
+                return
+        cli_queue = CLITaskQueue(scraper_type, task_key, payload=cli_payload)
         queue = cli_queue
         logger.info(
-            f"CLI one-shot mode: {active_types[0]}:{task_key}"
+            f"CLI one-shot mode: {scraper_type}:{task_key} payload={cli_payload}"
         )
     elif local_mode:
         # Local mode without --task: each scraper polls its own domain table
