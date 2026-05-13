@@ -57,8 +57,31 @@ class TaskQueue:
         return self.SessionLocal()
 
     def ensure_tables_exist(self) -> None:
-        """Create scraper tables if they don't exist."""
+        """Create scraper tables if they don't exist.
+
+        DDL is dialect-aware — Postgres gets BIGSERIAL/JSONB/TIMESTAMPTZ, SQLite
+        gets INTEGER AUTOINCREMENT/TEXT/DATETIME so integer primary keys
+        auto-populate and JSON payloads round-trip correctly on both backends.
+        """
         session = self.get_session()
+        # Dialect-specific type aliases
+        if self.is_postgres:
+            pk = "BIGSERIAL PRIMARY KEY"
+            json_t = "JSONB"
+            json_default = "JSONB NOT NULL DEFAULT '{}'"
+            ts = "TIMESTAMPTZ"
+            ts_default = "TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP"
+            ts_opt_default = "TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP"
+            bigint = "BIGINT"
+        else:
+            pk = "INTEGER PRIMARY KEY AUTOINCREMENT"
+            json_t = "TEXT"
+            json_default = "TEXT NOT NULL DEFAULT '{}'"
+            ts = "DATETIME"
+            ts_default = "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"
+            ts_opt_default = "DATETIME DEFAULT CURRENT_TIMESTAMP"
+            bigint = "INTEGER"
+
         try:
             # Check if tables exist
             try:
@@ -71,24 +94,24 @@ class TaskQueue:
             # Create scraper_tasks table
             session.execute(
                 text(
-                    """
+                    f"""
                 CREATE TABLE IF NOT EXISTS scraper_tasks (
-                    id BIGSERIAL PRIMARY KEY,
+                    id {pk},
                     task_type VARCHAR(50) NOT NULL,
                     task_key VARCHAR(500) NOT NULL,
                     status VARCHAR(20) NOT NULL DEFAULT 'pending',
                     priority INTEGER NOT NULL DEFAULT 0,
-                    payload JSONB NOT NULL DEFAULT '{}',
+                    payload {json_default},
                     claimed_by VARCHAR(100),
-                    claimed_at TIMESTAMPTZ,
+                    claimed_at {ts},
                     attempts INTEGER NOT NULL DEFAULT 0,
                     max_attempts INTEGER NOT NULL DEFAULT 3,
                     last_error TEXT,
-                    result JSONB,
-                    scheduled_for TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    completed_at TIMESTAMPTZ,
-                    heartbeat_at TIMESTAMPTZ
+                    result {json_t},
+                    scheduled_for {ts_default},
+                    created_at {ts_default},
+                    completed_at {ts},
+                    heartbeat_at {ts}
                 )
             """
                 )
@@ -120,16 +143,16 @@ class TaskQueue:
             # Create scraper_workers table
             session.execute(
                 text(
-                    """
+                    f"""
                 CREATE TABLE IF NOT EXISTS scraper_workers (
-                    id BIGSERIAL PRIMARY KEY,
+                    id {pk},
                     worker_id VARCHAR(100) UNIQUE NOT NULL,
                     status VARCHAR(20) NOT NULL DEFAULT 'active',
-                    last_heartbeat TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_heartbeat {ts_default},
                     tasks_completed INTEGER NOT NULL DEFAULT 0,
-                    current_task_id BIGINT,
-                    started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                    metadata JSONB NOT NULL DEFAULT '{}'
+                    current_task_id {bigint},
+                    started_at {ts_opt_default},
+                    metadata {json_default}
                 )
             """
                 )
@@ -138,16 +161,16 @@ class TaskQueue:
             # Create scraper_results table for execution log
             session.execute(
                 text(
-                    """
+                    f"""
                 CREATE TABLE IF NOT EXISTS scraper_results (
-                    id BIGSERIAL PRIMARY KEY,
-                    task_id BIGINT REFERENCES scraper_tasks(id),
+                    id {pk},
+                    task_id {bigint} REFERENCES scraper_tasks(id),
                     worker_id VARCHAR(100) NOT NULL,
                     success BOOLEAN NOT NULL,
                     duration_seconds NUMERIC(10, 3),
-                    result JSONB,
+                    result {json_t},
                     error TEXT,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    created_at {ts_default}
                 )
             """
                 )
@@ -212,26 +235,29 @@ class TaskQueue:
 
             import json
 
-            result = session.execute(
-                text(
-                    """
-                    INSERT INTO scraper_tasks
-                    (task_type, task_key, payload, priority, max_attempts, scheduled_for)
-                    VALUES (:type, :key, CAST(:payload AS jsonb), :priority, :max_attempts, :scheduled)
-                    RETURNING id
-                """
-                ),
-                {
-                    "type": task_type,
-                    "key": task_key,
-                    "payload": json.dumps(payload) if payload else "{}",
-                    "priority": priority,
-                    "max_attempts": max_attempts,
-                    "scheduled": scheduled_for or datetime.utcnow(),
-                },
-            )
+            payload_expr = "CAST(:payload AS jsonb)" if self.is_postgres else ":payload"
+            insert_sql = f"""
+                INSERT INTO scraper_tasks
+                (task_type, task_key, payload, priority, max_attempts, scheduled_for)
+                VALUES (:type, :key, {payload_expr}, :priority, :max_attempts, :scheduled)
+            """
+            params = {
+                "type": task_type,
+                "key": task_key,
+                "payload": json.dumps(payload) if payload else "{}",
+                "priority": priority,
+                "max_attempts": max_attempts,
+                "scheduled": scheduled_for or datetime.utcnow(),
+            }
 
-            task_id = result.fetchone()[0]
+            if self.is_postgres:
+                result = session.execute(text(insert_sql + " RETURNING id"), params)
+                task_id = result.fetchone()[0]
+            else:
+                # SQLite: RETURNING exists on modern SQLite but not via all drivers.
+                # Use lastrowid from the compiled cursor instead.
+                cursor_result = session.execute(text(insert_sql), params)
+                task_id = cursor_result.lastrowid
             session.commit()
             logger.info(f"Added task {task_id}: {task_type}:{task_key}")
             return task_id
@@ -270,12 +296,13 @@ class TaskQueue:
                 max_attempts = task_data.get("max_attempts", 3)
 
                 # Use INSERT ... WHERE NOT EXISTS
+                payload_expr = "CAST(:payload AS jsonb)" if self.is_postgres else ":payload"
                 result = session.execute(
                     text(
-                        """
+                        f"""
                         INSERT INTO scraper_tasks
                         (task_type, task_key, payload, priority, max_attempts)
-                        SELECT :type, :key, CAST(:payload AS jsonb), :priority, :max_attempts
+                        SELECT :type, :key, {payload_expr}, :priority, :max_attempts
                         WHERE NOT EXISTS (
                             SELECT 1 FROM scraper_tasks
                             WHERE task_type = :type AND task_key = :key
@@ -620,13 +647,14 @@ class TaskQueue:
         import json
 
         session = self.get_session()
+        result_expr = "CAST(:result AS jsonb)" if self.is_postgres else ":result"
         try:
             session.execute(
                 text(
-                    """
+                    f"""
                     UPDATE scraper_tasks
                     SET status = 'completed',
-                        result = CAST(:result AS jsonb),
+                        result = {result_expr},
                         completed_at = CURRENT_TIMESTAMP
                     WHERE id = :id
                 """
@@ -641,10 +669,10 @@ class TaskQueue:
             if worker_id:
                 session.execute(
                     text(
-                        """
+                        f"""
                         INSERT INTO scraper_results
                         (task_id, worker_id, success, duration_seconds, result)
-                        VALUES (:task_id, :worker_id, true, :duration, CAST(:result AS jsonb))
+                        VALUES (:task_id, :worker_id, true, :duration, {result_expr})
                     """
                     ),
                     {
@@ -685,14 +713,15 @@ class TaskQueue:
         import json
 
         session = self.get_session()
+        result_expr = "CAST(:result AS jsonb)" if self.is_postgres else ":result"
         try:
             result = {"no_data_reason": reason}
             session.execute(
                 text(
-                    """
+                    f"""
                     UPDATE scraper_tasks
                     SET status = 'no_data',
-                        result = CAST(:result AS jsonb),
+                        result = {result_expr},
                         completed_at = CURRENT_TIMESTAMP
                     WHERE id = :id
                 """
@@ -707,10 +736,10 @@ class TaskQueue:
             if worker_id:
                 session.execute(
                     text(
-                        """
+                        f"""
                         INSERT INTO scraper_results
                         (task_id, worker_id, success, duration_seconds, result)
-                        VALUES (:task_id, :worker_id, false, :duration, CAST(:result AS jsonb))
+                        VALUES (:task_id, :worker_id, false, :duration, {result_expr})
                     """
                     ),
                     {
@@ -1059,6 +1088,7 @@ class TaskQueue:
         """
         session = self.get_session()
         try:
+            cutoff = datetime.utcnow() - timedelta(minutes=timeout_minutes)
             result = session.execute(
                 text(
                     """
@@ -1067,10 +1097,10 @@ class TaskQueue:
                         claimed_by = NULL,
                         claimed_at = NULL
                     WHERE status IN ('claimed', 'processing')
-                    AND claimed_at < NOW() - INTERVAL ':timeout minutes'
-                    RETURNING id
-                """.replace(":timeout", str(timeout_minutes))
-                )
+                    AND claimed_at < :cutoff
+                    """
+                ),
+                {"cutoff": cutoff},
             )
             reset_count = result.rowcount
             session.commit()
@@ -1098,14 +1128,16 @@ class TaskQueue:
         """
         session = self.get_session()
         try:
+            cutoff = datetime.utcnow() - timedelta(days=days)
             result = session.execute(
                 text(
-                    f"""
+                    """
                     DELETE FROM scraper_tasks
                     WHERE status IN ('completed', 'failed')
-                    AND completed_at < NOW() - INTERVAL '{days} days'
-                """
-                )
+                    AND completed_at < :cutoff
+                    """
+                ),
+                {"cutoff": cutoff},
             )
             deleted_count = result.rowcount
             session.commit()

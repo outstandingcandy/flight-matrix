@@ -50,7 +50,10 @@ dependencies = [
     # Browser automation
     "DrissionPage>=4.0.0",
     # Unified scraper framework (local submodule)
-    "resilient-scraper",
+    "resilient-scraper[service]",
+    # Async DB drivers consumed by src/scraper/task_queue.py (via resilient-scraper[service])
+    "asyncpg>=0.29.0",
+    "aiosqlite>=0.19.0",
 ]
 
 [tool.uv.sources]
