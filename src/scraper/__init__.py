@@ -1,55 +1,43 @@
-"""
-Distributed Web Scraper Framework
+"""Flight-matrix scraper package.
 
-A general-purpose distributed web scraping architecture with PostgreSQL-backed task queue,
-browser pooling, and worker node management.
+The core scraping framework lives in the `resilient_scraper` submodule. This
+package holds flight-matrix-specific glue — TaskQueue adapters, domain Sinks,
+schedulers, and task sources.
 
-Supports two operating modes:
-- Distributed: Uses PostgreSQL task queue tables (scraper_tasks, etc.)
-- Local: Uses task-type-specific LocalTaskSource implementations
+Typical entrypoint:
+    python -m src.scraper_main --config config/config.yaml
 
-Example usage:
-    from src.scraper import ScraperWorker, JetPhotosScraper
-
-    # Distributed mode (default)
-    worker = ScraperWorker(config, mode="distributed")
-    worker.register_scraper(JetPhotosScraper)
-    await worker.run()
-
-    # Local mode - dynamically creates task sources based on registered scrapers
-    worker = ScraperWorker(config, mode="local")
-    worker.register_scraper(JetPhotosScraper)
-    worker.register_scraper(FR24AirportScraper)
-    await worker.run()
+Programmatic wiring happens inside :mod:`src.scraper_main`: it composes an
+:class:`~resilient_scraper.service.worker.Worker` with a TaskQueue
+(:class:`~src.scraper.async_task_queue.AsyncTaskQueue` for queue-backed mode,
+:class:`~src.scraper.local_task_queue.LocalTaskQueue` for domain-table polling,
+:class:`~src.scraper.cli_task_queue.CLITaskQueue` for one-shot runs).
 """
 
-from src.scraper.base import BaseScraper
-from src.scraper.browser_pool import BrowserPool
-from src.scraper.local_task_provider import LocalTaskProvider
-from src.scraper.local_task_source import LocalTaskSource
-from src.scraper.models import (
+from resilient_scraper.models import (
     ScraperResult,
     ScraperTask,
     TaskStatus,
+    WorkerInfo,
     WorkerStatus,
 )
+
+from src.scraper.async_task_queue import AsyncTaskQueue
+from src.scraper.cli_task_queue import CLITaskQueue
+from src.scraper.local_task_queue import LocalTaskQueue
 from src.scraper.sources import FR24AirportTaskSource, JetPhotosTaskSource
-from src.scraper.task_provider import TaskProvider
 from src.scraper.task_queue import TaskQueue
-from src.scraper.worker import ScraperWorker
 
 __all__ = [
-    "BaseScraper",
-    "BrowserPool",
+    "AsyncTaskQueue",
+    "CLITaskQueue",
     "FR24AirportTaskSource",
     "JetPhotosTaskSource",
-    "LocalTaskProvider",
-    "LocalTaskSource",
+    "LocalTaskQueue",
     "ScraperResult",
     "ScraperTask",
-    "ScraperWorker",
-    "TaskProvider",
     "TaskQueue",
     "TaskStatus",
+    "WorkerInfo",
     "WorkerStatus",
 ]

@@ -465,6 +465,51 @@ def _build_registry(
     return registry
 
 
+def _build_local_source(
+    task_type: str,
+    config: dict[str, Any],
+    database_url: str,
+    from_queue: bool,
+) -> Any:
+    """Construct a LocalTaskSource for local-mode scraping.
+
+    In local mode each scraper type has its own strategy for deciding which
+    targets to work on: polling aircraft_static_info, a YAML list, scraper_tasks,
+    etc. This function centralises that wiring.
+    """
+    if from_queue:
+        from src.scraper.sources.queue_source import QueueTaskSource
+
+        return QueueTaskSource(
+            task_type=task_type, database_url=database_url, limit=10
+        )
+
+    if task_type == "jetphotos":
+        from src.scraper.sources.jetphotos_source import JetPhotosTaskSource
+
+        return JetPhotosTaskSource(database_url=database_url, config=config)
+
+    if task_type in ("fr24_arrivals", "fr24_departures", "fr24_airport"):
+        from src.scraper.sources.fr24_airport_source import FR24AirportTaskSource
+
+        return FR24AirportTaskSource(
+            task_type=task_type, config=config, database_url=database_url
+        )
+
+    if task_type == "fr24_map":
+        from src.scraper.sources.fr24_map_source import FR24MapTaskSource
+
+        return FR24MapTaskSource(config=config, database_url=database_url)
+
+    if task_type == "xiaohongshu":
+        from src.scraper.sources.xiaohongshu_source import XiaohongshuAuthorSource
+
+        return XiaohongshuAuthorSource(database_url=database_url, config=config)
+
+    logger.warning(f"No local task source available for {task_type}")
+    return None
+
+
 def _default_active_types(config: dict[str, Any]) -> list[str]:
     scraper_config = config.get("scraper", {}).get("scrapers", {})
     active: list[str] = []
@@ -606,6 +651,28 @@ async def run_worker(
         queue = cli_queue
         logger.info(
             f"CLI one-shot mode: {active_types[0]}:{task_key}"
+        )
+    elif local_mode:
+        # Local mode without --task: each scraper polls its own domain table
+        # (e.g. aircraft_static_info for JetPhotos). No scraper_tasks involved.
+        from src.scraper.local_task_queue import LocalTaskQueue
+
+        local_queue = LocalTaskQueue()
+        for task_type in active_types:
+            source = _build_local_source(
+                task_type, config, database_url, from_queue
+            )
+            if source is not None:
+                local_queue.register_source(source)
+        if not local_queue.task_types:
+            logger.error(
+                "Local mode requested but no LocalTaskSource could be built "
+                f"for types: {active_types}"
+            )
+            return
+        queue = local_queue
+        logger.info(
+            f"Local mode active with sources: {local_queue.task_types}"
         )
     else:
         inner_queue = FlightTaskQueue(database_url)

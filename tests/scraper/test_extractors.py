@@ -3,8 +3,8 @@ Tests for HTML extractors.
 """
 
 import pytest
-
-from src.scraper.extractors import AirportDataExtractor, JetPhotosExtractor
+from resilient_scraper.scrapers.aviation.airport_data.extractor import AirportDataExtractor
+from resilient_scraper.scrapers.aviation.jetphotos.extractor import JetPhotosExtractor
 
 
 class TestJetPhotosExtractor:

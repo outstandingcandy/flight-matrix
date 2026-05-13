@@ -575,10 +575,17 @@ class XiaohongshuCycleScheduler:
 
         if not use_existing_browser:
             # Create browser pool for this phase
-            from src.scraper.browser_pool import BrowserPool
+            from resilient_scraper.service.browser_pool import BrowserPool
+            from resilient_scraper.service.config import BrowserSettings
 
             drission_options = self.yaml_config.config.get("scraper", {}).get("drission_page", {})
-            browser_pool = BrowserPool(size=1, drission_options=drission_options)
+            browser_settings = BrowserSettings(
+                pool=True,
+                size=1,
+                max_tasks_per_browser=50,
+                headless=drission_options.get("headless", False),
+            )
+            browser_pool = BrowserPool(browser_settings)
             browser_pool.initialize()
             logger.info("Using BrowserPool for scraping")
         else:
@@ -688,10 +695,17 @@ class XiaohongshuCycleScheduler:
 
         if not use_existing_browser:
             # Create browser pool for this phase
-            from src.scraper.browser_pool import BrowserPool
+            from resilient_scraper.service.browser_pool import BrowserPool
+            from resilient_scraper.service.config import BrowserSettings
 
             drission_options = self.yaml_config.config.get("scraper", {}).get("drission_page", {})
-            browser_pool = BrowserPool(size=1, drission_options=drission_options)
+            browser_settings = BrowserSettings(
+                pool=True,
+                size=1,
+                max_tasks_per_browser=50,
+                headless=drission_options.get("headless", False),
+            )
+            browser_pool = BrowserPool(browser_settings)
             browser_pool.initialize()
             logger.info("Using BrowserPool for scraping")
         else:

@@ -37,9 +37,9 @@ import time
 from collections.abc import Iterator
 
 import pytest
-
-from src.scraper.browser_pool import BrowserPool
-from src.scraper.models import ScraperTask
+from resilient_scraper.models import ScraperTask
+from resilient_scraper.service.browser_pool import BrowserPool
+from resilient_scraper.service.config import BrowserSettings
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
@@ -95,7 +95,10 @@ def xvfb_display() -> Iterator[str]:
 def browser_pool(xvfb_display: str) -> Iterator[BrowserPool]:
     """A single-slot, non-headless browser pool on the test's Xvfb display."""
     os.environ["DISPLAY"] = xvfb_display
-    pool = BrowserPool(pool_size=1, drission_options={"headless": False})
+    settings = BrowserSettings(
+        pool=True, size=1, max_tasks_per_browser=50, headless=False
+    )
+    pool = BrowserPool(settings)
     pool.initialize()
     try:
         yield pool
@@ -121,7 +124,7 @@ def browser(browser_pool: BrowserPool):
 class TestAirportDataScraper:
     def test_aircraft_detail(self, browser) -> None:
         """N703PA is a Cessna 208B; airport-data.com has a stable page."""
-        from src.scraper.scrapers.airport_data import AirportDataScraper
+        from resilient_scraper.scrapers.aviation.airport_data import AirportDataScraper
 
         scraper = AirportDataScraper({"sync_to_database": False, "s3_upload": False})
         scraper.setup()
@@ -153,7 +156,7 @@ class TestAirportDataScraper:
 class TestJetPhotosScraper:
     def test_known_registration_has_photos(self, browser, tmp_path) -> None:
         """N703PA has been photographed enough times to be a stable fixture."""
-        from src.scraper.scrapers.jetphotos import JetPhotosScraper
+        from resilient_scraper.scrapers.aviation.jetphotos import JetPhotosScraper
 
         scraper = JetPhotosScraper(
             {
@@ -193,7 +196,7 @@ class TestJetPhotosScraper:
 class TestFR24AirportScrapers:
     def test_arrivals(self, browser) -> None:
         """JFK has hundreds of daily arrivals — a robust baseline."""
-        from src.scraper.scrapers.fr24_airport import FR24AirportArrivalsScraper
+        from resilient_scraper.scrapers.aviation.fr24_airport import FR24AirportArrivalsScraper
 
         scraper = FR24AirportArrivalsScraper({"max_load_more_clicks": 0, "sync_to_database": False})
         scraper.setup()
@@ -213,7 +216,7 @@ class TestFR24AirportScrapers:
         assert len(flights) >= 10, f"JFK arrivals should yield >=10 flights, got {len(flights)}"
 
     def test_departures(self, browser) -> None:
-        from src.scraper.scrapers.fr24_airport import FR24AirportDeparturesScraper
+        from resilient_scraper.scrapers.aviation.fr24_airport import FR24AirportDeparturesScraper
 
         scraper = FR24AirportDeparturesScraper(
             {"max_load_more_clicks": 0, "sync_to_database": False}
@@ -245,7 +248,7 @@ class TestFR24AircraftScraper:
         FR24 data and will correctly `NoDataFoundError`; the scraper is not
         broken, the test data would be wrong.
         """
-        from src.scraper.scrapers.fr24_aircraft import FR24AircraftScraper
+        from resilient_scraper.scrapers.aviation.fr24_aircraft import FR24AircraftScraper
 
         scraper = FR24AircraftScraper({"sync_to_database": False})
         scraper.setup()
@@ -269,7 +272,7 @@ class TestFR24AircraftScraper:
 class TestFR24MapScraper:
     def test_nyc_area(self, browser) -> None:
         """NYC area should always have something in the air."""
-        from src.scraper.scrapers.fr24_map import FR24MapScraper
+        from resilient_scraper.scrapers.aviation.fr24_map import FR24MapScraper
 
         scraper = FR24MapScraper({"sync_to_database": False})
         scraper.setup()

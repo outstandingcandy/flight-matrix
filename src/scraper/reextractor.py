@@ -12,9 +12,9 @@ from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
-
-from src.scraper.extractors import AirportDataExtractor, JetPhotosExtractor
-from src.scraper.extractors.base import BaseExtractor
+from resilient_scraper.extractors.base import BaseExtractor
+from resilient_scraper.scrapers.aviation.airport_data.extractor import AirportDataExtractor
+from resilient_scraper.scrapers.aviation.jetphotos.extractor import JetPhotosExtractor
 
 logger = logging.getLogger("scraper.reextractor")
 
