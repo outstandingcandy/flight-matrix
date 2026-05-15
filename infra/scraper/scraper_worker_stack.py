@@ -51,9 +51,17 @@ from aws_cdk import (
     Fn,
     Stack,
     Tags,
+)
+from aws_cdk import (
     aws_autoscaling as autoscaling,
+)
+from aws_cdk import (
     aws_ec2 as ec2,
+)
+from aws_cdk import (
     aws_iam as iam,
+)
+from aws_cdk import (
     aws_ssm as ssm,
 )
 from constructs import Construct
@@ -169,13 +177,32 @@ class ScraperWorkerStack(Stack):
         # Store secrets in SSM
         self._create_ssm_parameters(db_password, github_token)
 
-        # Create ASG
+        # Worker ASG — the scraper fleet
         self._asg = self._create_asg(
+            role_name="worker",
+            construct_id="WorkerASG",
+            launch_template_id="WorkerLaunchTemplate",
+            asg_name=f"scraper-worker-asg-{self.env_name}",
             instance_type=instance_type,
             min_capacity=min_capacity,
             max_capacity=max_capacity,
             desired_capacity=desired_capacity,
             use_spot=use_spot_instances,
+        )
+
+        # Scheduler ASG — single instance, writes scraper_tasks and manages
+        # worker lifecycle (orphan cleanup, auto-scale). On-demand to keep
+        # the singleton from dying to a spot reclaim.
+        self._scheduler_asg = self._create_asg(
+            role_name="scheduler",
+            construct_id="SchedulerASG",
+            launch_template_id="SchedulerLaunchTemplate",
+            asg_name=f"scraper-scheduler-asg-{self.env_name}",
+            instance_type="t3.small",
+            min_capacity=1,
+            max_capacity=1,
+            desired_capacity=1,
+            use_spot=False,
         )
 
         # Create outputs
@@ -246,6 +273,30 @@ class ScraperWorkerStack(Stack):
             )
         )
 
+        # Scheduler responsibilities: detect stale workers (DescribeInstances),
+        # terminate them so the worker ASG replaces them (TerminateInstances),
+        # and scale the worker ASG in/out (SetDesiredCapacity /
+        # DescribeAutoScalingGroups). The same role is attached to worker
+        # instances; that's fine — workers never call these APIs themselves.
+        role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "ec2:DescribeInstances",
+                    "ec2:TerminateInstances",
+                ],
+                resources=["*"],
+            )
+        )
+        role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "autoscaling:DescribeAutoScalingGroups",
+                    "autoscaling:SetDesiredCapacity",
+                ],
+                resources=["*"],
+            )
+        )
+
         return role
 
     def _create_ssm_parameters(self, db_password: str, github_token: str) -> None:
@@ -268,13 +319,27 @@ class ScraperWorkerStack(Stack):
 
     def _create_asg(
         self,
+        *,
+        role_name: str,
+        construct_id: str,
+        launch_template_id: str,
+        asg_name: str,
         instance_type: str,
         min_capacity: int,
         max_capacity: int,
         desired_capacity: int,
         use_spot: bool,
     ) -> autoscaling.AutoScalingGroup:
-        """Create Auto Scaling Group for scraper workers."""
+        """Create an Auto Scaling Group (worker or scheduler role).
+
+        Args:
+            role_name: ``worker`` or ``scheduler`` — decides which systemd
+                units boot at launch. ``worker`` starts xvfb + scraper;
+                ``scheduler`` starts task_scheduler only.
+            construct_id: CDK node id for this ASG.
+            launch_template_id: CDK node id for this ASG's launch template.
+            asg_name: CloudFormation auto-scaling-group-name.
+        """
         # User data script
         user_data = ec2.UserData.for_linux()
         user_data.add_commands(
@@ -329,63 +394,39 @@ class ScraperWorkerStack(Stack):
             '    sed -i "s|\\${DB_PASSWORD}|$DB_PASSWORD|g" config.yaml',
             "fi",
             "",
-            "# Setup Xvfb service",
-            "cat > /etc/systemd/system/xvfb.service << 'EOF'",
-            "[Unit]",
-            "Description=X Virtual Framebuffer",
-            "After=network.target",
-            "",
-            "[Service]",
-            "Type=simple",
-            "ExecStart=/usr/bin/Xvfb :55 -screen 0 1920x1080x24",
-            "Restart=always",
-            "RestartSec=5",
-            "",
-            "[Install]",
-            "WantedBy=multi-user.target",
+            "# Install the canonical systemd units shipped in the repo.",
+            "# Same units run locally (SQLite) and in prod (Aurora) — only",
+            "# the EnvironmentFile at /etc/flight-matrix/env changes.",
+            "mkdir -p /etc/flight-matrix /var/log/flight-matrix",
+            "chown ubuntu:ubuntu /var/log/flight-matrix",
+            "cat > /etc/flight-matrix/env << EOF",
+            "STAGE=prod",
+            "DB_PASSWORD=${DB_PASSWORD}",
             "EOF",
-            "",
-            "# Setup scraper worker service",
-            "cat > /etc/systemd/system/scraper-worker.service << 'EOF'",
-            "[Unit]",
-            "Description=Flight Matrix Scraper Worker",
-            "After=network.target xvfb.service",
-            "Requires=xvfb.service",
-            "",
-            "[Service]",
-            "Type=simple",
-            "User=ubuntu",
-            "Group=ubuntu",
-            "WorkingDirectory=/home/ubuntu/Project/flight-matrix",
-            "Environment=DISPLAY=:55",
-            "Environment=PYTHONUNBUFFERED=1",
-            "ExecStart=/home/ubuntu/Project/flight-matrix/.venv/bin/python -m src.scraper_main --config config/config.yaml",
-            "Restart=always",
-            "RestartSec=10",
-            "StandardOutput=append:/var/log/scraper-worker/worker.log",
-            "StandardError=append:/var/log/scraper-worker/worker.log",
-            "LimitNOFILE=65536",
-            "MemoryMax=4G",
-            "",
-            "[Install]",
-            "WantedBy=multi-user.target",
-            "EOF",
-            "",
-            "# Create log directory",
-            "mkdir -p /var/log/scraper-worker",
-            "chown ubuntu:ubuntu /var/log/scraper-worker",
+            "install -m 0644 scripts/systemd/flight-matrix-xvfb.service      /etc/systemd/system/",
+            "install -m 0644 scripts/systemd/flight-matrix-scraper.service   /etc/systemd/system/",
+            "install -m 0644 scripts/systemd/flight-matrix-scheduler.service /etc/systemd/system/",
+            "# The repo's units default to /home/ubuntu/flight-matrix; prod EC2",
+            "# checks out into /home/ubuntu/Project/flight-matrix.",
+            "sed -i 's|/home/ubuntu/flight-matrix|/home/ubuntu/Project/flight-matrix|g' "
+            "/etc/systemd/system/flight-matrix-*.service",
             "",
             "# Fix permissions",
             "chown -R ubuntu:ubuntu /home/ubuntu/Project",
             "",
-            "# Start services",
+            "# Enable / start units by role.",
             "systemctl daemon-reload",
-            "systemctl enable xvfb scraper-worker",
-            "systemctl start xvfb",
-            "sleep 2",
-            "systemctl start scraper-worker",
+            f'if [ "{role_name}" = "scheduler" ]; then',
+            "    systemctl enable flight-matrix-scheduler",
+            "    systemctl start flight-matrix-scheduler",
+            "else",
+            "    systemctl enable flight-matrix-xvfb flight-matrix-scraper",
+            "    systemctl start flight-matrix-xvfb",
+            "    sleep 3",
+            "    systemctl start flight-matrix-scraper",
+            "fi",
             "",
-            "echo '=== EC2 Worker Setup Complete ==='",
+            f"echo '=== EC2 {role_name.capitalize()} Setup Complete ==='",
         )
 
         # Launch template options
@@ -423,7 +464,7 @@ class ScraperWorkerStack(Stack):
 
         launch_template = ec2.LaunchTemplate(
             self,
-            "WorkerLaunchTemplate",
+            launch_template_id,
             **launch_template_props,
         )
 
@@ -441,11 +482,15 @@ class ScraperWorkerStack(Stack):
                 subnet_type=ec2.SubnetType.PUBLIC
             )
 
-        # Auto Scaling Group
+        # Scheduler must keep at least 1 in service across updates, so it
+        # tolerates a rolling update of min_instances_in_service=0 only
+        # when max > 1. For a 1-node ASG we set min_instances_in_service=0
+        # (rolling replacement) to avoid a deploy deadlock.
+        rolling_min = 0 if max_capacity <= 1 else 1
         asg = autoscaling.AutoScalingGroup(
             self,
-            "WorkerASG",
-            auto_scaling_group_name=f"scraper-worker-asg-{self.env_name}",
+            construct_id,
+            auto_scaling_group_name=asg_name,
             vpc=self._vpc,
             launch_template=launch_template,
             min_capacity=min_capacity,
@@ -457,14 +502,15 @@ class ScraperWorkerStack(Stack):
             ),
             update_policy=autoscaling.UpdatePolicy.rolling_update(
                 max_batch_size=1,
-                min_instances_in_service=1,
+                min_instances_in_service=rolling_min,
             ),
         )
 
         # Add tags
-        Tags.of(asg).add("Name", f"scraper-worker-{self.env_name}")
+        Tags.of(asg).add("Name", f"scraper-{role_name}-{self.env_name}")
         Tags.of(asg).add("Project", "flight-matrix")
-        Tags.of(asg).add("Component", "scraper")
+        Tags.of(asg).add("Component", f"scraper-{role_name}")
+        Tags.of(asg).add("Role", role_name)
 
         return asg
 
@@ -474,7 +520,14 @@ class ScraperWorkerStack(Stack):
             self,
             "ASGName",
             value=self._asg.auto_scaling_group_name,
-            description="Auto Scaling Group name",
+            description="Worker Auto Scaling Group name",
+        )
+
+        CfnOutput(
+            self,
+            "SchedulerASGName",
+            value=self._scheduler_asg.auto_scaling_group_name,
+            description="Scheduler Auto Scaling Group name (single instance)",
         )
 
         CfnOutput(

@@ -34,6 +34,10 @@ DRY_RUN=false
 REGION="${AWS_REGION:-us-west-2}"
 PROJECT_NAME="flight-matrix"
 COMPONENT="scraper-worker"
+# ROLE picks which systemd unit(s) the instance enables at boot:
+#   worker     → flight-matrix-xvfb + flight-matrix-scraper (ASG N)
+#   scheduler  → flight-matrix-scheduler only (single-instance ASG)
+ROLE="worker"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -58,6 +62,10 @@ while [[ $# -gt 0 ]]; do
             REGION="$2"
             shift 2
             ;;
+        --role)
+            ROLE="$2"
+            shift 2
+            ;;
         -h|--help)
             head -30 "$0" | tail -25
             exit 0
@@ -69,11 +77,27 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "=== Flight Matrix Scraper Worker Deployment ==="
-echo "Region: $REGION"
-echo "Workers: $WORKERS"
+case "$ROLE" in
+    worker|scheduler) ;;
+    *)
+        echo "Unknown --role: $ROLE (expected: worker|scheduler)" >&2
+        exit 1
+        ;;
+esac
+COMPONENT="scraper-${ROLE}"
+
+echo "=== Flight Matrix ${ROLE^} Deployment ==="
+echo "Region:        $REGION"
+echo "Role:          $ROLE"
+echo "Workers:       $WORKERS"
 echo "Instance Type: $INSTANCE_TYPE"
 echo ""
+
+# Single-node ASG for scheduler role — enforce capacity 1.
+if [ "$ROLE" = "scheduler" ] && [ "$WORKERS" != "1" ]; then
+    echo "Note: --role scheduler runs a single-instance ASG; overriding --workers to 1." >&2
+    WORKERS=1
+fi
 
 # Get AWS Account ID
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
@@ -259,69 +283,51 @@ fi
 
 export DB_PASSWORD
 
-# Setup Xvfb
-cat > /etc/systemd/system/xvfb.service << 'EOF'
-[Unit]
-Description=X Virtual Framebuffer
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/Xvfb :55 -screen 0 1920x1080x24
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
+# Role-aware env file consumed by the shipped systemd units.
+mkdir -p /etc/flight-matrix /var/log/flight-matrix
+chown ubuntu:ubuntu /var/log/flight-matrix
+cat > /etc/flight-matrix/env << EOF
+STAGE=prod
+DB_PASSWORD=${DB_PASSWORD}
 EOF
 
-# Update config.yaml with DB password
+# Install the canonical systemd units from the checkout. The same files
+# ship to local dev machines, so prod and local stay in sync.
+install -m 0644 scripts/systemd/flight-matrix-xvfb.service      /etc/systemd/system/
+install -m 0644 scripts/systemd/flight-matrix-scraper.service   /etc/systemd/system/
+install -m 0644 scripts/systemd/flight-matrix-scheduler.service /etc/systemd/system/
+
+# Rewrite the WorkingDirectory baked into the unit files to match the
+# legacy prod path (/home/ubuntu/Project/...). Local installs keep the
+# default /home/ubuntu/flight-matrix.
+sed -i "s|/home/ubuntu/flight-matrix|/home/ubuntu/Project/flight-matrix|g" \
+    /etc/systemd/system/flight-matrix-*.service
+
+# Update config.yaml with DB password (same as before — unit file reads
+# it via EnvironmentFile but some YAML also interpolates it).
 sed -i "s/\${DB_PASSWORD}/${DB_PASSWORD}/g" config.yaml
 
-# Setup scraper worker service
-cat > /etc/systemd/system/scraper-worker.service << EOF
-[Unit]
-Description=Flight Matrix Scraper Worker
-After=network.target xvfb.service
-Requires=xvfb.service
-
-[Service]
-Type=simple
-User=ubuntu
-Group=ubuntu
-WorkingDirectory=/home/ubuntu/Project/flight-matrix
-Environment=DISPLAY=:55
-Environment=PYTHONUNBUFFERED=1
-Environment=DB_PASSWORD=${DB_PASSWORD}
-ExecStart=/home/ubuntu/Project/flight-matrix/.venv/bin/python -m src.scraper_main --config config.yaml
-Restart=always
-RestartSec=10
-StandardOutput=append:/var/log/scraper-worker/worker.log
-StandardError=append:/var/log/scraper-worker/worker.log
-LimitNOFILE=65536
-MemoryMax=4G
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Create log directory
-mkdir -p /var/log/scraper-worker
-chown ubuntu:ubuntu /var/log/scraper-worker
-
-# Fix permissions
+# Fix permissions + start services according to role.
 chown -R ubuntu:ubuntu /home/ubuntu/Project
 
-# Start services
 systemctl daemon-reload
-systemctl enable xvfb scraper-worker
-systemctl start xvfb
-sleep 3
-systemctl start scraper-worker
+if [ "__FLIGHT_MATRIX_ROLE__" = "scheduler" ]; then
+    systemctl enable flight-matrix-scheduler
+    systemctl start flight-matrix-scheduler
+else
+    # worker role: xvfb + scraper
+    systemctl enable flight-matrix-xvfb flight-matrix-scraper
+    systemctl start flight-matrix-xvfb
+    sleep 3
+    systemctl start flight-matrix-scraper
+fi
 
-echo "=== Scraper Worker Setup Complete ==="
+echo "=== __FLIGHT_MATRIX_ROLE__ Setup Complete ==="
 USERDATA
 )
+
+# Fill in the role placeholder (heredoc is quoted so shell vars don't expand).
+USER_DATA=$(echo "$USER_DATA" | sed "s/__FLIGHT_MATRIX_ROLE__/${ROLE}/g")
 
 # Base64 encode user data
 USER_DATA_B64=$(echo "$USER_DATA" | base64 -w 0)

@@ -1,0 +1,28 @@
+[Unit]
+Description=Flight-Matrix scraper worker
+After=network.target flight-matrix-xvfb.service
+Requires=flight-matrix-xvfb.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/flight-matrix
+# STAGE / DATABASE_URL are provided by /etc/flight-matrix/env (EnvironmentFile
+# below) so the same unit file works for local (SQLite, STAGE=local) and
+# prod (Aurora, STAGE=prod) installs.
+EnvironmentFile=-/etc/flight-matrix/env
+Environment=DISPLAY=:55
+Environment=PYTHONUNBUFFERED=1
+# Queue-mode worker: consumes scraper_tasks populated by task_scheduler.
+# No --local flag — the scheduler is the source of truth in both environments.
+ExecStart=/home/ubuntu/flight-matrix/.venv/bin/python -m src.scraper_main --config config/config.yaml
+Restart=always
+RestartSec=15
+StandardOutput=append:/var/log/flight-matrix/scraper.log
+StandardError=append:/var/log/flight-matrix/scraper.log
+LimitNOFILE=65536
+MemoryMax=4G
+
+[Install]
+WantedBy=multi-user.target

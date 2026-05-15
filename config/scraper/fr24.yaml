@@ -6,9 +6,9 @@ scraper:
     # FR24 Airport Flights Scraper (Combined arrivals + departures)
     fr24_airport:
       enabled: true
-      max_load_more_clicks: 50        # Maximum clicks for "Load later" button (future flights)
+      max_load_more_clicks: 10        # Maximum clicks for "Load later" button (future flights)
       max_load_earlier_clicks: 10     # Maximum clicks for "Load earlier" button (past flights)
-      load_more_delay: 10.0           # Delay between clicks (seconds) - 20s for full page load
+      load_more_delay: 3.0            # Delay between clicks (seconds)
       sync_to_database: true          # Save flights to flight_schedules table
 
       # Default settings (for backwards compatibility, use airport_groups for per-group settings)
@@ -164,6 +164,43 @@ scraper:
           lat: 38
           lon: 82
           zoom: 3
+
+    # ADS-B Exchange Globe Scraper — military aircraft by default
+    # Captures the tar1090 feed via an injected XHR hook. Requires a real
+    # (non-headless) browser through Xvfb; globe.adsbexchange.com is behind
+    # Cloudflare.
+    adsbx_map:
+      enabled: true                   # local systemd: collecting ADSBx military
+      min_cycle_gap: 60               # minimum seconds between scrapes of the same region
+      sync_to_database: true
+      priority: 5
+
+      # Where ADSBx data lands:
+      #   military  → adsbx_military_positions (military-only pipeline)
+      #   snapshots → aircraft_snapshots (same table as track_service / RapidAPI;
+      #               set target to this when you want ADSBx to replace or
+      #               supplement the RapidAPI feed). fr24_map is unaffected.
+      target: snapshots
+      # Keep the scraper filter on so we write only dbFlags & 1 hits —
+      # these land in aircraft_snapshots with is_military=true, alongside
+      # whatever RapidAPI also puts there.
+      military_only: true
+
+      # Region selection — same knobs as fr24_map. GLOBAL_REGIONS is imported
+      # from fr24_map_source so tuning stays parallel.
+      global_coverage: true
+      max_priority: 5
+      include_oceans: true
+      db_flags: 1                     # tar1090 filter: 1=mil, 2=interesting, 4=PIA, 8=LADD
+
+      # Scraper-side waits
+      wait_for_load: 15               # seconds after navigation (Cloudflare + first paint)
+      collect_duration: 60            # seconds to buffer feed updates; military traffic is sparse
+      save_debug_html: false
+
+      # Optional custom regions (used only when global_coverage: false).
+      # Shape matches fr24_map.regions — name/lat/lon/zoom/priority.
+      # regions: []
 
     # FR24 Aircraft Flight History Scraper
     # Automatically creates flight history scraping tasks for high-attention aircraft

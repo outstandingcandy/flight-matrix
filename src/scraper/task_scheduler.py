@@ -18,15 +18,17 @@ Usage:
 
 import argparse
 import logging
+import os
 import re
 import signal
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import boto3
-from botocore.exceptions import ClientError
+# boto3 is imported lazily inside AWS-specific methods so that local
+# (SQLite / STAGE=local) deployments can run the scheduler without any
+# AWS credentials or IAM setup.
 from sqlalchemy import create_engine, text
 
 logger = logging.getLogger("scraper.task_scheduler")
@@ -83,32 +85,20 @@ class TaskScheduler:
         self.orphan_cleanup_threshold = self._require_config(
             scheduler_config, "orphan_cleanup_threshold", "scraper.scheduler"
         )
-        self.auto_terminate_unhealthy = self._require_config(
-            scheduler_config, "auto_terminate_unhealthy", "scraper.scheduler"
+        # AWS-integration settings default to off so the scheduler boots on
+        # a laptop / SQLite without any IAM setup. Prod YAML opts in.
+        self.auto_terminate_unhealthy = bool(
+            scheduler_config.get("auto_terminate_unhealthy", False)
         )
 
-        # Auto-scaling config (required if section exists)
-        auto_scale_config = scheduler_config.get("auto_scale")
-        if not auto_scale_config:
-            raise ValueError("Missing required config section: scraper.scheduler.auto_scale")
-
-        self.auto_scale_enabled = self._require_config(
-            auto_scale_config, "enabled", "scraper.scheduler.auto_scale"
-        )
-        self.asg_name = self._require_config(
-            auto_scale_config, "asg_name", "scraper.scheduler.auto_scale"
-        )
-        self.min_instances = self._require_config(
-            auto_scale_config, "min_instances", "scraper.scheduler.auto_scale"
-        )
-        self.max_instances = self._require_config(
-            auto_scale_config, "max_instances", "scraper.scheduler.auto_scale"
-        )
-        self.tasks_per_worker = self._require_config(
-            auto_scale_config, "tasks_per_worker", "scraper.scheduler.auto_scale"
-        )
-        self.scale_down_cooldown = self._require_config(
-            auto_scale_config, "scale_down_cooldown", "scraper.scheduler.auto_scale"
+        auto_scale_config = scheduler_config.get("auto_scale") or {}
+        self.auto_scale_enabled = bool(auto_scale_config.get("enabled", False))
+        self.asg_name: str | None = auto_scale_config.get("asg_name") or None
+        self.min_instances = int(auto_scale_config.get("min_instances", 0) or 0)
+        self.max_instances = int(auto_scale_config.get("max_instances", 0) or 0)
+        self.tasks_per_worker = int(auto_scale_config.get("tasks_per_worker", 50) or 50)
+        self.scale_down_cooldown = int(
+            auto_scale_config.get("scale_down_cooldown", 5) or 5
         )
         self._scale_down_counter = 0  # Track consecutive low-task cycles
 
@@ -117,6 +107,13 @@ class TaskScheduler:
 
         self.engine = create_engine(database_url, echo=False, pool_pre_ping=True)
         self._running = False
+
+        self.is_postgres = self.engine.dialect.name == "postgresql"
+        # Local = anything on SQLite, or STAGE=local. Used to short-circuit
+        # any path that would call AWS APIs.
+        self.is_local = (
+            os.environ.get("STAGE", "").lower() == "local"
+        ) or not self.is_postgres
 
         # Per-airport settings: {airport_code: {priority, min_cycle_gap}}
         self.airport_settings: dict[str, dict[str, int]] = {}
@@ -129,9 +126,8 @@ class TaskScheduler:
             f"airport_settings={len(self.airport_settings)} airports, "
             f"auto_terminate={self.auto_terminate_unhealthy}, "
             f"task_timeout={self.task_timeout}s, "
-            f"auto_scale={self.auto_scale_enabled} "
-            f"(min={self.min_instances}, max={self.max_instances}, "
-            f"tasks_per_worker={self.tasks_per_worker})"
+            f"auto_scale={self.auto_scale_enabled}, "
+            f"is_local={self.is_local} (dialect={self.engine.dialect.name})"
         )
 
     def _require_config(self, config: dict[str, Any], key: str, section: str) -> Any:
@@ -288,6 +284,52 @@ class TaskScheduler:
                     config_entry["auto_create"] = True
                     task_types[task_type] = config_entry
 
+            # ADS-B Exchange Map: region-based military aircraft tracking
+            # (same GLOBAL_REGIONS grid as fr24_map, but each task also
+            # carries a dbFlags bit used by the scraper's URL filter)
+            elif task_type == "adsbx_map":
+                global_coverage = type_config.get("global_coverage", False)
+                max_priority = type_config.get("max_priority", 5)
+                include_oceans = type_config.get("include_oceans", True)
+                db_flags = int(type_config.get("db_flags", 1))
+
+                if global_coverage:
+                    from src.scraper.sources.fr24_map_source import GLOBAL_REGIONS
+
+                    regions = []
+                    for name, region_config in GLOBAL_REGIONS.items():
+                        if region_config.get("priority", 1) > max_priority:
+                            continue
+                        if not include_oceans and any(
+                            x in name.lower()
+                            for x in ("ocean", "pacific", "atlantic", "arctic")
+                        ):
+                            continue
+                        regions.append(
+                            {
+                                "name": name,
+                                "lat": region_config["lat"],
+                                "lon": region_config["lon"],
+                                "zoom": region_config.get("zoom", 5),
+                                "priority": region_config.get("priority", 1),
+                            }
+                        )
+                    regions.sort(key=lambda x: x.get("priority", 1))
+                    logger.info(
+                        f"ADSBx Map global coverage enabled: {len(regions)} regions "
+                        f"(max_priority={max_priority}, include_oceans={include_oceans}, "
+                        f"dbFlags={db_flags})"
+                    )
+                else:
+                    regions = type_config.get("regions", [])
+
+                if regions:
+                    config_entry["regions"] = regions
+                    config_entry["db_flags"] = db_flags
+                    config_entry["min_cycle_gap"] = type_config.get("min_cycle_gap", 60)
+                    config_entry["auto_create"] = True
+                    task_types[task_type] = config_entry
+
             # FR24 Aircraft: registration-based flight history
             elif task_type == "fr24_aircraft":
                 config_entry["auto_create"] = True
@@ -311,15 +353,18 @@ class TaskScheduler:
         """
         stats = {"workers_cleaned": 0, "tasks_reset": 0}
 
+        # Python-computed cutoff so the SQL is dialect-agnostic (both
+        # Postgres and SQLite bind datetimes correctly through SQLAlchemy).
+        cutoff = datetime.now(UTC) - timedelta(seconds=self.orphan_cleanup_threshold)
         with self.engine.connect() as conn:
-            # Find stale workers (no heartbeat for threshold seconds)
+            # Find stale workers (no heartbeat since cutoff)
             stale_workers = conn.execute(
                 text("""
                     SELECT worker_id FROM scraper_workers
                     WHERE status = 'active'
-                    AND last_heartbeat < NOW() - INTERVAL :threshold
+                    AND last_heartbeat < :cutoff
                 """),
-                {"threshold": f"{self.orphan_cleanup_threshold} seconds"},
+                {"cutoff": cutoff},
             ).fetchall()
 
             if not stale_workers:
@@ -379,17 +424,18 @@ class TaskScheduler:
         """
         stats = {"tasks_reset": 0}
 
+        cutoff = datetime.now(UTC) - timedelta(seconds=self.task_timeout)
         with self.engine.connect() as conn:
-            # Find tasks stuck in processing for longer than task_timeout
+            # Find tasks stuck in processing since cutoff
             result = conn.execute(
                 text("""
                     UPDATE scraper_tasks
                     SET status = 'pending', claimed_by = NULL, claimed_at = NULL
                     WHERE status = 'processing'
-                    AND claimed_at < NOW() - INTERVAL :timeout
+                    AND claimed_at < :cutoff
                     RETURNING id, task_type, task_key
                 """),
-                {"timeout": f"{self.task_timeout} seconds"},
+                {"cutoff": cutoff},
             )
 
             reset_tasks = result.fetchall()
@@ -418,6 +464,12 @@ class TaskScheduler:
         Returns:
             Number of instances terminated.
         """
+        if self.is_local:
+            return 0
+
+        import boto3
+        from botocore.exceptions import ClientError
+
         terminated = 0
         ec2 = boto3.client("ec2")
 
@@ -463,8 +515,11 @@ class TaskScheduler:
         Returns:
             Dictionary with scaling statistics.
         """
-        if not self.auto_scale_enabled or not self.asg_name:
+        if self.is_local or not self.auto_scale_enabled or not self.asg_name:
             return {"enabled": False}
+
+        import boto3
+        from botocore.exceptions import ClientError
 
         stats = {
             "enabled": True,
@@ -757,6 +812,108 @@ class TaskScheduler:
 
         if created > 0:
             logger.info(f"Created {created} new fr24_map tasks")
+
+        return created
+
+    def create_adsbx_map_tasks(
+        self,
+        regions: list[dict[str, Any]],
+        priority: int = 0,
+        min_cycle_gap: int = 60,
+        db_flags: int = 1,
+    ) -> int:
+        """Create adsbx_map tasks for specified regions.
+
+        Mirrors :meth:`create_fr24_map_tasks` but attaches ``dbFlags`` to the
+        payload so the scraper's URL filter (``?dbFlags=N``) and its
+        military-only gate both receive the same bit set.
+
+        Args:
+            regions: Region configs with lat, lon, zoom, and optional name.
+            priority: Task priority.
+            min_cycle_gap: Minimum seconds between task cycles per region.
+            db_flags: tar1090 filter bit (1=military, 2=interesting, etc.).
+
+        Returns:
+            Number of tasks created.
+        """
+        import json
+
+        created = 0
+        with self.engine.connect() as conn:
+            for region in regions:
+                lat = region.get("lat")
+                lon = region.get("lon")
+                zoom = region.get("zoom", 4)
+                name = region.get("name", f"{lat}_{lon}_{zoom}")
+
+                if lat is None or lon is None:
+                    logger.warning(f"Skipping adsbx region without lat/lon: {region}")
+                    continue
+
+                # Use the region name as the task key so the scheduler's
+                # "already queued / recently completed" dedup matches the
+                # local ADSBxMapTaskSource's key space exactly.
+                task_key = str(name)
+
+                result = conn.execute(
+                    text("""
+                        SELECT id FROM scraper_tasks
+                        WHERE task_type = 'adsbx_map'
+                        AND task_key = :task_key
+                        AND status IN ('pending', 'processing', 'claimed')
+                    """),
+                    {"task_key": task_key},
+                )
+                if result.fetchone():
+                    continue
+
+                result = conn.execute(
+                    text("""
+                        SELECT completed_at FROM scraper_tasks
+                        WHERE task_type = 'adsbx_map'
+                        AND task_key = :task_key
+                        AND status IN ('completed', 'no_data')
+                        ORDER BY completed_at DESC
+                        LIMIT 1
+                    """),
+                    {"task_key": task_key},
+                )
+                row = result.fetchone()
+                if row and row.completed_at:
+                    elapsed = (
+                        datetime.now(UTC) - row.completed_at.replace(tzinfo=UTC)
+                    ).total_seconds()
+                    if elapsed < min_cycle_gap:
+                        continue
+
+                payload = {
+                    "lat": lat,
+                    "lon": lon,
+                    "zoom": zoom,
+                    "region_name": name,
+                    "dbFlags": db_flags,
+                }
+                conn.execute(
+                    text("""
+                        INSERT INTO scraper_tasks
+                        (task_type, task_key, status, priority, payload, created_at, scheduled_for)
+                        VALUES ('adsbx_map', :task_key, 'pending', :priority, :payload,
+                                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """),
+                    {
+                        "task_key": task_key,
+                        "priority": priority,
+                        "payload": json.dumps(payload),
+                    },
+                )
+                created += 1
+                logger.debug(f"Created adsbx_map task for region '{name}': {task_key}")
+
+            conn.commit()
+
+        if created > 0:
+            logger.info(f"Created {created} new adsbx_map tasks")
 
         return created
 
@@ -1106,6 +1263,16 @@ class TaskScheduler:
                 )
                 results["tasks_created"][task_type] = created
 
+            # ADS-B Exchange Map region-based tasks
+            elif task_type == "adsbx_map" and "regions" in config:
+                created = self.create_adsbx_map_tasks(
+                    regions=config["regions"],
+                    priority=config.get("priority", 0),
+                    min_cycle_gap=config.get("min_cycle_gap", 60),
+                    db_flags=config.get("db_flags", 1),
+                )
+                results["tasks_created"][task_type] = created
+
             # FR24 Aircraft flight history tasks
             elif task_type == "fr24_aircraft":
                 created = self.create_fr24_aircraft_tasks(
@@ -1155,14 +1322,16 @@ class TaskScheduler:
             )
             status["workers"] = {row.status: row.count for row in result}
 
-            # Active workers with recent heartbeat
+            # Active workers with recent heartbeat (within last 2 minutes)
+            healthy_cutoff = datetime.now(UTC) - timedelta(minutes=2)
             result = conn.execute(
                 text("""
                     SELECT COUNT(*) as count
                     FROM scraper_workers
                     WHERE status = 'active'
-                    AND last_heartbeat > NOW() - INTERVAL '2 minutes'
-                """)
+                    AND last_heartbeat > :cutoff
+                """),
+                {"cutoff": healthy_cutoff},
             )
             status["workers"]["healthy"] = result.fetchone().count
 

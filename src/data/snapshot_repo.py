@@ -282,19 +282,39 @@ class SnapshotRepository:
         session = self._session_factory()
         try:
             where_clause = self._convert_boolean_syntax(where_clause)
-            query = text(f"""
-                SELECT * FROM (
-                    SELECT DISTINCT ON (hex) hex, flight_number, registration, aircraft_type,
-                           latitude, longitude, altitude_baro, ground_speed,
-                           current_country, country_of_registration, is_military,
-                           snapshot_time, raw_data
-                    FROM aircraft_snapshots
-                    WHERE ({where_clause})
-                    ORDER BY hex, snapshot_time DESC
-                ) sub
-                ORDER BY snapshot_time DESC
-                LIMIT :limit_count
-            """)
+            cols = (
+                "hex, flight_number, registration, aircraft_type, latitude, "
+                "longitude, altitude_baro, ground_speed, current_country, "
+                "country_of_registration, is_military, snapshot_time, raw_data"
+            )
+            if self._is_postgres:
+                # Postgres supports the DISTINCT ON shortcut.
+                query = text(f"""
+                    SELECT * FROM (
+                        SELECT DISTINCT ON (hex) {cols}
+                        FROM aircraft_snapshots
+                        WHERE ({where_clause})
+                        ORDER BY hex, snapshot_time DESC
+                    ) sub
+                    ORDER BY snapshot_time DESC
+                    LIMIT :limit_count
+                """)
+            else:
+                # Portable equivalent: latest snapshot per hex via MAX join.
+                # Works on SQLite (which lacks DISTINCT ON) and Postgres alike.
+                query = text(f"""
+                    SELECT {cols}
+                    FROM aircraft_snapshots s
+                    JOIN (
+                        SELECT hex AS _hex, MAX(snapshot_time) AS _ts
+                        FROM aircraft_snapshots
+                        WHERE ({where_clause})
+                        GROUP BY hex
+                    ) latest
+                      ON s.hex = latest._hex AND s.snapshot_time = latest._ts
+                    ORDER BY s.snapshot_time DESC
+                    LIMIT :limit_count
+                """)
             result = session.execute(query, {"limit_count": limit})
 
             aircraft: list[dict] = []

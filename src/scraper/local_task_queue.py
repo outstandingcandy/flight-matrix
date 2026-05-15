@@ -41,6 +41,10 @@ class LocalTaskQueue:
         self._by_id: dict[int, tuple[str, ScraperTask]] = {}
         self._id_counter = itertools.count(1)
         self._lock = asyncio.Lock()
+        # Rotate the starting task_type on each claim so a fast producer
+        # (fr24_map via direct API) can't starve slower ones (adsbx_map) by
+        # always being first in the iteration order.
+        self._claim_rotation: int = 0
 
     def register_source(self, source: TaskSource) -> None:
         task_type = source.task_type
@@ -62,7 +66,16 @@ class LocalTaskQueue:
         stale_minutes: int = 5,
     ) -> dict[str, Any] | None:
         async with self._lock:
-            for task_type in task_types:
+            # Round-robin across registered types so no single source holds
+            # the slot indefinitely. We still respect the caller's
+            # task_types order; we just shift the start index each call.
+            active = [t for t in task_types if t in self._sources]
+            if not active:
+                return None
+            start = self._claim_rotation % len(active)
+            self._claim_rotation = (self._claim_rotation + 1) % max(len(active), 1)
+            order = active[start:] + active[:start]
+            for task_type in order:
                 source = self._sources.get(task_type)
                 if source is None:
                     continue
@@ -129,9 +142,7 @@ class LocalTaskQueue:
         _, task = entry
         source = self._sources.get(task.task_type)
         if source is not None:
-            await asyncio.to_thread(
-                source.mark_completed, task.id, result_data
-            )
+            await asyncio.to_thread(source.mark_completed, task, result_data)
         logger.info(f"Local task {task_id} completed in {duration:.1f}s")
 
     async def complete_task_no_data(
@@ -147,7 +158,7 @@ class LocalTaskQueue:
         _, task = entry
         source = self._sources.get(task.task_type)
         if source is not None:
-            await asyncio.to_thread(source.mark_no_data, task.id, reason)
+            await asyncio.to_thread(source.mark_no_data, task, reason)
         logger.info(f"Local task {task_id} no data: {reason}")
 
     async def fail_task(
@@ -164,9 +175,7 @@ class LocalTaskQueue:
         _, task = entry
         source = self._sources.get(task.task_type)
         if source is not None:
-            await asyncio.to_thread(
-                source.mark_failed, task.id, error, retry
-            )
+            await asyncio.to_thread(source.mark_failed, task, error, retry)
         logger.warning(f"Local task {task_id} failed (retry={retry}): {error}")
 
     def _pop_in_flight(

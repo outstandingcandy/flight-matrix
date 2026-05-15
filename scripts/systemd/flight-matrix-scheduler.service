@@ -1,0 +1,23 @@
+[Unit]
+Description=Flight-Matrix task scheduler (populates scraper_tasks queue)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/flight-matrix
+EnvironmentFile=-/etc/flight-matrix/env
+Environment=PYTHONUNBUFFERED=1
+# Runs in a loop; writes fr24_airport / fr24_map / adsbx_map / fr24_aircraft
+# / jetphotos tasks per YAML schedule. On STAGE=local with SQLite, AWS paths
+# (EC2 terminate, ASG scale) are no-ops. On STAGE=prod with Aurora,
+# auto_scale + auto_terminate fire as configured.
+ExecStart=/home/ubuntu/flight-matrix/.venv/bin/python -m src.scraper.task_scheduler --config config/config.yaml
+Restart=always
+RestartSec=15
+StandardOutput=append:/var/log/flight-matrix/scheduler.log
+StandardError=append:/var/log/flight-matrix/scheduler.log
+
+[Install]
+WantedBy=multi-user.target

@@ -206,6 +206,7 @@ def _build_scraper_configs(
     max_replies: int | None,
 ) -> dict[str, tuple[type, dict[str, Any]]]:
     """Produce (scraper_class, merged_config) for every scraper type we know."""
+    from resilient_scraper.scrapers.aviation.adsbx_map import ADSBxMapScraper
     from resilient_scraper.scrapers.aviation.airport_data import AirportDataScraper
     from resilient_scraper.scrapers.aviation.fr24_aircraft import FR24AircraftScraper
     from resilient_scraper.scrapers.aviation.fr24_airport import (
@@ -264,6 +265,25 @@ def _build_scraper_configs(
             "wait_for_load": map_cfg.get("wait_for_load", 15),
             "save_debug_html": map_cfg.get("save_debug_html", False),
             **map_cfg,
+        },
+    )
+
+    adsbx_cfg = scraper_config.get("adsbx_map", {})
+    # "target" routes sink output: "military" (default) → adsbx_military_positions,
+    # "snapshots" → aircraft_snapshots (same table the RapidAPI track service writes).
+    # Switching to "snapshots" also implies military_only=False so the sink sees
+    # the full fleet — otherwise the scraper would drop >99% of rows before DB.
+    adsbx_target = str(adsbx_cfg.get("target", "military")).lower()
+    default_military_only = adsbx_target != "snapshots"
+    configs["adsbx_map"] = (
+        ADSBxMapScraper,
+        {
+            "wait_for_load": adsbx_cfg.get("wait_for_load", 15),
+            "collect_duration": adsbx_cfg.get("collect_duration", 60),
+            "military_only": adsbx_cfg.get("military_only", default_military_only),
+            "save_debug_html": adsbx_cfg.get("save_debug_html", False),
+            "target": adsbx_target,
+            **{k: v for k, v in adsbx_cfg.items() if k != "military_only"},
         },
     )
 
@@ -409,6 +429,7 @@ def _build_sinks_and_augment_configs(
     Returns a mapping ``task_type → sink`` so callers can bind the sink's
     on_success/on_failure onto the scraper after instantiation.
     """
+    from src.scraper.sinks.adsbx_map_sink import ADSBxMapSink
     from src.scraper.sinks.airport_data_sink import AirportDataSink
     from src.scraper.sinks.fr24_aircraft_sink import FR24AircraftSink
     from src.scraper.sinks.fr24_airport_sink import FR24AirportSink
@@ -423,6 +444,19 @@ def _build_sinks_and_augment_configs(
 
     if "fr24_map" in configs:
         sinks["fr24_map"] = FR24MapSink(database_url)
+    if "adsbx_map" in configs:
+        # Target chooses the downstream table:
+        #   "military"  → adsbx_military_positions (default; original behavior)
+        #   "snapshots" → aircraft_snapshots (same table as the RapidAPI track
+        #                 service, so the two producers are interchangeable)
+        _adsbx_cfg = configs["adsbx_map"][1]
+        _target = str(_adsbx_cfg.get("target", "military")).lower()
+        if _target == "snapshots":
+            from src.scraper.sinks.adsbx_snapshots_sink import ADSBxSnapshotsSink
+
+            sinks["adsbx_map"] = ADSBxSnapshotsSink(database_url)
+        else:
+            sinks["adsbx_map"] = ADSBxMapSink(database_url)
     if "fr24_aircraft" in configs:
         sinks["fr24_aircraft"] = FR24AircraftSink(database_url)
     for t in ("fr24_airport", "fr24_arrivals", "fr24_departures"):
@@ -501,7 +535,23 @@ def _build_local_source(
 
         return FR24MapTaskSource(config=config, database_url=database_url)
 
+    if task_type == "adsbx_map":
+        from src.scraper.sources.adsbx_map_source import ADSBxMapTaskSource
+
+        return ADSBxMapTaskSource(config=config, database_url=database_url)
+
     if task_type == "xiaohongshu":
+        # Xiaohongshu source uses Postgres-only SQL (make_interval, jsonb_*);
+        # on SQLite every poll raises and returns []. Skip the registration
+        # entirely so the log stays quiet and the round-robin doesn't burn
+        # slots on a source that can't produce tasks.
+        if database_url.startswith("sqlite"):
+            logger.info(
+                "Skipping xiaohongshu source on SQLite backend "
+                "(requires Postgres-only SQL)"
+            )
+            return None
+
         from src.scraper.sources.xiaohongshu_source import XiaohongshuAuthorSource
 
         return XiaohongshuAuthorSource(database_url=database_url, config=config)
@@ -526,6 +576,7 @@ def _default_active_types(config: dict[str, Any]) -> list[str]:
         "xiaohongshu_following",
         "xiaohongshu_search_author",
         "fr24_map",
+        "adsbx_map",
         "airport_data",
         "planespotters",
         "fr24_aircraft",
@@ -654,10 +705,10 @@ async def run_worker(
             )
             return
         scraper_type = active_types[0]
-        # fr24_map expects coordinates in its payload, not its task_key.
+        # Map scrapers expect coordinates in the payload, not the task_key.
         # Accept task_key in the shape "lat,lon[,zoom]" and split it apart.
         cli_payload: dict[str, Any] = {}
-        if scraper_type == "fr24_map" and "," in task_key:
+        if scraper_type in ("fr24_map", "adsbx_map") and "," in task_key:
             parts = [p.strip() for p in task_key.split(",")]
             try:
                 cli_payload["lat"] = float(parts[0])
@@ -666,10 +717,13 @@ async def run_worker(
                     cli_payload["zoom"] = int(parts[2])
             except (ValueError, IndexError):
                 logger.error(
-                    "fr24_map --task must be 'lat,lon[,zoom]' (got %r)",
+                    "%s --task must be 'lat,lon[,zoom]' (got %r)",
+                    scraper_type,
                     task_key,
                 )
                 return
+            if scraper_type == "adsbx_map":
+                cli_payload.setdefault("dbFlags", 1)
         cli_queue = CLITaskQueue(scraper_type, task_key, payload=cli_payload)
         queue = cli_queue
         logger.info(

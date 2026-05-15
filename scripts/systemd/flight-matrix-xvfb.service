@@ -1,0 +1,16 @@
+[Unit]
+Description=Xvfb virtual display for flight-matrix scrapers
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+ExecStart=/usr/bin/Xvfb :55 -screen 0 1920x1080x24
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/flight-matrix/xvfb.log
+StandardError=append:/var/log/flight-matrix/xvfb.log
+
+[Install]
+WantedBy=multi-user.target

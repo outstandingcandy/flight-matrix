@@ -31,15 +31,18 @@ scraper:
     stale_task_timeout: 60              # Minutes before claimed task is considered stale (increased from 30 for long-running jetphotos tasks)
 
   # Task Scheduler configuration (manages all task types)
+  # auto_terminate_unhealthy + auto_scale rely on AWS APIs. They default to
+  # off here so a fresh checkout / local systemd install boots cleanly; prod
+  # stage YAMLs override both to true.
   scheduler:
     check_interval: 60                  # Seconds between scheduler checks
     min_cycle_gap: 1200                 # Default min_cycle_gap (can be overridden per scraper type)
     orphan_cleanup_threshold: 120       # Seconds without heartbeat before worker is considered dead
-    auto_terminate_unhealthy: true      # Terminate EC2 instances for stale workers (ASG will replace)
+    auto_terminate_unhealthy: false     # Terminate EC2 instances for stale workers (prod-only)
 
-    # Auto-scaling configuration
+    # Auto-scaling configuration (prod YAML overrides enabled to true).
     auto_scale:
-      enabled: true                     # Enable auto-scaling based on task queue depth
+      enabled: false                    # Off by default; AWS-only feature
       asg_name: "FlightMatrix-WorkerASGE62D02B5-RXd9rWY4ua8U"  # ASG name to scale
       min_instances: 8                  # Minimum number of instances
       max_instances: 100                # Maximum number of instances
