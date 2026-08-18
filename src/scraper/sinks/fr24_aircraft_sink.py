@@ -21,9 +21,7 @@ class FR24AircraftSink:
         self.db_engine: Any | None = None
         if database_url:
             try:
-                self.db_engine = create_engine(
-                    database_url, echo=False, pool_pre_ping=True
-                )
+                self.db_engine = create_engine(database_url, echo=False, pool_pre_ping=True)
             except Exception as e:
                 logger.error(f"Failed to initialize DB engine: {e}")
 
@@ -104,13 +102,9 @@ class FR24AircraftSink:
                     saved_count += 1
                 conn.commit()
             if saved_count:
-                logger.info(
-                    f"[{result.aircraft_registration}] Saved {saved_count} flights"
-                )
+                logger.info(f"[{result.aircraft_registration}] Saved {saved_count} flights")
         except SQLAlchemyError as e:
-            logger.error(
-                f"[{result.aircraft_registration}] Failed to save flights: {e}"
-            )
+            logger.error(f"[{result.aircraft_registration}] Failed to save flights: {e}")
 
     def on_failure(self, task: ScraperTask, error: Exception) -> None:
         pass

@@ -15,32 +15,27 @@ DEPENDENCIES = {
     "PyYAML": "yaml",
     "python-dotenv": "dotenv",
     "SQLAlchemy": "sqlalchemy",
-
     # 邮件功能
     "boto3": "boto3",
-
     # 地理定位
     "reverse-geocoder": "reverse_geocoder",
-
     # 地图生成（可选）
     "plotly": "plotly",
     "kaleido": "kaleido",
     "numpy": "numpy",
-
     # AI分析（可选）
     "tavily-python": "tavily",
-
     # 测试框架（可选）
     "pytest": "pytest",
     "pytest-asyncio": "pytest_asyncio",
 }
 
 # 颜色代码
-GREEN = '\033[92m'
-RED = '\033[91m'
-YELLOW = '\033[93m'
-BLUE = '\033[94m'
-RESET = '\033[0m'
+GREEN = "\033[92m"
+RED = "\033[91m"
+YELLOW = "\033[93m"
+BLUE = "\033[94m"
+RESET = "\033[0m"
 
 
 def check_import(module_name: str) -> Tuple[bool, str]:
@@ -101,7 +96,9 @@ def main():
 
     # 检查 Python 版本
     python_version = sys.version_info
-    print(f"{BLUE}Python 版本:{RESET} {python_version.major}.{python_version.minor}.{python_version.micro}")
+    print(
+        f"{BLUE}Python 版本:{RESET} {python_version.major}.{python_version.minor}.{python_version.micro}"
+    )
 
     if python_version >= (3, 8):
         print(f"{GREEN}✓ Python 版本满足要求 (>= 3.8){RESET}")
@@ -129,7 +126,14 @@ def main():
         success, error = check_import(import_name)
 
         # 判断是否为可选包
-        is_optional = package_name in ["plotly", "kaleido", "numpy", "tavily-python", "pytest", "pytest-asyncio"]
+        is_optional = package_name in [
+            "plotly",
+            "kaleido",
+            "numpy",
+            "tavily-python",
+            "pytest",
+            "pytest-asyncio",
+        ]
 
         if success:
             status = f"{GREEN}✓ 已安装{RESET}"

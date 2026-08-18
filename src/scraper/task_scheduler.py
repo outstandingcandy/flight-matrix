@@ -97,9 +97,7 @@ class TaskScheduler:
         self.min_instances = int(auto_scale_config.get("min_instances", 0) or 0)
         self.max_instances = int(auto_scale_config.get("max_instances", 0) or 0)
         self.tasks_per_worker = int(auto_scale_config.get("tasks_per_worker", 50) or 50)
-        self.scale_down_cooldown = int(
-            auto_scale_config.get("scale_down_cooldown", 5) or 5
-        )
+        self.scale_down_cooldown = int(auto_scale_config.get("scale_down_cooldown", 5) or 5)
         self._scale_down_counter = 0  # Track consecutive low-task cycles
 
         # Task timeout config (use worker's task_timeout)
@@ -111,9 +109,7 @@ class TaskScheduler:
         self.is_postgres = self.engine.dialect.name == "postgresql"
         # Local = anything on SQLite, or STAGE=local. Used to short-circuit
         # any path that would call AWS APIs.
-        self.is_local = (
-            os.environ.get("STAGE", "").lower() == "local"
-        ) or not self.is_postgres
+        self.is_local = (os.environ.get("STAGE", "").lower() == "local") or not self.is_postgres
 
         # Per-airport settings: {airport_code: {priority, min_cycle_gap}}
         self.airport_settings: dict[str, dict[str, int]] = {}
@@ -301,8 +297,7 @@ class TaskScheduler:
                         if region_config.get("priority", 1) > max_priority:
                             continue
                         if not include_oceans and any(
-                            x in name.lower()
-                            for x in ("ocean", "pacific", "atlantic", "arctic")
+                            x in name.lower() for x in ("ocean", "pacific", "atlantic", "arctic")
                         ):
                             continue
                         regions.append(

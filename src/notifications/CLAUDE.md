@@ -39,15 +39,11 @@ from src.notifications.orchestrator import NotificationOrchestrator
 
 notifier = create_notifier(config)
 orchestrator = NotificationOrchestrator(
-    notifier=notifier,
-    analysis_service=analysis_service,
-    media_service=media_service
+    notifier=notifier, analysis_service=analysis_service, media_service=media_service
 )
 
 orchestrator.send_notification(
-    recipients=["user@example.com"],
-    aircraft_data=aircraft_list,
-    subject="Flight Alert"
+    recipients=["user@example.com"], aircraft_data=aircraft_list, subject="Flight Alert"
 )
 ```
 

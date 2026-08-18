@@ -158,7 +158,9 @@ def run_migration(database_url: str, dry_run: bool = False) -> bool:
                 """)
             )
             if not result.scalar():
-                logger.error("Table 'aircraft_images' does not exist. Run migrate_create_aircraft_images.py first.")
+                logger.error(
+                    "Table 'aircraft_images' does not exist. Run migrate_create_aircraft_images.py first."
+                )
                 return False
 
             # Get current state
@@ -172,8 +174,10 @@ def run_migration(database_url: str, dry_run: bool = False) -> bool:
             has_is_primary = check_column_exists(conn, "aircraft_images", "is_primary")
             has_notes = check_column_exists(conn, "aircraft_images", "notes")
 
-            logger.info(f"Column status: aircraft_id={has_aircraft_id}, display_order={has_display_order}, "
-                       f"is_primary={has_is_primary}, notes={has_notes}")
+            logger.info(
+                f"Column status: aircraft_id={has_aircraft_id}, display_order={has_display_order}, "
+                f"is_primary={has_is_primary}, notes={has_notes}"
+            )
 
             if dry_run:
                 logger.info("=== DRY RUN MODE - No changes will be made ===")
@@ -185,7 +189,9 @@ def run_migration(database_url: str, dry_run: bool = False) -> bool:
                     logger.info("Would add column: is_primary BOOLEAN DEFAULT false")
                 if not has_notes:
                     logger.info("Would add column: notes TEXT")
-                logger.info("Would create indexes: idx_images_aircraft_id, idx_images_reg_order, idx_images_primary")
+                logger.info(
+                    "Would create indexes: idx_images_aircraft_id, idx_images_reg_order, idx_images_primary"
+                )
                 logger.info("Would add foreign key: fk_aircraft_images_aircraft_id")
                 logger.info("Would backfill aircraft_id from aircraft_static_info")
                 logger.info("Would set display_order based on creation time")
@@ -254,9 +260,7 @@ def run_migration(database_url: str, dry_run: bool = False) -> bool:
             logger.info(f"Primary images marked: {primary_count}")
 
             # Count unique registrations
-            result = conn.execute(
-                text("SELECT COUNT(DISTINCT registration) FROM aircraft_images")
-            )
+            result = conn.execute(text("SELECT COUNT(DISTINCT registration) FROM aircraft_images"))
             reg_count = result.scalar()
             logger.info(f"Unique registrations with images: {reg_count}")
 
@@ -279,6 +283,7 @@ def run_migration(database_url: str, dry_run: bool = False) -> bool:
     except Exception as e:
         logger.error(f"Migration failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

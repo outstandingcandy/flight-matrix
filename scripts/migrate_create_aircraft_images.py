@@ -127,9 +127,7 @@ def run_migration(database_url: str) -> bool:
 
 def main() -> None:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Create aircraft_images table migration"
-    )
+    parser = argparse.ArgumentParser(description="Create aircraft_images table migration")
     parser.add_argument(
         "--config",
         type=str,
@@ -163,9 +161,7 @@ def main() -> None:
         # Show table info
         engine = create_engine(database_url)
         with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT COUNT(*) FROM aircraft_images;")
-            )
+            result = conn.execute(text("SELECT COUNT(*) FROM aircraft_images;"))
             count = result.scalar()
             logger.info(f"Table 'aircraft_images' now has {count} records")
     else:

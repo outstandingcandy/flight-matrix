@@ -35,15 +35,11 @@ class ADSBxMapTaskSource(BaseTaskSource):
         super().__init__(task_type="adsbx_map", max_attempts=3)
         self.database_url = database_url
 
-        scraper_config = (
-            config.get("scraper", {}).get("scrapers", {}).get("adsbx_map", {})
-        )
+        scraper_config = config.get("scraper", {}).get("scrapers", {}).get("adsbx_map", {})
 
         self.global_coverage = scraper_config.get("global_coverage", False)
         custom_regions = scraper_config.get("regions", [])
-        self.enabled_regions: list[str] = scraper_config.get(
-            "enabled_regions", []
-        )
+        self.enabled_regions: list[str] = scraper_config.get("enabled_regions", [])
         self.max_priority = scraper_config.get("max_priority", 3)
         self.include_oceans = scraper_config.get("include_oceans", False)
         self.db_flags = int(scraper_config.get("db_flags", 1))
@@ -77,15 +73,12 @@ class ADSBxMapTaskSource(BaseTaskSource):
             if region_config.get("priority", 1) > self.max_priority:
                 continue
             if not self.include_oceans and any(
-                tag in name.lower()
-                for tag in ("ocean", "pacific", "atlantic", "arctic")
+                tag in name.lower() for tag in ("ocean", "pacific", "atlantic", "arctic")
             ):
                 continue
             active[name] = region_config
 
-        return dict(
-            sorted(active.items(), key=lambda x: x[1].get("priority", 1))
-        )
+        return dict(sorted(active.items(), key=lambda x: x[1].get("priority", 1)))
 
     def _build_custom_regions(
         self, custom_regions: list[dict[str, Any]]
@@ -116,9 +109,7 @@ class ADSBxMapTaskSource(BaseTaskSource):
                 if self._current_index >= len(region_names):
                     self._current_index = 0
                     self._cycle_count += 1
-                    logger.info(
-                        f"ADSBxMapTaskSource completed cycle {self._cycle_count}"
-                    )
+                    logger.info(f"ADSBxMapTaskSource completed cycle {self._cycle_count}")
 
                 region_name = region_names[self._current_index]
                 self._current_index += 1
@@ -150,15 +141,12 @@ class ADSBxMapTaskSource(BaseTaskSource):
 
         if tasks:
             logger.info(
-                f"ADSBxMapTaskSource returned {len(tasks)} tasks: "
-                f"{[t.task_key for t in tasks]}"
+                f"ADSBxMapTaskSource returned {len(tasks)} tasks: {[t.task_key for t in tasks]}"
             )
 
         return tasks
 
-    def _on_completed(
-        self, task: ScraperTask, result: dict[str, Any] | None
-    ) -> None:
+    def _on_completed(self, task: ScraperTask, result: dict[str, Any] | None) -> None:
         with self._lock:
             if task.task_key:
                 self._region_to_task.pop(task.task_key, None)
@@ -170,13 +158,10 @@ class ADSBxMapTaskSource(BaseTaskSource):
             mil = result.get("military_count", 0)
             total = result.get("aircraft_count", 0)
         logger.info(
-            f"Task {task.id} ({task.task_key}) completed: "
-            f"{mil} military / {total} aircraft"
+            f"Task {task.id} ({task.task_key}) completed: {mil} military / {total} aircraft"
         )
 
-    def _on_failed(
-        self, task: ScraperTask, error: str, retry: bool
-    ) -> None:
+    def _on_failed(self, task: ScraperTask, error: str, retry: bool) -> None:
         with self._lock:
             if task.task_key:
                 self._region_to_task.pop(task.task_key, None)

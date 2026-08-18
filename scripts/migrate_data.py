@@ -3,6 +3,7 @@
 Migrate data from SQLite database to PostgreSQL Aurora Serverless
 Handles 404MB database with batching and progress tracking
 """
+
 import os
 import sys
 from sqlalchemy import create_engine, text, inspect
@@ -14,14 +15,12 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s'
-)
-logger = logging.getLogger('data_migration')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("data_migration")
 
 # Batch size for migration
 BATCH_SIZE = 1000  # Process 1000 rows at a time
+
 
 def migrate_table_data(source_engine, target_engine, table_name):
     """
@@ -48,9 +47,9 @@ def migrate_table_data(source_engine, target_engine, table_name):
 
         # Get column names
         inspector = inspect(source_engine)
-        columns = [col['name'] for col in inspector.get_columns(table_name)]
-        columns_str = ', '.join(columns)
-        placeholders = ', '.join([f":{col}" for col in columns])
+        columns = [col["name"] for col in inspector.get_columns(table_name)]
+        columns_str = ", ".join(columns)
+        placeholders = ", ".join([f":{col}" for col in columns])
 
         # Migrate in batches
         offset = 0
@@ -59,7 +58,9 @@ def migrate_table_data(source_engine, target_engine, table_name):
         while offset < count:
             # Read batch from source
             with source_engine.connect() as source_conn:
-                query = text(f"SELECT {columns_str} FROM {table_name} LIMIT {BATCH_SIZE} OFFSET {offset}")
+                query = text(
+                    f"SELECT {columns_str} FROM {table_name} LIMIT {BATCH_SIZE} OFFSET {offset}"
+                )
                 batch = source_conn.execute(query).fetchall()
 
             if not batch:
@@ -73,7 +74,9 @@ def migrate_table_data(source_engine, target_engine, table_name):
                         row_dict = dict(row._mapping)
 
                         # Build INSERT statement
-                        insert_sql = f"INSERT INTO {table_name} ({columns_str}) VALUES ({placeholders})"
+                        insert_sql = (
+                            f"INSERT INTO {table_name} ({columns_str}) VALUES ({placeholders})"
+                        )
 
                         target_conn.execute(text(insert_sql), row_dict)
                     except Exception as e:
@@ -91,8 +94,10 @@ def migrate_table_data(source_engine, target_engine, table_name):
             rate = migrated / elapsed if elapsed > 0 else 0
             eta = (count - migrated) / rate if rate > 0 else 0
 
-            logger.info(f"  Progress: {migrated:,}/{count:,} ({progress:.1f}%) | "
-                       f"Rate: {rate:.0f} rows/sec | ETA: {eta:.0f}s")
+            logger.info(
+                f"  Progress: {migrated:,}/{count:,} ({progress:.1f}%) | "
+                f"Rate: {rate:.0f} rows/sec | ETA: {eta:.0f}s"
+            )
 
         elapsed = (datetime.now() - start_time).total_seconds()
         logger.info(f"  ✓ Completed migrating {table_name}: {migrated:,} rows in {elapsed:.1f}s")
@@ -100,6 +105,7 @@ def migrate_table_data(source_engine, target_engine, table_name):
     except Exception as e:
         logger.error(f"  ✗ Error migrating {table_name}: {e}")
         raise
+
 
 def migrate_all_data():
     """
@@ -109,17 +115,19 @@ def migrate_all_data():
         SOURCE_DATABASE_URL: SQLite database URL (default: sqlite:///aircraft_data.db)
         TARGET_DATABASE_URL: PostgreSQL database URL
     """
-    logger.info("="*60)
+    logger.info("=" * 60)
     logger.info("Starting Database Migration: SQLite → PostgreSQL")
-    logger.info("="*60)
+    logger.info("=" * 60)
 
     # Get database URLs from environment
-    source_url = os.environ.get('SOURCE_DATABASE_URL', 'sqlite:///aircraft_data.db')
-    target_url = os.environ.get('TARGET_DATABASE_URL')
+    source_url = os.environ.get("SOURCE_DATABASE_URL", "sqlite:///aircraft_data.db")
+    target_url = os.environ.get("TARGET_DATABASE_URL")
 
     if not target_url:
         logger.error("ERROR: TARGET_DATABASE_URL environment variable is required")
-        logger.error("Example: export TARGET_DATABASE_URL='postgresql+psycopg2://user:pass@host:5432/dbname'")
+        logger.error(
+            "Example: export TARGET_DATABASE_URL='postgresql+psycopg2://user:pass@host:5432/dbname'"
+        )
         sys.exit(1)
 
     logger.info(f"Source: {source_url}")
@@ -168,14 +176,14 @@ def migrate_all_data():
 
     # Summary
     total_elapsed = (datetime.now() - total_start).total_seconds()
-    logger.info("="*60)
+    logger.info("=" * 60)
     logger.info("Migration Complete!")
-    logger.info("="*60)
-    logger.info(f"Total time: {total_elapsed:.1f}s ({total_elapsed/60:.1f} minutes)")
+    logger.info("=" * 60)
+    logger.info(f"Total time: {total_elapsed:.1f}s ({total_elapsed / 60:.1f} minutes)")
     logger.info(f"Tables migrated successfully: {successful}/{len(tables)}")
     if failed > 0:
         logger.warning(f"Tables with errors: {failed}")
-    logger.info("="*60)
+    logger.info("=" * 60)
 
     # Verification
     logger.info("")
@@ -183,20 +191,27 @@ def migrate_all_data():
     for table_name in tables:
         try:
             with source_engine.connect() as source_conn:
-                source_count = source_conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar()
+                source_count = source_conn.execute(
+                    text(f"SELECT COUNT(*) FROM {table_name}")
+                ).scalar()
 
             with target_engine.connect() as target_conn:
-                target_count = target_conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar()
+                target_count = target_conn.execute(
+                    text(f"SELECT COUNT(*) FROM {table_name}")
+                ).scalar()
 
             if source_count == target_count:
                 logger.info(f"  ✓ {table_name}: {source_count:,} rows (match)")
             else:
-                logger.warning(f"  ⚠ {table_name}: source={source_count:,}, target={target_count:,} (MISMATCH!)")
+                logger.warning(
+                    f"  ⚠ {table_name}: source={source_count:,}, target={target_count:,} (MISMATCH!)"
+                )
         except Exception as e:
             logger.error(f"  ✗ {table_name}: verification failed - {e}")
 
     logger.info("")
     logger.info("Migration script completed.")
+
 
 if __name__ == "__main__":
     try:

@@ -31,10 +31,7 @@ from src.utils.database import DatabaseManager
 from src.utils.yaml_config import YAMLConfig
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -53,7 +50,8 @@ def get_images_from_snapshots(
     """
     session = db.get_session()
     try:
-        result = session.execute(text('''
+        result = session.execute(
+            text("""
             SELECT
                 registration,
                 MAX(image_path_1) as image_path_1,
@@ -68,17 +66,21 @@ def get_images_from_snapshots(
             GROUP BY registration
             ORDER BY registration
             LIMIT :limit OFFSET :offset
-        '''), {'limit': batch_size, 'offset': offset}).fetchall()
+        """),
+            {"limit": batch_size, "offset": offset},
+        ).fetchall()
 
         records = []
         for row in result:
-            records.append({
-                'registration': row[0],
-                'image_path_1': row[1],
-                'image_path_2': row[2],
-                'image_path_3': row[3],
-                'hex_code': row[4]
-            })
+            records.append(
+                {
+                    "registration": row[0],
+                    "image_path_1": row[1],
+                    "image_path_2": row[2],
+                    "image_path_3": row[3],
+                    "hex_code": row[4],
+                }
+            )
         return records
     finally:
         session.close()
@@ -95,14 +97,16 @@ def count_images_in_snapshots(db: DatabaseManager) -> int:
     """
     session = db.get_session()
     try:
-        result = session.execute(text('''
+        result = session.execute(
+            text("""
             SELECT COUNT(DISTINCT registration)
             FROM aircraft_snapshots
             WHERE registration IS NOT NULL
             AND registration != ''
             AND images_downloaded = true
             AND (image_path_1 IS NOT NULL OR image_path_2 IS NOT NULL OR image_path_3 IS NOT NULL)
-        ''')).scalar()
+        """)
+        ).scalar()
         return result or 0
     finally:
         session.close()
@@ -131,15 +135,19 @@ def upsert_to_static_info(
     try:
         for record in records:
             # Check if registration already exists
-            existing = session.execute(text('''
+            existing = session.execute(
+                text("""
                 SELECT images_downloaded FROM aircraft_static_info
                 WHERE registration = :reg
-            '''), {'reg': record['registration']}).fetchone()
+            """),
+                {"reg": record["registration"]},
+            ).fetchone()
 
             if existing:
                 # Update existing record (only if not already downloaded from static_info)
                 if not existing[0]:
-                    session.execute(text('''
+                    session.execute(
+                        text("""
                         UPDATE aircraft_static_info
                         SET image_path_1 = :p1,
                             image_path_2 = :p2,
@@ -149,28 +157,33 @@ def upsert_to_static_info(
                             last_updated = CURRENT_TIMESTAMP
                         WHERE registration = :reg
                         AND (images_downloaded IS NULL OR images_downloaded = false)
-                    '''), {
-                        'p1': record['image_path_1'],
-                        'p2': record['image_path_2'],
-                        'p3': record['image_path_3'],
-                        'reg': record['registration']
-                    })
+                    """),
+                        {
+                            "p1": record["image_path_1"],
+                            "p2": record["image_path_2"],
+                            "p3": record["image_path_3"],
+                            "reg": record["registration"],
+                        },
+                    )
                     updated += 1
             else:
                 # Insert new record
-                session.execute(text('''
+                session.execute(
+                    text("""
                     INSERT INTO aircraft_static_info
                     (registration, hex_code, image_path_1, image_path_2, image_path_3,
                      images_downloaded, images_updated_at, last_updated)
                     VALUES
                     (:reg, :hex, :p1, :p2, :p3, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                '''), {
-                    'reg': record['registration'],
-                    'hex': record['hex_code'],
-                    'p1': record['image_path_1'],
-                    'p2': record['image_path_2'],
-                    'p3': record['image_path_3']
-                })
+                """),
+                    {
+                        "reg": record["registration"],
+                        "hex": record["hex_code"],
+                        "p1": record["image_path_1"],
+                        "p2": record["image_path_2"],
+                        "p3": record["image_path_3"],
+                    },
+                )
                 inserted += 1
 
         session.commit()
@@ -196,31 +209,43 @@ def verify_migration(db: DatabaseManager) -> Dict:
     session = db.get_session()
     try:
         # Count records in aircraft_static_info with images
-        static_count = session.execute(text('''
+        static_count = (
+            session.execute(
+                text("""
             SELECT COUNT(*) FROM aircraft_static_info
             WHERE images_downloaded = true
             AND (image_path_1 IS NOT NULL OR image_path_2 IS NOT NULL OR image_path_3 IS NOT NULL)
-        ''')).scalar() or 0
+        """)
+            ).scalar()
+            or 0
+        )
 
         # Count records in aircraft_snapshots with images
-        snapshots_count = session.execute(text('''
+        snapshots_count = (
+            session.execute(
+                text("""
             SELECT COUNT(DISTINCT registration) FROM aircraft_snapshots
             WHERE images_downloaded = true
             AND (image_path_1 IS NOT NULL OR image_path_2 IS NOT NULL OR image_path_3 IS NOT NULL)
-        ''')).scalar() or 0
+        """)
+            ).scalar()
+            or 0
+        )
 
         # Sample check - get a few registrations and verify
-        sample = session.execute(text('''
+        sample = session.execute(
+            text("""
             SELECT registration FROM aircraft_static_info
             WHERE images_downloaded = true
             LIMIT 5
-        ''')).fetchall()
+        """)
+        ).fetchall()
 
         return {
-            'static_info_count': static_count,
-            'snapshots_count': snapshots_count,
-            'sample_registrations': [r[0] for r in sample],
-            'migration_complete': static_count >= snapshots_count * 0.95  # 95% threshold
+            "static_info_count": static_count,
+            "snapshots_count": snapshots_count,
+            "sample_registrations": [r[0] for r in sample],
+            "migration_complete": static_count >= snapshots_count * 0.95,  # 95% threshold
         }
     finally:
         session.close()
@@ -229,29 +254,27 @@ def verify_migration(db: DatabaseManager) -> Dict:
 def main():
     """Main entry point for migration script."""
     parser = argparse.ArgumentParser(
-        description='Migrate aircraft images from snapshots to static_info table'
+        description="Migrate aircraft images from snapshots to static_info table"
     )
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Preview changes without actually migrating'
+        "--dry-run", action="store_true", help="Preview changes without actually migrating"
     )
     parser.add_argument(
-        '--batch-size',
+        "--batch-size",
         type=int,
         default=500,
-        help='Number of records to process per batch (default: 500)'
+        help="Number of records to process per batch (default: 500)",
     )
     parser.add_argument(
-        '--config',
+        "--config",
         type=str,
-        default='config/config.yaml',
-        help='Path to configuration file (default: config/config.yaml)'
+        default="config/config.yaml",
+        help="Path to configuration file (default: config/config.yaml)",
     )
     parser.add_argument(
-        '--verify-only',
-        action='store_true',
-        help='Only verify the migration status without migrating'
+        "--verify-only",
+        action="store_true",
+        help="Only verify the migration status without migrating",
     )
 
     args = parser.parse_args()
@@ -267,7 +290,7 @@ def main():
     try:
         config = YAMLConfig(args.config)
         db_config = config.get_database_config()
-        db = DatabaseManager(db_config['url'])
+        db = DatabaseManager(db_config["url"])
         logger.info(f"Connected to database")
     except Exception as e:
         logger.error(f"Failed to connect to database: {e}")
@@ -310,9 +333,11 @@ def main():
 
         if args.dry_run:
             for record in records[:3]:  # Show first 3 in dry run
-                logger.info(f"  Would migrate: {record['registration']} "
-                           f"(images: {bool(record['image_path_1'])}, "
-                           f"{bool(record['image_path_2'])}, {bool(record['image_path_3'])})")
+                logger.info(
+                    f"  Would migrate: {record['registration']} "
+                    f"(images: {bool(record['image_path_1'])}, "
+                    f"{bool(record['image_path_2'])}, {bool(record['image_path_3'])})"
+                )
             if len(records) > 3:
                 logger.info(f"  ... and {len(records) - 3} more")
             total_inserted += len(records)
@@ -328,8 +353,9 @@ def main():
         if batch_num % 10 == 0:
             elapsed = (datetime.now() - start_time).total_seconds()
             progress = min(offset / total_count * 100, 100)
-            logger.info(f"Progress: {progress:.1f}% ({offset}/{total_count}), "
-                       f"elapsed: {elapsed:.1f}s")
+            logger.info(
+                f"Progress: {progress:.1f}% ({offset}/{total_count}), elapsed: {elapsed:.1f}s"
+            )
 
     # Summary
     elapsed = (datetime.now() - start_time).total_seconds()
@@ -354,5 +380,5 @@ def main():
     logger.info("Done!")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

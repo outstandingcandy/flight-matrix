@@ -63,9 +63,7 @@ class ADSBxSnapshotsSink:
             logger.error(f"[{task.task_key}] batch_insert failed: {e}")
             return
 
-        logger.info(
-            f"[{task.task_key}] Saved {inserted}/{len(rows)} ADSBx snapshots"
-        )
+        logger.info(f"[{task.task_key}] Saved {inserted}/{len(rows)} ADSBx snapshots")
 
     def on_failure(self, task: ScraperTask, error: Exception) -> None:
         # Worker already logged the failure; no DB write on this path.

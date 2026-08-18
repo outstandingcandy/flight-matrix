@@ -95,9 +95,7 @@ def xvfb_display() -> Iterator[str]:
 def browser_pool(xvfb_display: str) -> Iterator[BrowserPool]:
     """A single-slot, non-headless browser pool on the test's Xvfb display."""
     os.environ["DISPLAY"] = xvfb_display
-    settings = BrowserSettings(
-        pool=True, size=1, max_tasks_per_browser=50, headless=False
-    )
+    settings = BrowserSettings(pool=True, size=1, max_tasks_per_browser=50, headless=False)
     pool = BrowserPool(settings)
     pool.initialize()
     try:

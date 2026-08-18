@@ -21,9 +21,7 @@ class ADSBxMapSink:
         self.db_engine: Any | None = None
         if database_url:
             try:
-                self.db_engine = create_engine(
-                    database_url, echo=False, pool_pre_ping=True
-                )
+                self.db_engine = create_engine(database_url, echo=False, pool_pre_ping=True)
                 self._ensure_table_exists()
             except Exception as e:
                 logger.error(f"Failed to initialize DB engine: {e}")
@@ -186,8 +184,7 @@ class ADSBxMapSink:
                 )
                 conn.commit()
             logger.info(
-                f"[{task.task_key}] Saved {len(batch)}/{len(result.aircraft)} "
-                "ADSBx positions"
+                f"[{task.task_key}] Saved {len(batch)}/{len(result.aircraft)} ADSBx positions"
             )
         except SQLAlchemyError as e:
             logger.error(f"[{task.task_key}] Failed to save positions: {e}")

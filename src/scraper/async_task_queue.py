@@ -70,10 +70,14 @@ class AsyncTaskQueue:
             try:
                 from sqlalchemy import text  # local import keeps top clean
 
-                row = session.execute(
-                    text("SELECT * FROM scraper_tasks WHERE id = :id"),
-                    {"id": task_id},
-                ).mappings().fetchone()
+                row = (
+                    session.execute(
+                        text("SELECT * FROM scraper_tasks WHERE id = :id"),
+                        {"id": task_id},
+                    )
+                    .mappings()
+                    .fetchone()
+                )
                 return dict(row) if row else None
             finally:
                 session.close()
@@ -81,9 +85,7 @@ class AsyncTaskQueue:
         return await asyncio.to_thread(_get)
 
     async def update_status(self, task_id: int, status: str) -> None:
-        await asyncio.to_thread(
-            self._q.update_task_status, task_id, TaskStatus(status)
-        )
+        await asyncio.to_thread(self._q.update_task_status, task_id, TaskStatus(status))
 
     async def update_heartbeat(self, task_id: int) -> None:
         await asyncio.to_thread(self._q.update_heartbeat_at, task_id)
@@ -95,9 +97,7 @@ class AsyncTaskQueue:
         worker_id: str,
         duration: float,
     ) -> None:
-        await asyncio.to_thread(
-            self._q.complete_task, task_id, result_data, worker_id, duration
-        )
+        await asyncio.to_thread(self._q.complete_task, task_id, result_data, worker_id, duration)
 
     async def complete_task_no_data(
         self,
@@ -106,9 +106,7 @@ class AsyncTaskQueue:
         worker_id: str,
         duration: float,
     ) -> None:
-        await asyncio.to_thread(
-            self._q.complete_task_no_data, task_id, reason, worker_id, duration
-        )
+        await asyncio.to_thread(self._q.complete_task_no_data, task_id, reason, worker_id, duration)
 
     async def fail_task(
         self,
@@ -118,17 +116,13 @@ class AsyncTaskQueue:
         duration: float,
         retry: bool = True,
     ) -> None:
-        await asyncio.to_thread(
-            self._q.fail_task, task_id, error, worker_id, duration, retry
-        )
+        await asyncio.to_thread(self._q.fail_task, task_id, error, worker_id, duration, retry)
 
     # ------------------------------------------------------------------
     # Worker registry
     # ------------------------------------------------------------------
 
-    async def register_worker(
-        self, worker_id: str, metadata: dict[str, Any] | None = None
-    ) -> None:
+    async def register_worker(self, worker_id: str, metadata: dict[str, Any] | None = None) -> None:
         await asyncio.to_thread(self._q.register_worker, worker_id, metadata)
 
     async def deactivate_worker(self, worker_id: str) -> None:
@@ -140,9 +134,7 @@ class AsyncTaskQueue:
         # Main-repo signature is (worker_id, status=..., current_task_id=...);
         # only pass current_task_id by keyword so `status` keeps its default.
         def _call() -> None:
-            self._q.update_worker_heartbeat(
-                worker_id, current_task_id=current_task_id
-            )
+            self._q.update_worker_heartbeat(worker_id, current_task_id=current_task_id)
 
         await asyncio.to_thread(_call)
 
@@ -161,12 +153,11 @@ class AsyncTaskQueue:
         logger.debug(
             "set_login_required called but flight-matrix TaskQueue "
             "doesn't persist login screenshots (task_id=%s, phase=%s)",
-            task_id, phase,
+            task_id,
+            phase,
         )
 
-    async def update_login_screenshot(
-        self, task_id: int, screenshot_url: str
-    ) -> None:
+    async def update_login_screenshot(self, task_id: int, screenshot_url: str) -> None:
         logger.debug(
             "update_login_screenshot ignored by flight-matrix TaskQueue (task_id=%s)",
             task_id,
@@ -177,9 +168,7 @@ class AsyncTaskQueue:
         return None
 
     async def submit_user_input(self, task_id: int, value: str) -> int:
-        raise NotImplementedError(
-            "flight-matrix TaskQueue does not support user-input submission"
-        )
+        raise NotImplementedError("flight-matrix TaskQueue does not support user-input submission")
 
     async def consume_user_input(self, task_id: int) -> str | None:
         return None

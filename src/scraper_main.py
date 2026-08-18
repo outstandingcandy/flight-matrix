@@ -184,9 +184,7 @@ def populate_fr24_queue(
             total_added += added
 
     if total_added == 0:
-        logger.warning(
-            "No FR24 tasks added. Check config.scraper.scrapers.fr24_* airports list"
-        )
+        logger.warning("No FR24 tasks added. Check config.scraper.scrapers.fr24_* airports list")
     else:
         logger.info(f"Total FR24 tasks added: {total_added}")
 
@@ -301,9 +299,7 @@ def _build_scraper_configs(
     configs["airport_data"] = (
         AirportDataScraper,
         {
-            "screenshots_dir": ad_cfg.get(
-                "screenshots_dir", "data/airport_data_screenshots"
-            ),
+            "screenshots_dir": ad_cfg.get("screenshots_dir", "data/airport_data_screenshots"),
             "s3_upload": s3_config.get("enabled", False),
             "s3_bucket": s3_config.get("bucket", ""),
             "s3_prefix": ad_cfg.get("s3_prefix", "data/airport_data_raw"),
@@ -318,9 +314,7 @@ def _build_scraper_configs(
         cfg = scraper_config.get(section, {})
         return {
             "database_url": "" if no_db else database_url,
-            "screenshots_dir": cfg.get(
-                "screenshots_dir", "data/xiaohongshu_screenshots"
-            ),
+            "screenshots_dir": cfg.get("screenshots_dir", "data/xiaohongshu_screenshots"),
             "local_mode": local_mode,
             "login_alert_email": cfg.get("login_alert_email", ""),
             "smtp_server": email_config.get("server", "smtp.qq.com"),
@@ -358,9 +352,7 @@ def _build_scraper_configs(
                 "s3_upload": s3_config.get("enabled", False),
                 "s3_bucket": s3_config.get("bucket", ""),
                 "s3_prefix": xhs_cfg.get("s3_prefix", "data/xiaohongshu_images"),
-                "delete_local_after_upload": s3_config.get(
-                    "delete_local_after_upload", False
-                ),
+                "delete_local_after_upload": s3_config.get("delete_local_after_upload", False),
             },
         )
         configs["xiaohongshu_following"] = (
@@ -368,9 +360,9 @@ def _build_scraper_configs(
             _xhs_base(
                 "xiaohongshu_following",
                 {
-                    "max_following": scraper_config.get(
-                        "xiaohongshu_following", {}
-                    ).get("max_following", 1000),
+                    "max_following": scraper_config.get("xiaohongshu_following", {}).get(
+                        "max_following", 1000
+                    ),
                     "wait_for_login": True,
                     "login_timeout": 300,
                 },
@@ -381,9 +373,9 @@ def _build_scraper_configs(
             _xhs_base(
                 "xiaohongshu_search_author",
                 {
-                    "max_results": scraper_config.get(
-                        "xiaohongshu_search_author", {}
-                    ).get("max_results", 20),
+                    "max_results": scraper_config.get("xiaohongshu_search_author", {}).get(
+                        "max_results", 20
+                    ),
                     "wait_for_login": True,
                     "login_timeout": 300,
                 },
@@ -400,17 +392,13 @@ def _build_scraper_configs(
             PlanespottersScraper,
             {
                 "database_url": database_url,
-                "screenshots_dir": ps_cfg.get(
-                    "screenshots_dir", "data/planespotters_screenshots"
-                ),
+                "screenshots_dir": ps_cfg.get("screenshots_dir", "data/planespotters_screenshots"),
                 "s3_upload": s3_config.get("enabled", False),
                 "s3_bucket": s3_config.get("bucket", ""),
                 "s3_prefix": ps_cfg.get("s3_prefix", "data/planespotters_raw"),
                 "max_pages_per_family": ps_cfg.get("max_pages_per_family", 50),
                 "skip_existing": ps_cfg.get("skip_existing", True),
-                "cookies_file": ps_cfg.get(
-                    "cookies_file", "www.planespotters.net_cookies.txt"
-                ),
+                "cookies_file": ps_cfg.get("cookies_file", "www.planespotters.net_cookies.txt"),
                 **ps_cfg,
             },
         )
@@ -514,9 +502,7 @@ def _build_local_source(
     if from_queue:
         from src.scraper.sources.queue_source import QueueTaskSource
 
-        return QueueTaskSource(
-            task_type=task_type, database_url=database_url, limit=10
-        )
+        return QueueTaskSource(task_type=task_type, database_url=database_url, limit=10)
 
     if task_type == "jetphotos":
         from src.scraper.sources.jetphotos_source import JetPhotosTaskSource
@@ -526,9 +512,7 @@ def _build_local_source(
     if task_type in ("fr24_arrivals", "fr24_departures", "fr24_airport"):
         from src.scraper.sources.fr24_airport_source import FR24AirportTaskSource
 
-        return FR24AirportTaskSource(
-            task_type=task_type, config=config, database_url=database_url
-        )
+        return FR24AirportTaskSource(task_type=task_type, config=config, database_url=database_url)
 
     if task_type == "fr24_map":
         from src.scraper.sources.fr24_map_source import FR24MapTaskSource
@@ -547,8 +531,7 @@ def _build_local_source(
         # slots on a source that can't produce tasks.
         if database_url.startswith("sqlite"):
             logger.info(
-                "Skipping xiaohongshu source on SQLite backend "
-                "(requires Postgres-only SQL)"
+                "Skipping xiaohongshu source on SQLite backend (requires Postgres-only SQL)"
             )
             return None
 
@@ -681,11 +664,7 @@ async def run_worker(
 
     # Sinks: write to flight-matrix tables from on_success and provide
     # persist_*_callback / add_task_callback hooks to scrapers that need them.
-    sinks = (
-        _build_sinks_and_augment_configs(scraper_configs, database_url)
-        if not no_db
-        else {}
-    )
+    sinks = _build_sinks_and_augment_configs(scraper_configs, database_url) if not no_db else {}
 
     # Which scraper types should this process serve?
     active_types = scrapers if scrapers else _default_active_types(config)
@@ -700,9 +679,7 @@ async def run_worker(
     if local_mode and task_key:
         # One-shot CLI mode: a fake queue that serves exactly one task.
         if len(active_types) != 1:
-            logger.error(
-                "--task requires exactly one scraper type via --scrapers"
-            )
+            logger.error("--task requires exactly one scraper type via --scrapers")
             return
         scraper_type = active_types[0]
         # Map scrapers expect coordinates in the payload, not the task_key.
@@ -726,9 +703,7 @@ async def run_worker(
                 cli_payload.setdefault("dbFlags", 1)
         cli_queue = CLITaskQueue(scraper_type, task_key, payload=cli_payload)
         queue = cli_queue
-        logger.info(
-            f"CLI one-shot mode: {scraper_type}:{task_key} payload={cli_payload}"
-        )
+        logger.info(f"CLI one-shot mode: {scraper_type}:{task_key} payload={cli_payload}")
     elif local_mode:
         # Local mode without --task: each scraper polls its own domain table
         # (e.g. aircraft_static_info for JetPhotos). No scraper_tasks involved.
@@ -736,9 +711,7 @@ async def run_worker(
 
         local_queue = LocalTaskQueue()
         for task_type in active_types:
-            source = _build_local_source(
-                task_type, config, database_url, from_queue
-            )
+            source = _build_local_source(task_type, config, database_url, from_queue)
             if source is not None:
                 local_queue.register_source(source)
         if not local_queue.task_types:
@@ -748,9 +721,7 @@ async def run_worker(
             )
             return
         queue = local_queue
-        logger.info(
-            f"Local mode active with sources: {local_queue.task_types}"
-        )
+        logger.info(f"Local mode active with sources: {local_queue.task_types}")
     else:
         inner_queue = FlightTaskQueue(database_url)
         inner_queue.ensure_tables_exist()

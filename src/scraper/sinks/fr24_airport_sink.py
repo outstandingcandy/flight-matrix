@@ -27,9 +27,7 @@ class FR24AirportSink:
         self.flight_type_hint = flight_type_hint
         if database_url:
             try:
-                self.db_engine = create_engine(
-                    database_url, echo=False, pool_pre_ping=True
-                )
+                self.db_engine = create_engine(database_url, echo=False, pool_pre_ping=True)
             except Exception as e:
                 logger.error(f"Failed to initialize DB engine: {e}")
 
@@ -127,9 +125,7 @@ class FR24AirportSink:
                     saved_count += 1
                 conn.commit()
             if saved_count:
-                logger.info(
-                    f"[{result.airport_code}] Saved {saved_count} flights"
-                )
+                logger.info(f"[{result.airport_code}] Saved {saved_count} flights")
         except SQLAlchemyError as e:
             logger.error(f"[{result.airport_code}] Failed to save flights: {e}")
 
@@ -168,9 +164,7 @@ class FR24AirportSink:
                     f"aircraft_static_info records from {len(registrations)} regs"
                 )
         except SQLAlchemyError as e:
-            logger.error(
-                f"[{result.airport_code}] Failed to sync registrations: {e}"
-            )
+            logger.error(f"[{result.airport_code}] Failed to sync registrations: {e}")
 
     def on_failure(self, task: ScraperTask, error: Exception) -> None:
         pass

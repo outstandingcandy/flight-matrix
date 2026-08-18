@@ -87,9 +87,7 @@ class LocalTaskQueue:
                 task.id = tid
                 self._by_id[tid] = (task_type, task)
                 now = datetime.now(UTC)
-                logger.debug(
-                    f"LocalTaskQueue serving {task_type}:{task.task_key} (id={tid})"
-                )
+                logger.debug(f"LocalTaskQueue serving {task_type}:{task.task_key} (id={tid})")
                 return {
                     "id": tid,
                     "task_type": task_type,
@@ -178,18 +176,14 @@ class LocalTaskQueue:
             await asyncio.to_thread(source.mark_failed, task, error, retry)
         logger.warning(f"Local task {task_id} failed (retry={retry}): {error}")
 
-    def _pop_in_flight(
-        self, task_id: int
-    ) -> tuple[str, ScraperTask] | None:
+    def _pop_in_flight(self, task_id: int) -> tuple[str, ScraperTask] | None:
         return self._by_id.pop(task_id, None)
 
     # ------------------------------------------------------------------
     # Worker registry — no-op for local mode
     # ------------------------------------------------------------------
 
-    async def register_worker(
-        self, worker_id: str, metadata: dict[str, Any] | None = None
-    ) -> None:
+    async def register_worker(self, worker_id: str, metadata: dict[str, Any] | None = None) -> None:
         return None
 
     async def deactivate_worker(self, worker_id: str) -> None:
@@ -215,18 +209,14 @@ class LocalTaskQueue:
             "check the browser window for the QR code."
         )
 
-    async def update_login_screenshot(
-        self, task_id: int, screenshot_url: str
-    ) -> None:
+    async def update_login_screenshot(self, task_id: int, screenshot_url: str) -> None:
         return None
 
     async def clear_login_screenshot(self, task_id: int) -> None:
         return None
 
     async def submit_user_input(self, task_id: int, value: str) -> int:
-        raise NotImplementedError(
-            "Local mode cannot relay user input; use queue-backed mode."
-        )
+        raise NotImplementedError("Local mode cannot relay user input; use queue-backed mode.")
 
     async def consume_user_input(self, task_id: int) -> str | None:
         return None

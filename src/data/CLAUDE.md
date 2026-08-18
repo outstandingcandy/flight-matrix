@@ -66,9 +66,12 @@ from src.data.models import AircraftSnapshot, User, Base
 # Models use SQLAlchemy declarative base
 from sqlalchemy.orm import Session
 
+
 def get_recent_aircraft(session: Session, limit: int = 100):
-    return session.query(AircraftSnapshot)\
-        .order_by(AircraftSnapshot.snapshot_time.desc())\
-        .limit(limit)\
+    return (
+        session.query(AircraftSnapshot)
+        .order_by(AircraftSnapshot.snapshot_time.desc())
+        .limit(limit)
         .all()
+    )
 ```

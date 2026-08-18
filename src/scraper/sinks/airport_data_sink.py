@@ -44,9 +44,7 @@ class AirportDataSink:
             except Exception as e:
                 logger.error(f"Failed to initialize DB engine: {e}")
 
-    def persist_aircraft(
-        self, aircraft_list: list[AirportDataAircraftData]
-    ) -> int:
+    def persist_aircraft(self, aircraft_list: list[AirportDataAircraftData]) -> int:
         """Upsert into ``aircraft_static_info`` (shared + ``ad_`` columns)."""
         if not self.db_engine or not aircraft_list:
             return 0
@@ -144,9 +142,7 @@ class AirportDataSink:
                         )
                         updated += 1
                     except SQLAlchemyError as e:
-                        logger.error(
-                            f"Failed to update {aircraft.registration}: {e}"
-                        )
+                        logger.error(f"Failed to update {aircraft.registration}: {e}")
                         continue
                 conn.commit()
         except SQLAlchemyError as e:

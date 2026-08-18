@@ -108,9 +108,7 @@ def get_database_url(config_path: str | None) -> str:
     if env_url:
         return env_url
     if config_path is None:
-        raise RuntimeError(
-            "DATABASE_URL not set and no --config provided"
-        )
+        raise RuntimeError("DATABASE_URL not set and no --config provided")
     from src.utils.yaml_config import YAMLConfig
 
     cfg = YAMLConfig(config_path)

@@ -29,10 +29,9 @@ from src.services.subscription_service import SubscriptionService
 from src.services.filter_service import FilterService
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-logger = logging.getLogger('migrate_to_multi_user')
+logger = logging.getLogger("migrate_to_multi_user")
 
 
 def create_tables(db: DatabaseManager) -> bool:
@@ -55,9 +54,7 @@ def create_tables(db: DatabaseManager) -> bool:
 
 
 def migrate_recipients(
-    config: YAMLConfig,
-    user_service: UserService,
-    default_tier: str = 'basic'
+    config: YAMLConfig, user_service: UserService, default_tier: str = "basic"
 ) -> int:
     """Migrate existing email recipients to users.
 
@@ -72,7 +69,7 @@ def migrate_recipients(
     logger.info("Migrating email recipients to users...")
 
     email_config = config.get_email_config()
-    recipients = email_config.get('recipients', [])
+    recipients = email_config.get("recipients", [])
 
     if not recipients:
         logger.warning("No recipients found in config")
@@ -95,10 +92,7 @@ def migrate_recipients(
 
         # Create user
         user = user_service.create_user(
-            email=email,
-            name=None,
-            tier=default_tier,
-            generate_api_key=True
+            email=email, name=None, tier=default_tier, generate_api_key=True
         )
 
         if user:
@@ -112,9 +106,7 @@ def migrate_recipients(
 
 
 def migrate_filters(
-    config: YAMLConfig,
-    user_service: UserService,
-    filter_service: FilterService
+    config: YAMLConfig, user_service: UserService, filter_service: FilterService
 ) -> int:
     """Migrate existing SQL filter to all users.
 
@@ -129,14 +121,14 @@ def migrate_filters(
     logger.info("Migrating global SQL filter to user filters...")
 
     filter_config = config.get_filter_config()
-    custom_sql = filter_config.get('custom_sql', '').strip()
+    custom_sql = filter_config.get("custom_sql", "").strip()
 
     if not custom_sql:
         logger.warning("No custom SQL filter found in config")
         return 0
 
     # Get all active users
-    users = user_service.list_users(status='active', limit=10000)
+    users = user_service.list_users(status="active", limit=10000)
 
     if not users:
         logger.warning("No active users found")
@@ -144,8 +136,8 @@ def migrate_filters(
 
     created = 0
     for user_data in users:
-        user_id = user_data['id']
-        user_email = user_data['email']
+        user_id = user_data["id"]
+        user_email = user_data["email"]
 
         # Check if user already has filters
         existing_filters = filter_service.get_user_filters(user_id, active_only=False)
@@ -159,7 +151,7 @@ def migrate_filters(
             name="Default Filter (migrated)",
             filter_sql=custom_sql,
             description="Migrated from global config.yaml filter",
-            priority=100
+            priority=100,
         )
 
         if user_filter:
@@ -172,10 +164,7 @@ def migrate_filters(
     return created
 
 
-def migrate_cooldowns(
-    db: DatabaseManager,
-    user_service: UserService
-) -> int:
+def migrate_cooldowns(db: DatabaseManager, user_service: UserService) -> int:
     """Migrate existing global cooldowns to user-specific cooldowns.
 
     This copies the global report_cooldowns to user_cooldowns for all users.
@@ -204,16 +193,18 @@ def migrate_cooldowns(
             return 0
 
         # Get all active users
-        users = user_service.list_users(status='active', limit=10000)
+        users = user_service.list_users(status="active", limit=10000)
         if not users:
             logger.warning("No active users found")
             return 0
 
         # Get global cooldowns
-        global_cooldowns = session.execute(text('''
+        global_cooldowns = session.execute(
+            text("""
             SELECT aircraft_hex, last_report_time, last_latitude, last_longitude, report_count
             FROM report_cooldowns
-        ''')).fetchall()
+        """)
+        ).fetchall()
 
         if not global_cooldowns:
             logger.info("No global cooldowns to migrate")
@@ -221,30 +212,36 @@ def migrate_cooldowns(
 
         migrated = 0
         for user_data in users:
-            user_id = user_data['id']
+            user_id = user_data["id"]
 
             for cd in global_cooldowns:
                 # Check if already exists
-                existing = session.execute(text('''
+                existing = session.execute(
+                    text("""
                     SELECT 1 FROM user_cooldowns
                     WHERE user_id = :user_id AND aircraft_hex = :hex
-                '''), {'user_id': user_id, 'hex': cd[0]}).fetchone()
+                """),
+                    {"user_id": user_id, "hex": cd[0]},
+                ).fetchone()
 
                 if existing:
                     continue
 
                 # Insert
-                session.execute(text('''
+                session.execute(
+                    text("""
                     INSERT INTO user_cooldowns (user_id, aircraft_hex, last_report_time, last_latitude, last_longitude, report_count)
                     VALUES (:user_id, :hex, :time, :lat, :lon, :count)
-                '''), {
-                    'user_id': user_id,
-                    'hex': cd[0],
-                    'time': cd[1],
-                    'lat': cd[2],
-                    'lon': cd[3],
-                    'count': cd[4]
-                })
+                """),
+                    {
+                        "user_id": user_id,
+                        "hex": cd[0],
+                        "time": cd[1],
+                        "lat": cd[2],
+                        "lon": cd[3],
+                        "count": cd[4],
+                    },
+                )
                 migrated += 1
 
         session.commit()
@@ -270,8 +267,16 @@ def print_summary(db: DatabaseManager):
     session = db.get_session()
     try:
         users = session.execute(text("SELECT COUNT(*) FROM users")).scalar() or 0
-        active_users = session.execute(text("SELECT COUNT(*) FROM users WHERE status = 'active'")).scalar() or 0
-        subscriptions = session.execute(text("SELECT COUNT(*) FROM subscriptions WHERE status = 'active'")).scalar() or 0
+        active_users = (
+            session.execute(text("SELECT COUNT(*) FROM users WHERE status = 'active'")).scalar()
+            or 0
+        )
+        subscriptions = (
+            session.execute(
+                text("SELECT COUNT(*) FROM subscriptions WHERE status = 'active'")
+            ).scalar()
+            or 0
+        )
         filters = session.execute(text("SELECT COUNT(*) FROM user_filters")).scalar() or 0
         cooldowns = session.execute(text("SELECT COUNT(*) FROM user_cooldowns")).scalar() or 0
 
@@ -292,44 +297,28 @@ def print_summary(db: DatabaseManager):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Migrate to multi-user subscription system"
+    parser = argparse.ArgumentParser(description="Migrate to multi-user subscription system")
+    parser.add_argument("--config", "-c", default="config/config.yaml", help="Path to config file")
+    parser.add_argument(
+        "--migrate-recipients", action="store_true", help="Migrate email recipients to users"
     )
     parser.add_argument(
-        '--config', '-c',
-        default='config/config.yaml',
-        help='Path to config file'
+        "--migrate-filters", action="store_true", help="Migrate global SQL filter to user filters"
     )
     parser.add_argument(
-        '--migrate-recipients',
-        action='store_true',
-        help='Migrate email recipients to users'
+        "--migrate-cooldowns",
+        action="store_true",
+        help="Migrate global cooldowns to user cooldowns",
+    )
+    parser.add_argument("--migrate-all", action="store_true", help="Run all migrations")
+    parser.add_argument(
+        "--tier",
+        default="basic",
+        choices=["basic", "premium", "enterprise"],
+        help="Default tier for migrated users",
     )
     parser.add_argument(
-        '--migrate-filters',
-        action='store_true',
-        help='Migrate global SQL filter to user filters'
-    )
-    parser.add_argument(
-        '--migrate-cooldowns',
-        action='store_true',
-        help='Migrate global cooldowns to user cooldowns'
-    )
-    parser.add_argument(
-        '--migrate-all',
-        action='store_true',
-        help='Run all migrations'
-    )
-    parser.add_argument(
-        '--tier',
-        default='basic',
-        choices=['basic', 'premium', 'enterprise'],
-        help='Default tier for migrated users'
-    )
-    parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show what would be done without making changes'
+        "--dry-run", action="store_true", help="Show what would be done without making changes"
     )
 
     args = parser.parse_args()
@@ -340,7 +329,7 @@ def main():
 
     # Initialize database
     db_config = config.get_database_config()
-    db = DatabaseManager(db_config['url'])
+    db = DatabaseManager(db_config["url"])
 
     # Create tables first
     if not create_tables(db):
@@ -356,7 +345,7 @@ def main():
     if args.migrate_all or args.migrate_recipients:
         if args.dry_run:
             email_config = config.get_email_config()
-            recipients = email_config.get('recipients', [])
+            recipients = email_config.get("recipients", [])
             logger.info(f"[DRY RUN] Would migrate {len(recipients)} recipients")
         else:
             migrate_recipients(config, user_service, args.tier)
@@ -364,7 +353,7 @@ def main():
     if args.migrate_all or args.migrate_filters:
         if args.dry_run:
             filter_config = config.get_filter_config()
-            custom_sql = filter_config.get('custom_sql', '').strip()
+            custom_sql = filter_config.get("custom_sql", "").strip()
             logger.info(f"[DRY RUN] Would migrate SQL filter: {custom_sql[:100]}...")
         else:
             migrate_filters(config, user_service, filter_service)
@@ -386,5 +375,5 @@ def main():
         print("3. Users can manage their filters at /user/<email>/filters")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

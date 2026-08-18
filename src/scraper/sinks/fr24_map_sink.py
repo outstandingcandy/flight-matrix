@@ -21,9 +21,7 @@ class FR24MapSink:
         self.db_engine: Any | None = None
         if database_url:
             try:
-                self.db_engine = create_engine(
-                    database_url, echo=False, pool_pre_ping=True
-                )
+                self.db_engine = create_engine(database_url, echo=False, pool_pre_ping=True)
                 self._ensure_table_exists()
             except Exception as e:
                 logger.error(f"Failed to initialize DB engine: {e}")

@@ -23,10 +23,7 @@ def get_aws_region() -> str:
     """获取当前AWS区域"""
     try:
         result = subprocess.run(
-            ["aws", "configure", "get", "region"],
-            capture_output=True,
-            text=True,
-            check=True
+            ["aws", "configure", "get", "region"], capture_output=True, text=True, check=True
         )
         return result.stdout.strip() or "ap-northeast-1"
     except subprocess.CalledProcessError:
@@ -38,13 +35,17 @@ def get_function_config(function_name: str, region: str) -> Optional[dict]:
     try:
         result = subprocess.run(
             [
-                "aws", "lambda", "get-function-configuration",
-                "--function-name", function_name,
-                "--region", region
+                "aws",
+                "lambda",
+                "get-function-configuration",
+                "--function-name",
+                function_name,
+                "--region",
+                region,
             ],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
         return json.loads(result.stdout)
     except subprocess.CalledProcessError as e:
@@ -56,13 +57,17 @@ def update_function_config(
     function_name: str,
     region: str,
     description: Optional[str] = None,
-    env_vars: Optional[dict] = None
+    env_vars: Optional[dict] = None,
 ) -> bool:
     """更新Lambda函数配置以触发重启"""
     cmd = [
-        "aws", "lambda", "update-function-configuration",
-        "--function-name", function_name,
-        "--region", region
+        "aws",
+        "lambda",
+        "update-function-configuration",
+        "--function-name",
+        function_name,
+        "--region",
+        region,
     ]
 
     if description:
@@ -90,6 +95,7 @@ def get_function_state(function_name: str, region: str) -> Optional[str]:
 def wait_for_function_active(function_name: str, region: str, timeout: int = 60) -> bool:
     """等待函数变为Active状态"""
     import time
+
     start = time.time()
     while time.time() - start < timeout:
         state = get_function_state(function_name, region)
@@ -103,11 +109,7 @@ def wait_for_function_active(function_name: str, region: str, timeout: int = 60)
     return False
 
 
-def restart_lambda(
-    function_name: str,
-    region: str,
-    method: str = "env"
-) -> bool:
+def restart_lambda(function_name: str, region: str, method: str = "env") -> bool:
     """
     重启Lambda函数
 
@@ -186,12 +188,12 @@ def sync_and_restart(function_name: str, region: str) -> bool:
 
     try:
         print(f"Creating deployment package from {lambda_code_dir}/...")
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
             for root, dirs, files in os.walk(lambda_code_dir):
                 # 排除不需要的目录
-                dirs[:] = [d for d in dirs if d not in ['__pycache__', '.git', '.venv']]
+                dirs[:] = [d for d in dirs if d not in ["__pycache__", ".git", ".venv"]]
                 for file in files:
-                    if file.endswith('.pyc') or file.endswith('.log'):
+                    if file.endswith(".pyc") or file.endswith(".log"):
                         continue
                     file_path = os.path.join(root, file)
                     arcname = os.path.relpath(file_path, lambda_code_dir)
@@ -205,13 +207,18 @@ def sync_and_restart(function_name: str, region: str) -> bool:
         print(f"\nUpdating Lambda function code: {function_name}")
         result = subprocess.run(
             [
-                "aws", "lambda", "update-function-code",
-                "--function-name", function_name,
-                "--zip-file", f"fileb://{zip_path}",
-                "--region", region
+                "aws",
+                "lambda",
+                "update-function-code",
+                "--function-name",
+                function_name,
+                "--zip-file",
+                f"fileb://{zip_path}",
+                "--region",
+                region,
             ],
             capture_output=True,
-            text=True
+            text=True,
         )
 
         if result.returncode != 0:
@@ -247,16 +254,22 @@ def invoke_test(function_name: str, region: str) -> bool:
     try:
         result = subprocess.run(
             [
-                "aws", "lambda", "invoke",
-                "--function-name", function_name,
-                "--region", region,
-                "--payload", '{"httpMethod": "GET", "path": "/health"}',
-                "--cli-binary-format", "raw-in-base64-out",
-                "/tmp/lambda_response.json"
+                "aws",
+                "lambda",
+                "invoke",
+                "--function-name",
+                function_name,
+                "--region",
+                region,
+                "--payload",
+                '{"httpMethod": "GET", "path": "/health"}',
+                "--cli-binary-format",
+                "raw-in-base64-out",
+                "/tmp/lambda_response.json",
             ],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
         response_info = json.loads(result.stdout)
         print(f"Status code: {response_info.get('StatusCode')}")
@@ -280,14 +293,19 @@ def list_functions(region: str, prefix: str = "flight-matrix") -> list:
     try:
         result = subprocess.run(
             [
-                "aws", "lambda", "list-functions",
-                "--region", region,
-                "--query", f"Functions[?starts_with(FunctionName, '{prefix}')].FunctionName",
-                "--output", "json"
+                "aws",
+                "lambda",
+                "list-functions",
+                "--region",
+                region,
+                "--query",
+                f"Functions[?starts_with(FunctionName, '{prefix}')].FunctionName",
+                "--output",
+                "json",
             ],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
         return json.loads(result.stdout)
     except subprocess.CalledProcessError:
@@ -306,43 +324,29 @@ Examples:
   %(prog)s --sync                   # Sync code and restart
   %(prog)s --list                   # List available functions
   %(prog)s --test                   # Restart and test invocation
-        """
+        """,
     )
     parser.add_argument(
-        "-f", "--function",
-        help="Lambda function name (default: flight-matrix-api-prod)"
+        "-f", "--function", help="Lambda function name (default: flight-matrix-api-prod)"
     )
     parser.add_argument(
-        "-e", "--env",
+        "-e",
+        "--env",
         choices=["dev", "staging", "prod"],
         default="prod",
-        help="Environment (used to construct function name)"
+        help="Environment (used to construct function name)",
     )
+    parser.add_argument("-r", "--region", help="AWS region (default: from AWS config)")
     parser.add_argument(
-        "-r", "--region",
-        help="AWS region (default: from AWS config)"
-    )
-    parser.add_argument(
-        "-m", "--method",
+        "-m",
+        "--method",
         choices=["env", "desc"],
         default="env",
-        help="Restart method: env (update env var) or desc (update description)"
+        help="Restart method: env (update env var) or desc (update description)",
     )
-    parser.add_argument(
-        "--sync",
-        action="store_true",
-        help="Sync code and deploy before restart"
-    )
-    parser.add_argument(
-        "--test",
-        action="store_true",
-        help="Test invocation after restart"
-    )
-    parser.add_argument(
-        "--list",
-        action="store_true",
-        help="List available Lambda functions"
-    )
+    parser.add_argument("--sync", action="store_true", help="Sync code and deploy before restart")
+    parser.add_argument("--test", action="store_true", help="Test invocation after restart")
+    parser.add_argument("--list", action="store_true", help="List available Lambda functions")
 
     args = parser.parse_args()
 

@@ -34,15 +34,21 @@ INDEX_LETTERS = ["09"] + [chr(i) for i in range(ord("A"), ord("Z") + 1)]
 def scrape_index(letter: str) -> bool:
     """Scrape a single index page."""
     cmd = [
-        "uv", "run", "python", "src/scraper_main.py",
-        "--local", "--scrapers", "airport_data",
-        "--task", letter,
+        "uv",
+        "run",
+        "python",
+        "src/scraper_main.py",
+        "--local",
+        "--scrapers",
+        "airport_data",
+        "--task",
+        letter,
     ]
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Scraping index: {letter}")
     print(f"Command: {' '.join(cmd)}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     try:
         result = subprocess.run(cmd, timeout=600)  # 10 minute timeout
@@ -81,9 +87,9 @@ def scrape_all_index_pages(delay: int = 30) -> None:
     except KeyboardInterrupt:
         print("\n\nInterrupted by user")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("INDEX SCRAPING SUMMARY")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Completed: {len(completed)}")
     print(f"Failed: {len(failed)}")
     if failed:
@@ -112,7 +118,7 @@ def get_all_manufacturers() -> list[str]:
         try:
             html = html_file.read_text(encoding="utf-8")
             # Extract manufacturer slugs from links: /manuf/ManufacturerName.html
-            matches = re.findall(r'/manuf/([^.]+)\.html', html)
+            matches = re.findall(r"/manuf/([^.]+)\.html", html)
             for m in matches:
                 # Skip index letters
                 if m not in INDEX_LETTERS:
@@ -127,17 +133,23 @@ def get_all_manufacturers() -> list[str]:
 def scrape_manufacturer(manufacturer: str, start_page: int = 1) -> bool:
     """Scrape a single manufacturer."""
     cmd = [
-        "uv", "run", "python", "src/scraper_main.py",
-        "--local", "--scrapers", "airport_data",
-        "--task", manufacturer,
+        "uv",
+        "run",
+        "python",
+        "src/scraper_main.py",
+        "--local",
+        "--scrapers",
+        "airport_data",
+        "--task",
+        manufacturer,
     ]
     if start_page > 1:
         cmd.extend(["--start-page", str(start_page)])
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Scraping: {manufacturer}")
     print(f"Command: {' '.join(cmd)}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     try:
         result = subprocess.run(cmd, timeout=7200)  # 2 hour timeout per manufacturer
@@ -152,32 +164,24 @@ def scrape_manufacturer(manufacturer: str, start_page: int = 1) -> bool:
 
 def main() -> None:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Scrape all manufacturers from airport-data.com"
+    parser = argparse.ArgumentParser(description="Scrape all manufacturers from airport-data.com")
+    parser.add_argument(
+        "--scrape-index",
+        action="store_true",
+        help="Scrape all index pages (09, A-Z) to get manufacturer list",
+    )
+    parser.add_argument("--index", type=str, help="Scrape a specific index page (09, A, B, ..., Z)")
+    parser.add_argument(
+        "--start-index", type=int, default=0, help="Start from this manufacturer index (0-based)"
     )
     parser.add_argument(
-        "--scrape-index", action="store_true",
-        help="Scrape all index pages (09, A-Z) to get manufacturer list"
+        "--manufacturers", nargs="+", help="Specific manufacturers to scrape (instead of all)"
     )
     parser.add_argument(
-        "--index", type=str,
-        help="Scrape a specific index page (09, A, B, ..., Z)"
+        "--delay", type=int, default=60, help="Delay between manufacturers in seconds (default: 60)"
     )
     parser.add_argument(
-        "--start-index", type=int, default=0,
-        help="Start from this manufacturer index (0-based)"
-    )
-    parser.add_argument(
-        "--manufacturers", nargs="+",
-        help="Specific manufacturers to scrape (instead of all)"
-    )
-    parser.add_argument(
-        "--delay", type=int, default=60,
-        help="Delay between manufacturers in seconds (default: 60)"
-    )
-    parser.add_argument(
-        "--list", action="store_true",
-        help="Just list all manufacturers without scraping"
+        "--list", action="store_true", help="Just list all manufacturers without scraping"
     )
     args = parser.parse_args()
 
@@ -209,8 +213,10 @@ def main() -> None:
 
     # Apply start index
     if args.start_index > 0:
-        manufacturers = manufacturers[args.start_index:]
-        print(f"Starting from index {args.start_index}, {len(manufacturers)} manufacturers remaining")
+        manufacturers = manufacturers[args.start_index :]
+        print(
+            f"Starting from index {args.start_index}, {len(manufacturers)} manufacturers remaining"
+        )
 
     # Track progress
     completed = []
@@ -237,9 +243,9 @@ def main() -> None:
         print("\n\nInterrupted by user")
 
     # Summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("SUMMARY")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Completed: {len(completed)}")
     print(f"Failed: {len(failed)}")
     if failed:

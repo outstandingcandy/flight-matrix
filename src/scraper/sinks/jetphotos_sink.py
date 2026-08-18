@@ -24,9 +24,7 @@ class JetPhotosSink:
         self.db_engine: Any | None = None
         if database_url:
             try:
-                self.db_engine = create_engine(
-                    database_url, echo=False, pool_pre_ping=True
-                )
+                self.db_engine = create_engine(database_url, echo=False, pool_pre_ping=True)
             except Exception as e:
                 logger.error(f"Failed to initialize DB engine: {e}")
 
@@ -44,9 +42,7 @@ class JetPhotosSink:
         if images_metadata:
             self._save_images_metadata(registration, images_metadata)
 
-    def _sync_to_aircraft_static_info(
-        self, registration: str, image_paths: list[str]
-    ) -> None:
+    def _sync_to_aircraft_static_info(self, registration: str, image_paths: list[str]) -> None:
         assert self.db_engine is not None
         try:
             with self.db_engine.connect() as conn:
@@ -64,17 +60,11 @@ class JetPhotosSink:
                 )
                 conn.commit()
                 if result.rowcount > 0:
-                    logger.info(
-                        f"[{registration}] Updated images_downloaded flag"
-                    )
+                    logger.info(f"[{registration}] Updated images_downloaded flag")
                 else:
-                    logger.warning(
-                        f"[{registration}] Not found in aircraft_static_info"
-                    )
+                    logger.warning(f"[{registration}] Not found in aircraft_static_info")
         except SQLAlchemyError as e:
-            logger.error(
-                f"[{registration}] Failed to sync images_downloaded: {e}"
-            )
+            logger.error(f"[{registration}] Failed to sync images_downloaded: {e}")
 
     def _save_images_metadata(
         self, registration: str, images_metadata: list[ImageMetadata]
@@ -84,9 +74,7 @@ class JetPhotosSink:
         try:
             with self.db_engine.connect() as conn:
                 aircraft_id_result = conn.execute(
-                    text(
-                        "SELECT id FROM aircraft_static_info WHERE registration = :r"
-                    ),
+                    text("SELECT id FROM aircraft_static_info WHERE registration = :r"),
                     {"r": registration},
                 ).fetchone()
                 aircraft_id = aircraft_id_result[0] if aircraft_id_result else None
@@ -106,15 +94,11 @@ class JetPhotosSink:
 
                 for meta in images_metadata:
                     if not meta.jetphotos_id:
-                        logger.warning(
-                            f"[{registration}] Skipping image without jetphotos_id"
-                        )
+                        logger.warning(f"[{registration}] Skipping image without jetphotos_id")
                         continue
 
                     existing = conn.execute(
-                        text(
-                            "SELECT id FROM aircraft_images WHERE jetphotos_id = :j"
-                        ),
+                        text("SELECT id FROM aircraft_images WHERE jetphotos_id = :j"),
                         {"j": meta.jetphotos_id},
                     ).fetchone()
 
@@ -231,13 +215,9 @@ class JetPhotosSink:
                 conn.commit()
 
                 if saved_count > 0:
-                    logger.info(
-                        f"[{registration}] Saved {saved_count} image(s) to aircraft_images"
-                    )
+                    logger.info(f"[{registration}] Saved {saved_count} image(s) to aircraft_images")
         except SQLAlchemyError as e:
-            logger.error(
-                f"[{registration}] Failed to save image metadata: {e}"
-            )
+            logger.error(f"[{registration}] Failed to save image metadata: {e}")
 
     # Keep a minimal on_success so bind_sink() sees something to chain.
     # Actual DB writes fire through persist_images, triggered by the scraper.

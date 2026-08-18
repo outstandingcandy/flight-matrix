@@ -40,10 +40,7 @@ from sqlalchemy.orm import sessionmaker
 from src.data.models import Base, Airport
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # OurAirports data URL
@@ -51,13 +48,13 @@ OURAIRPORTS_URL = "https://davidmegginson.github.io/ourairports-data/airports.cs
 
 # Mapping of OurAirports type to our type
 AIRPORT_TYPE_MAP = {
-    'large_airport': 'large_airport',
-    'medium_airport': 'medium_airport',
-    'small_airport': 'small_airport',
-    'heliport': 'heliport',
-    'seaplane_base': 'seaplane_base',
-    'closed': 'closed',
-    'balloonport': 'balloonport',
+    "large_airport": "large_airport",
+    "medium_airport": "medium_airport",
+    "small_airport": "small_airport",
+    "heliport": "heliport",
+    "seaplane_base": "seaplane_base",
+    "closed": "closed",
+    "balloonport": "balloonport",
 }
 
 
@@ -94,19 +91,19 @@ def parse_airport_csv(csv_content: str) -> List[Dict]:
     for row in reader:
         try:
             # Skip airports without ICAO code
-            icao_code = (row.get('ident') or '').strip()
+            icao_code = (row.get("ident") or "").strip()
             if not icao_code or len(icao_code) != 4:
                 continue
 
             # Skip closed airports
-            airport_type = row.get('type', '').strip()
-            if airport_type == 'closed':
+            airport_type = row.get("type", "").strip()
+            if airport_type == "closed":
                 continue
 
             # Parse coordinates
             try:
-                latitude = float(row.get('latitude_deg', 0))
-                longitude = float(row.get('longitude_deg', 0))
+                latitude = float(row.get("latitude_deg", 0))
+                longitude = float(row.get("longitude_deg", 0))
             except (ValueError, TypeError):
                 continue
 
@@ -116,37 +113,37 @@ def parse_airport_csv(csv_content: str) -> List[Dict]:
 
             # Parse elevation
             try:
-                elevation_ft = int(float(row.get('elevation_ft', 0) or 0))
+                elevation_ft = int(float(row.get("elevation_ft", 0) or 0))
             except (ValueError, TypeError):
                 elevation_ft = None
 
             # Get IATA code (from iata_code field)
-            iata_code = (row.get('iata_code') or '').strip()
+            iata_code = (row.get("iata_code") or "").strip()
             if not iata_code or len(iata_code) != 3:
                 iata_code = None
 
             # Parse name and municipality
-            name = (row.get('name') or '').strip()
-            city = (row.get('municipality') or '').strip()
-            country = (row.get('iso_country') or '').strip()
+            name = (row.get("name") or "").strip()
+            city = (row.get("municipality") or "").strip()
+            country = (row.get("iso_country") or "").strip()
 
             # Skip airports without name
             if not name:
                 continue
 
             airport = {
-                'icao_code': icao_code.upper(),
-                'iata_code': iata_code.upper() if iata_code else None,
-                'name': name,
-                'name_en': name,  # OurAirports uses English names
-                'city': city or None,
-                'country': get_country_name(country),
-                'country_code': country.upper() if country else None,
-                'latitude': latitude,
-                'longitude': longitude,
-                'elevation_ft': elevation_ft,
-                'timezone': None,  # Not available in OurAirports CSV
-                'airport_type': AIRPORT_TYPE_MAP.get(airport_type, airport_type),
+                "icao_code": icao_code.upper(),
+                "iata_code": iata_code.upper() if iata_code else None,
+                "name": name,
+                "name_en": name,  # OurAirports uses English names
+                "city": city or None,
+                "country": get_country_name(country),
+                "country_code": country.upper() if country else None,
+                "latitude": latitude,
+                "longitude": longitude,
+                "elevation_ft": elevation_ft,
+                "timezone": None,  # Not available in OurAirports CSV
+                "airport_type": AIRPORT_TYPE_MAP.get(airport_type, airport_type),
             }
 
             airports.append(airport)
@@ -170,60 +167,60 @@ def get_country_name(iso_code: str) -> str:
     """
     # Common country mappings (add more as needed)
     COUNTRY_NAMES = {
-        'CN': 'China',
-        'US': 'United States',
-        'JP': 'Japan',
-        'KR': 'South Korea',
-        'TW': 'Taiwan',
-        'HK': 'Hong Kong',
-        'SG': 'Singapore',
-        'TH': 'Thailand',
-        'MY': 'Malaysia',
-        'ID': 'Indonesia',
-        'PH': 'Philippines',
-        'VN': 'Vietnam',
-        'AU': 'Australia',
-        'NZ': 'New Zealand',
-        'GB': 'United Kingdom',
-        'DE': 'Germany',
-        'FR': 'France',
-        'IT': 'Italy',
-        'ES': 'Spain',
-        'NL': 'Netherlands',
-        'BE': 'Belgium',
-        'CH': 'Switzerland',
-        'AT': 'Austria',
-        'PT': 'Portugal',
-        'SE': 'Sweden',
-        'NO': 'Norway',
-        'DK': 'Denmark',
-        'FI': 'Finland',
-        'PL': 'Poland',
-        'CZ': 'Czech Republic',
-        'RU': 'Russia',
-        'UA': 'Ukraine',
-        'TR': 'Turkey',
-        'AE': 'United Arab Emirates',
-        'SA': 'Saudi Arabia',
-        'QA': 'Qatar',
-        'IL': 'Israel',
-        'IN': 'India',
-        'PK': 'Pakistan',
-        'BD': 'Bangladesh',
-        'LK': 'Sri Lanka',
-        'CA': 'Canada',
-        'MX': 'Mexico',
-        'BR': 'Brazil',
-        'AR': 'Argentina',
-        'CL': 'Chile',
-        'CO': 'Colombia',
-        'PE': 'Peru',
-        'ZA': 'South Africa',
-        'EG': 'Egypt',
-        'NG': 'Nigeria',
-        'KE': 'Kenya',
-        'ET': 'Ethiopia',
-        'MO': 'Macau',
+        "CN": "China",
+        "US": "United States",
+        "JP": "Japan",
+        "KR": "South Korea",
+        "TW": "Taiwan",
+        "HK": "Hong Kong",
+        "SG": "Singapore",
+        "TH": "Thailand",
+        "MY": "Malaysia",
+        "ID": "Indonesia",
+        "PH": "Philippines",
+        "VN": "Vietnam",
+        "AU": "Australia",
+        "NZ": "New Zealand",
+        "GB": "United Kingdom",
+        "DE": "Germany",
+        "FR": "France",
+        "IT": "Italy",
+        "ES": "Spain",
+        "NL": "Netherlands",
+        "BE": "Belgium",
+        "CH": "Switzerland",
+        "AT": "Austria",
+        "PT": "Portugal",
+        "SE": "Sweden",
+        "NO": "Norway",
+        "DK": "Denmark",
+        "FI": "Finland",
+        "PL": "Poland",
+        "CZ": "Czech Republic",
+        "RU": "Russia",
+        "UA": "Ukraine",
+        "TR": "Turkey",
+        "AE": "United Arab Emirates",
+        "SA": "Saudi Arabia",
+        "QA": "Qatar",
+        "IL": "Israel",
+        "IN": "India",
+        "PK": "Pakistan",
+        "BD": "Bangladesh",
+        "LK": "Sri Lanka",
+        "CA": "Canada",
+        "MX": "Mexico",
+        "BR": "Brazil",
+        "AR": "Argentina",
+        "CL": "Chile",
+        "CO": "Colombia",
+        "PE": "Peru",
+        "ZA": "South Africa",
+        "EG": "Egypt",
+        "NG": "Nigeria",
+        "KE": "Kenya",
+        "ET": "Ethiopia",
+        "MO": "Macau",
     }
 
     return COUNTRY_NAMES.get(iso_code.upper(), iso_code) if iso_code else None
@@ -260,9 +257,11 @@ def import_airports_to_db(airports: List[Dict], database_url: str):
         for airport_data in airports:
             try:
                 # Check if airport already exists
-                existing = session.query(Airport).filter(
-                    Airport.icao_code == airport_data['icao_code']
-                ).first()
+                existing = (
+                    session.query(Airport)
+                    .filter(Airport.icao_code == airport_data["icao_code"])
+                    .first()
+                )
 
                 if existing:
                     # Update existing record
@@ -309,23 +308,23 @@ def import_airports_to_db(airports: List[Dict], database_url: str):
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='Import airport data from OurAirports into the database'
+        description="Import airport data from OurAirports into the database"
     )
     parser.add_argument(
-        '--db-url',
+        "--db-url",
         default=None,
-        help='Database URL (default: read from config or use sqlite:///aircraft_data.db)'
+        help="Database URL (default: read from config or use sqlite:///aircraft_data.db)",
     )
     parser.add_argument(
-        '--csv-path',
+        "--csv-path",
         default=None,
-        help='Path to local CSV file (default: download from OurAirports)'
+        help="Path to local CSV file (default: download from OurAirports)",
     )
     parser.add_argument(
-        '--filter-type',
-        choices=['large_airport', 'medium_airport', 'small_airport', 'all'],
-        default='all',
-        help='Filter airports by type (default: all)'
+        "--filter-type",
+        choices=["large_airport", "medium_airport", "small_airport", "all"],
+        default="all",
+        help="Filter airports by type (default: all)",
     )
 
     args = parser.parse_args()
@@ -335,12 +334,13 @@ def main():
     if not database_url:
         # Try to read from config
         try:
-            config_path = project_root / 'config.yaml'
+            config_path = project_root / "config.yaml"
             if config_path.exists():
                 import yaml
-                with open(config_path, 'r') as f:
+
+                with open(config_path, "r") as f:
                     config = yaml.safe_load(f)
-                database_url = config.get('database', {}).get('url')
+                database_url = config.get("database", {}).get("url")
         except Exception:
             pass
 
@@ -351,7 +351,7 @@ def main():
     # Get CSV content
     if args.csv_path:
         logger.info(f"Reading airport data from {args.csv_path}")
-        with open(args.csv_path, 'r', encoding='utf-8') as f:
+        with open(args.csv_path, "r", encoding="utf-8") as f:
             csv_content = f.read()
     else:
         csv_content = download_airport_data()
@@ -360,13 +360,13 @@ def main():
     airports = parse_airport_csv(csv_content)
 
     # Filter by type if specified
-    if args.filter_type != 'all':
-        airports = [a for a in airports if a['airport_type'] == args.filter_type]
+    if args.filter_type != "all":
+        airports = [a for a in airports if a["airport_type"] == args.filter_type]
         logger.info(f"Filtered to {len(airports)} {args.filter_type} airports")
 
     # Import to database
     import_airports_to_db(airports, database_url)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

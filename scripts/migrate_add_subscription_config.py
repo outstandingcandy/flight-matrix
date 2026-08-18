@@ -25,7 +25,7 @@ from src.utils.database import DatabaseManager
 def migrate(config_path: str | None = None) -> None:
     """Add custom report configuration columns to subscriptions table."""
     config = YAMLConfig(config_path)
-    database_url = config.get('database', {}).get('url', 'sqlite:///aircraft_data.db')
+    database_url = config.get("database", {}).get("url", "sqlite:///aircraft_data.db")
     print(f"Connecting to database: {database_url[:50]}...")
     db = DatabaseManager(database_url)
     session = db.get_session()
@@ -65,7 +65,10 @@ def migrate(config_path: str | None = None) -> None:
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description='Add custom report config columns to subscriptions table')
-    parser.add_argument('--config', '-c', help='Path to config.yaml file')
+
+    parser = argparse.ArgumentParser(
+        description="Add custom report config columns to subscriptions table"
+    )
+    parser.add_argument("--config", "-c", help="Path to config.yaml file")
     args = parser.parse_args()
     migrate(args.config)

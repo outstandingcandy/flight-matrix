@@ -28,10 +28,10 @@ from src.utils.database import DatabaseManager
 
 # Default values for new columns
 DEFAULTS = {
-    'cooldown_hours': 12.0,
-    'daily_report_limit': -1,
-    'monthly_report_limit': -1,
-    'max_filters': -1,
+    "cooldown_hours": 12.0,
+    "daily_report_limit": -1,
+    "monthly_report_limit": -1,
+    "max_filters": -1,
 }
 
 
@@ -49,7 +49,7 @@ def column_exists(session, table: str, column: str) -> bool:
 def migrate(config_path: str | None = None) -> None:
     """Rename columns and add max_filters to subscriptions table."""
     config = YAMLConfig(config_path)
-    database_url = config.get('database', {}).get('url', 'sqlite:///aircraft_data.db')
+    database_url = config.get("database", {}).get("url", "sqlite:///aircraft_data.db")
     print(f"Connecting to database: {database_url[:50]}...")
     db = DatabaseManager(database_url)
     session = db.get_session()
@@ -64,7 +64,7 @@ def migrate(config_path: str | None = None) -> None:
         ]
 
         for column_name, column_def in new_columns:
-            if column_exists(session, 'subscriptions', column_name):
+            if column_exists(session, "subscriptions", column_name):
                 print(f"Column '{column_name}' already exists, skipping...")
             else:
                 print(f"Adding column '{column_name}'...")
@@ -76,48 +76,58 @@ def migrate(config_path: str | None = None) -> None:
 
         # Step 2: Migrate data from old custom_* columns to new columns
         column_mappings = [
-            ("custom_cooldown_hours", "cooldown_hours", DEFAULTS['cooldown_hours']),
-            ("custom_daily_report_limit", "daily_report_limit", DEFAULTS['daily_report_limit']),
-            ("custom_monthly_report_limit", "monthly_report_limit", DEFAULTS['monthly_report_limit']),
+            ("custom_cooldown_hours", "cooldown_hours", DEFAULTS["cooldown_hours"]),
+            ("custom_daily_report_limit", "daily_report_limit", DEFAULTS["daily_report_limit"]),
+            (
+                "custom_monthly_report_limit",
+                "monthly_report_limit",
+                DEFAULTS["monthly_report_limit"],
+            ),
         ]
 
         for old_col, new_col, default in column_mappings:
-            if column_exists(session, 'subscriptions', old_col):
+            if column_exists(session, "subscriptions", old_col):
                 print(f"Migrating data from '{old_col}' to '{new_col}'...")
                 # Copy non-null values from old column to new column
-                session.execute(text(f"""
+                session.execute(
+                    text(f"""
                     UPDATE subscriptions
                     SET {new_col} = COALESCE({old_col}, {default})
                     WHERE {new_col} IS NULL OR {new_col} = {default}
-                """))
+                """)
+                )
                 session.commit()
                 print(f"Data migrated from '{old_col}' to '{new_col}'")
 
         # Step 3: Set default values for records that have NULL in new columns
         print("Setting default values for NULL records...")
         for col, default in [
-            ('cooldown_hours', DEFAULTS['cooldown_hours']),
-            ('daily_report_limit', DEFAULTS['daily_report_limit']),
-            ('monthly_report_limit', DEFAULTS['monthly_report_limit']),
-            ('max_filters', DEFAULTS['max_filters']),
+            ("cooldown_hours", DEFAULTS["cooldown_hours"]),
+            ("daily_report_limit", DEFAULTS["daily_report_limit"]),
+            ("monthly_report_limit", DEFAULTS["monthly_report_limit"]),
+            ("max_filters", DEFAULTS["max_filters"]),
         ]:
-            session.execute(text(f"""
+            session.execute(
+                text(f"""
                 UPDATE subscriptions
                 SET {col} = {default}
                 WHERE {col} IS NULL
-            """))
+            """)
+            )
         session.commit()
 
         # Step 4: Verify migration
         print("\nVerifying migration...")
-        result = session.execute(text("""
+        result = session.execute(
+            text("""
             SELECT COUNT(*) as total,
                    SUM(CASE WHEN cooldown_hours IS NOT NULL THEN 1 ELSE 0 END) as has_cooldown,
                    SUM(CASE WHEN daily_report_limit IS NOT NULL THEN 1 ELSE 0 END) as has_daily,
                    SUM(CASE WHEN monthly_report_limit IS NOT NULL THEN 1 ELSE 0 END) as has_monthly,
                    SUM(CASE WHEN max_filters IS NOT NULL THEN 1 ELSE 0 END) as has_max_filters
             FROM subscriptions
-        """)).fetchone()
+        """)
+        ).fetchone()
 
         print(f"Total subscriptions: {result[0]}")
         print(f"  With cooldown_hours: {result[1]}")
@@ -139,9 +149,10 @@ def migrate(config_path: str | None = None) -> None:
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser(
-        description='Migrate subscription columns to remove tier defaults'
+        description="Migrate subscription columns to remove tier defaults"
     )
-    parser.add_argument('--config', '-c', help='Path to config.yaml file')
+    parser.add_argument("--config", "-c", help="Path to config.yaml file")
     args = parser.parse_args()
     migrate(args.config)

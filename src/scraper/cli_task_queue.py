@@ -55,9 +55,7 @@ class CLITaskQueue:
             if self._task_type not in task_types:
                 return None
             self._claimed = True
-            logger.info(
-                f"CLITaskQueue serving one-shot task: {self._task_type}:{self._task_key}"
-            )
+            logger.info(f"CLITaskQueue serving one-shot task: {self._task_type}:{self._task_key}")
             now = datetime.now(UTC)
             return {
                 "id": self._task_id,
@@ -119,9 +117,7 @@ class CLITaskQueue:
     # Worker registry — CLI mode skips DB persistence
     # ------------------------------------------------------------------
 
-    async def register_worker(
-        self, worker_id: str, metadata: dict[str, Any] | None = None
-    ) -> None:
+    async def register_worker(self, worker_id: str, metadata: dict[str, Any] | None = None) -> None:
         return None
 
     async def deactivate_worker(self, worker_id: str) -> None:
@@ -147,9 +143,7 @@ class CLITaskQueue:
             "check the browser window for the QR code."
         )
 
-    async def update_login_screenshot(
-        self, task_id: int, screenshot_url: str
-    ) -> None:
+    async def update_login_screenshot(self, task_id: int, screenshot_url: str) -> None:
         return None
 
     async def clear_login_screenshot(self, task_id: int) -> None:
