@@ -161,9 +161,15 @@ class TestAirportDataScraper:
         ac = result.aircraft[0]
         # Registration is deterministic.
         assert ac.registration == "N703PA"
-        # Model data should populate — the exact string may shift so just check presence.
-        assert ac.manufacturer, "manufacturer should not be empty"
-        assert ac.model, "model should not be empty"
+        # N703PA has been worn by two airframes, so the page lists both a 1999
+        # Cessna 208B and a 1959 Boeing 707-331. Assert the Cessna's own numbers
+        # rather than mere presence: the interesting failure is a record that
+        # blends the two, which "is not empty" happily accepts.
+        assert ac.manufacturer == "Cessna"
+        assert ac.model == "208B", "model should not carry the cell's 'Search all' link"
+        assert ac.year_built == 1999, "year must come from the Cessna, not the Boeing"
+        assert ac.engines == 1, "engine count must come from the Cessna, not the Boeing"
+        assert ac.seats == 12, "seat count must come from the Cessna, not the Boeing"
 
 
 # ---------------------------------------------------------------------------

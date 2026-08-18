@@ -170,9 +170,14 @@ class TestAirportDataExtractor:
         assert result["status"] == "Active"
 
     def test_extract_source_url_construction(self) -> None:
-        """Test that source_url is constructed from registration."""
+        """Test that source_url is constructed from registration.
+
+        No `www.` and no `.html`: the site's certificate covers the apex domain
+        only, so a `www.` URL fails TLS verification, and `.html` now redirects
+        to the extension-less path.
+        """
         result = self.extractor.extract("<html></html>", {"registration": "N12345"})
-        assert result["source_url"] == "https://www.airport-data.com/aircraft/N12345.html"
+        assert result["source_url"] == "https://airport-data.com/aircraft/N12345"
 
     def test_extract_not_found_page(self) -> None:
         """Test extraction from 'not found' page."""
