@@ -43,6 +43,7 @@ import boto3
 from src.core.deploy_target import DeployTarget, current_target
 from src.core.exceptions import StorageError
 from src.llm.factory import LLMClientFactory, resolve_llm_provider_name, resolve_model_id
+from src.media.image_loader import load_image_bytes
 from src.storage import ObjectStorage, StorageFactory
 from src.utils.database import DatabaseManager
 from src.utils.yaml_config import YAMLConfig
@@ -472,37 +473,6 @@ class AircraftAnalysisService:
     # Image Loading Methods
     # -------------------------------------------------------------------------
 
-    def _load_image_from_storage(self, key: str) -> bytes | None:
-        """Load image from object storage."""
-        if self.storage is None:
-            return None
-
-        try:
-            return self.storage.download_bytes(key)
-        except StorageError as e:
-            logger.error(f"Failed to load image from object storage ({key}): {e}")
-            return None
-
-    def _load_image_from_local(self, path: str) -> bytes | None:
-        """Load image from local filesystem."""
-        paths_to_try = [
-            path,
-            os.path.join(self.local_images_dir, os.path.basename(path)),
-            os.path.join(os.getcwd(), path),
-        ]
-
-        for p in paths_to_try:
-            if os.path.exists(p):
-                try:
-                    with open(p, "rb") as f:
-                        return f.read()
-                except OSError as e:
-                    logger.error(f"Failed to read local image ({p}): {e}")
-                    continue
-
-        logger.warning(f"Image not found locally: {path}")
-        return None
-
     def _compress_image_for_bedrock(self, image_data: bytes, max_raw_mb: float = 3.7) -> bytes:
         """Compress image to stay under Bedrock's 5MB base64 limit.
 
@@ -566,23 +536,24 @@ class AircraftAnalysisService:
             return image_data
 
     def load_image(self, image_path: str) -> bytes | None:
-        """Load image from object storage or local files, compressing for Bedrock."""
-        if not image_path:
+        """Load image from object storage or local files, compressing for Bedrock.
+
+        Resolution is shared with the report path via
+        `src.media.image_loader.load_image_bytes`; only the compression step is
+        specific to this service.
+
+        Args:
+            image_path: Value stored in ``aircraft_images.image_path``.
+
+        Returns:
+            Image bytes sized for the model's request limit, or ``None``.
+        """
+        image_data = load_image_bytes(image_path, self.storage, local_dirs=[self.local_images_dir])
+        if image_data is None:
             return None
 
-        image_data = None
-
-        if self.storage is not None:
-            image_data = self._load_image_from_storage(image_path)
-
-        if not image_data:
-            image_data = self._load_image_from_local(image_path)
-
-        if image_data:
-            # Compress if needed for Bedrock's base64 size limit
-            image_data = self._compress_image_for_bedrock(image_data)
-
-        return image_data
+        # Compress if needed for Bedrock's base64 size limit
+        return self._compress_image_for_bedrock(image_data)
 
     def _get_image_media_type(self, image_path: str) -> str:
         """Determine image media type from path."""

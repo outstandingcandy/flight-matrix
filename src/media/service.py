@@ -12,9 +12,20 @@ Separation of concerns:
 
 import logging
 import os
+import shutil
+import tempfile
 from pathlib import Path
 
+from src.media.image_loader import load_image_bytes
+from src.storage.base import ObjectStorage
+
 logger = logging.getLogger("media.service")
+
+# Where images fetched from object storage are materialised. The email content
+# builder takes file paths, not bytes, by design -- it documents that it is
+# "NOT responsible for downloading images" -- so keys have to become local
+# files somewhere before they reach it.
+_HOLDING_DIR_PREFIX = "flight-matrix-images-"
 
 
 class MediaService:
@@ -37,6 +48,8 @@ class MediaService:
         enable_aircraft_images: bool = True,
         database_manager=None,
         recent_tracks_count: int = 10,
+        storage: ObjectStorage | None = None,
+        images_dir: str = "data/jetphotos_images",
     ):
         """Initialize the media service.
 
@@ -45,11 +58,19 @@ class MediaService:
             enable_aircraft_images: Whether to enable aircraft image retrieval
             database_manager: Database manager for queries
             recent_tracks_count: Number of recent track points to include in summary
+            storage: Object storage that database image keys are read from. On
+                the aws and gcp targets this is the only place the files exist;
+                ``None`` falls back to local files only.
+            images_dir: Local directory scanned when the database has no rows,
+                and searched by basename for legacy stored paths.
         """
         self.enable_maps = enable_maps
         self.enable_aircraft_images = enable_aircraft_images
         self.database_manager = database_manager
         self.recent_tracks_count = recent_tracks_count
+        self.storage = storage
+        self.images_dir = images_dir
+        self._holding_dir: str | None = None
 
         # Initialize map generator
         self.map_generator = None
@@ -77,7 +98,9 @@ class MediaService:
                 logger.warning(f"Failed to initialize enricher: {e}")
 
         logger.info(
-            f"Media service initialized (maps: {self.enable_maps}, images: {self.enable_aircraft_images})"
+            f"Media service initialized (maps: {self.enable_maps}, "
+            f"images: {self.enable_aircraft_images}, "
+            f"storage: {type(storage).__name__ if storage else 'local files only'})"
         )
 
     def generate_maps(
@@ -146,26 +169,33 @@ class MediaService:
             return []
 
     def get_aircraft_images(self, registration: str) -> list[str]:
-        """Get aircraft image file paths.
+        """Get local file paths for an aircraft's images.
 
-        First checks the database, then falls back to filesystem.
+        Checks the database first. Those rows hold object-storage keys, so each
+        one is fetched and written to a local file; callers downstream (the
+        email content builder) take paths, not bytes. Falls back to scanning the
+        local images directory when the database has nothing.
 
         Args:
             registration: Aircraft registration number
 
         Returns:
-            List of image file paths (up to 3)
+            List of readable local file paths (up to 3)
         """
         if not self.enable_aircraft_images or not registration:
             return []
 
-        image_paths = []
-
         # 1. Try database first
-        image_paths = self._get_database_images(registration)
-        if image_paths:
-            logger.info(f"Found {len(image_paths)} database images for {registration}")
-            return image_paths
+        keys = self._get_database_images(registration)
+        if keys:
+            image_paths = self._materialise(keys)
+            if image_paths:
+                logger.info(f"Found {len(image_paths)} database images for {registration}")
+                return image_paths
+            logger.warning(
+                f"{len(keys)} database image rows for {registration} but none could be "
+                f"fetched from storage or disk"
+            )
 
         # 2. Fall back to filesystem
         image_paths = self._get_filesystem_images(registration)
@@ -174,16 +204,68 @@ class MediaService:
 
         return image_paths
 
-    def _get_database_images(self, registration: str) -> list[str]:
-        """Query aircraft_images table for aircraft images.
+    def _materialise(self, keys: list[str]) -> list[str]:
+        """Fetch stored images and write them to local files.
 
-        Uses aircraft_images as the single source of truth for images.
+        The holding directory is cleared on every call rather than on teardown:
+        `ReportService` builds one `MediaService` per process and then loops
+        forever, so per-instance cleanup would let temp files grow without
+        bound. Each call holds at most three files.
+
+        Args:
+            keys: Values from ``aircraft_images.image_path`` — object keys,
+                local paths, or full public URLs.
+
+        Returns:
+            Paths to the images that could be fetched, in the input order.
+            Unfetchable entries are skipped, not represented.
+        """
+        holding_dir = self._reset_holding_dir()
+        paths = []
+
+        for index, key in enumerate(keys):
+            data = load_image_bytes(key, self.storage, local_dirs=[self.images_dir])
+            if data is None:
+                continue
+
+            suffix = Path(key).suffix or ".jpg"
+            # Index-prefixed so two source keys with the same basename cannot
+            # overwrite each other.
+            local_path = Path(holding_dir) / f"{index:02d}_{Path(key).stem}{suffix}"
+            try:
+                local_path.write_bytes(data)
+            except OSError as e:
+                logger.error(f"Failed to write image to {local_path}: {e}")
+                continue
+
+            paths.append(str(local_path))
+
+        return paths
+
+    def _reset_holding_dir(self) -> str:
+        """Return an empty directory for this call's materialised images."""
+        if self._holding_dir and os.path.isdir(self._holding_dir):
+            shutil.rmtree(self._holding_dir, ignore_errors=True)
+
+        self._holding_dir = tempfile.mkdtemp(prefix=_HOLDING_DIR_PREFIX)
+        return self._holding_dir
+
+    def _get_database_images(self, registration: str) -> list[str]:
+        """Query aircraft_images table for stored image paths.
+
+        Uses aircraft_images as the single source of truth for images. The
+        returned values are object-storage keys and are deliberately *not*
+        filtered by `os.path.exists`: on the aws and gcp targets the files are
+        in the bucket, never on the report host's disk, and filtering here made
+        every emailed report silently photo-less.
 
         Args:
             registration: Aircraft registration number
 
         Returns:
-            List of image file paths ordered by display_order
+            Up to three stored image paths ordered by display_order. Three is
+            all the email template renders, and each one now costs a storage
+            fetch, so the limit is applied in SQL rather than downstream.
         """
         if not self.database_manager:
             return []
@@ -201,20 +283,14 @@ class MediaService:
                 AND image_path IS NOT NULL
                 AND image_path != ''
                 ORDER BY display_order ASC
+                LIMIT 3
             """),
                 {"reg": registration},
             ).fetchall()
 
             session.close()
 
-            images = []
-            if result:
-                for row in result:
-                    image_path = row[0]
-                    if image_path and os.path.exists(image_path):
-                        images.append(image_path)
-
-            return images
+            return [row[0] for row in result if row[0]] if result else []
 
         except Exception as e:
             logger.warning(f"Error querying aircraft_images for images: {e}")
@@ -229,7 +305,7 @@ class MediaService:
         Returns:
             List of image file paths
         """
-        images_dir = "data/jetphotos_images"
+        images_dir = self.images_dir
         if not os.path.exists(images_dir):
             return []
 

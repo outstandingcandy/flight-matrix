@@ -12,6 +12,9 @@ This ensures clean separation between analysis, content building, and sending.
 
 import logging
 
+from src.core.exceptions import StorageError
+from src.storage import ObjectStorage, StorageFactory
+
 from .base import BaseEmailNotifier
 from .content import NotificationContentBuilder
 
@@ -219,6 +222,10 @@ class NotificationOrchestratorFactory:
                     enable_aircraft_images=enable_aircraft_images,
                     database_manager=database_manager,
                     recent_tracks_count=recent_tracks_count,
+                    storage=NotificationOrchestratorFactory._create_image_storage(yaml_config),
+                    images_dir=yaml_config.get(
+                        "image_download.images_dir", "data/jetphotos_images"
+                    ),
                 )
             except Exception as e:
                 logger.warning(f"Failed to create media service: {e}")
@@ -226,3 +233,30 @@ class NotificationOrchestratorFactory:
         return NotificationOrchestrator(
             notifier=notifier, analysis_service=analysis_service, media_service=media_service
         )
+
+    @staticmethod
+    def _create_image_storage(yaml_config) -> ObjectStorage | None:
+        """Create the object storage that aircraft images are read from.
+
+        Reads the same ``image_download.s3.*`` keys as
+        `AircraftAnalysisService._init_storage`, so both paths resolve a stored
+        image key identically. Those keys predate the storage abstraction; the
+        provider they resolve to now follows DEPLOY_TARGET.
+
+        Args:
+            yaml_config: YAMLConfig instance
+
+        Returns:
+            The storage instance, or ``None`` when remote images are disabled or
+            misconfigured — in which case only local files are consulted.
+        """
+        if not yaml_config.get("image_download.s3.enabled", False):
+            return None
+
+        try:
+            return StorageFactory.create(
+                yaml_config, bucket=yaml_config.get("image_download.s3.bucket", "") or None
+            )
+        except StorageError as e:
+            logger.warning(f"Image storage unavailable, using local files only: {e}")
+            return None
