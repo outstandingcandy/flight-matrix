@@ -29,14 +29,22 @@ dependencies = [
     "werkzeug>=3.0.0",
     "mangum>=0.17.0",
     "asgiref>=3.7.0",
+    # WSGI server for the gcp target. The aws target has no use for it — Lambda
+    # invokes the app through mangum — but it is a small pure-Python package and
+    # keeping it in the main dependency set means one lockfile serves all three
+    # deployment targets.
+    "gunicorn>=21.2.0",
     # Auth
     "python-jose[cryptography]>=3.3.0",
     # Database
     "sqlalchemy>=2.0.0",
     "psycopg2-binary>=2.9.0",
-    # AWS
+    # AWS (aws deployment target)
     "boto3>=1.28.0",
     "botocore>=1.31.0",
+    # GCP (gcp deployment target)
+    "google-cloud-storage>=2.14.0",
+    "google-genai>=1.0.0",
     # Geocoding
     "reverse-geocoder>=1.5.1",
     # Timezone
@@ -187,10 +195,11 @@ exclude = [
 ]
 
 # Per-module strict overrides — a directory lands here once it's
-# clean under `mypy --strict`. As of v0.1.0 only src.core is strict-clean;
-# the rest is being cleaned up as part of the Phase 5 module splits.
+# clean under `mypy --strict`. As of v0.1.0 src.core and src.storage are
+# strict-clean; the rest is being cleaned up as part of the Phase 5 module
+# splits.
 [[tool.mypy.overrides]]
-module = "src.core.*"
+module = ["src.core.*", "src.llm.*", "src.storage.*"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_return_any = true
