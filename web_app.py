@@ -35,6 +35,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.services.aircraft_service import AircraftService
 from src.services.airport_service import AirportService
+from src.storage import ObjectStorage, resolve_public_base_url
 from src.utils.database import DatabaseManager
 from src.utils.yaml_config import YAMLConfig
 from src.web.auth_shim import (
@@ -50,7 +51,7 @@ from src.web.middleware import CustomDomainMiddleware, TTLCache
 from src.web.routes.auth import bp as auth_bp
 
 if AUTH_ENABLED:
-    from src.auth.cognito_auth import get_cognito_auth, get_user_from_token
+    from src.auth.factory import get_auth_provider
 
 # API cache for hot data (TTL ~1 hour).
 api_cache = TTLCache()
@@ -87,21 +88,26 @@ db_manager = None
 config = None
 
 
-# Context processor for Lambda - inject CloudFront URLs and current user
+# Context processor - inject the static asset base URL and current user
 @app.context_processor
 def inject_static_url():
     """
-    Inject static URL configuration into all templates
-    Lambda: Use CloudFront CDN
-    Local: Use local /static path
-    """
-    cloudfront_domain = os.environ.get("CLOUDFRONT_DOMAIN", "")
-    if cloudfront_domain:
-        static_url = f"https://{cloudfront_domain}/static"
-    else:
-        static_url = "/static"
+    Inject static URL configuration into all templates.
 
-    return {"cloudfront_domain": cloudfront_domain, "static_url": static_url}
+    aws: CloudFront domain. gcp: the public GCS bucket URL. local: /static.
+    Resolution lives in `resolve_public_base_url()`, which still honours
+    CLOUDFRONT_DOMAIN so the existing AWS deployment needs no env change.
+    """
+    base_url = resolve_public_base_url()
+    static_url = f"{base_url}/static" if base_url else "/static"
+
+    # `cloudfront_domain` is kept in the template context for backwards
+    # compatibility; templates should prefer `static_url`.
+    return {
+        "cloudfront_domain": os.environ.get("CLOUDFRONT_DOMAIN", ""),
+        "static_base_url": base_url,
+        "static_url": static_url,
+    }
 
 
 @app.context_processor
@@ -129,12 +135,22 @@ def inject_is_admin():
 
 @app.context_processor
 def inject_auth_config():
-    """Inject auth configuration for frontend token refresh."""
+    """Inject auth configuration for frontend token refresh.
+
+    Cognito only. The browser-side refresh in `_token_refresh.html` needs the
+    client secret, which is acceptable there because Lambda sits in a VPC with
+    no egress to the Cognito token endpoint (see docs/deployment.md). Google
+    refreshes server-side in `src/auth/decorators.get_current_user()`, so this
+    returns None for it — emitting a Google client secret into page source
+    would be a real leak, not an accepted trade-off.
+    """
     if not AUTH_ENABLED:
         return {"auth_config": None}
 
-    auth = get_cognito_auth()
-    if not auth:
+    from src.auth.cognito_auth import CognitoAuth
+
+    auth = get_auth_provider()
+    if not isinstance(auth, CognitoAuth):
         return {"auth_config": None}
 
     # Get token expiration from session (if available)
@@ -205,12 +221,13 @@ def get_image_url(relative_path: str | None) -> str | None:
     if not relative_path.startswith("data/"):
         relative_path = f"data/{relative_path}"
 
-    # Images are stored on S3 and served through CloudFront.
-    cloudfront_domain = os.environ.get("CLOUDFRONT_DOMAIN", "")
-    if not cloudfront_domain:
+    # Images live in object storage and are served from the public base URL
+    # (CloudFront on aws, the GCS bucket on gcp).
+    base_url = resolve_public_base_url()
+    if not base_url:
         # No CDN configured; fall back to a relative path so local dev works.
         return f"/{relative_path}"
-    return f"https://{cloudfront_domain}/{relative_path}"
+    return f"{base_url}/{relative_path}"
 
 
 def transform_image_paths(data: dict) -> dict:
@@ -445,17 +462,17 @@ def dashboard():
 def serve_data_file(filepath):
     """
     Serve files from data directory (aircraft images)
-    Lambda: Redirect to S3/CloudFront
-    Local: Serve from local filesystem
+    aws/gcp: Redirect to the CDN or public bucket
+    local: Serve from local filesystem
     """
-    cloudfront_domain = os.environ.get("CLOUDFRONT_DOMAIN")
+    base_url = resolve_public_base_url()
 
-    if cloudfront_domain:
-        # Lambda deployment - redirect to CloudFront CDN
+    if base_url:
+        # Cloud deployment - redirect to the public asset host
         from flask import redirect
 
-        redirect_url = f"https://{cloudfront_domain}/data/{filepath}"
-        logger.debug(f"Redirecting to CloudFront: {redirect_url}")
+        redirect_url = f"{base_url}/data/{filepath}"
+        logger.debug(f"Redirecting to object storage: {redirect_url}")
         return redirect(redirect_url, code=302)
     else:
         # Local development - serve from local filesystem
@@ -2806,14 +2823,12 @@ def api_admin_aircraft_query(registration: str):
                     image_urls = []
                     if row.image_paths:
                         paths = row.image_paths if isinstance(row.image_paths, list) else []
-                        # Convert S3 URLs to relative paths for CloudFront delivery
+                        # Reduce stored public URLs back to object keys, then
+                        # re-render them against the active target's base URL
                         for p in paths[:5]:
                             if not p:
                                 continue
-                            # Extract relative path from S3 URL if needed
-                            if ".s3.amazonaws.com/" in p:
-                                p = p.split(".s3.amazonaws.com/", 1)[1]
-                            image_urls.append(get_image_url(p))
+                            image_urls.append(get_image_url(ObjectStorage.strip_public_prefix(p)))
 
                     # Fallback to original URLs if no S3 images available
                     if not image_urls and row.original_image_urls:
@@ -4160,9 +4175,7 @@ def api_admin_xhs_note_detail(note_id: str):
                 paths = row.image_paths if isinstance(row.image_paths, list) else []
                 for p in paths:
                     if isinstance(p, str):
-                        if ".s3.amazonaws.com/" in p:
-                            p = p.split(".s3.amazonaws.com/", 1)[1]
-                        p = os.path.normpath(p)
+                        p = os.path.normpath(ObjectStorage.strip_public_prefix(p))
                         url = get_image_url(p)
                         if url:
                             display_images.append(url)
