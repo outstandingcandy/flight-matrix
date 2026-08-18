@@ -60,9 +60,13 @@ app. See [docs/architecture.md](docs/architecture.md) for the full picture.
                    └───────────┘
 ```
 
-Services use `BaseService.session_scope()` / `readonly_session()` for
-transactional DB access. Routes are Flask blueprints under `src/web/routes/`;
-they call services, which call repositories under `src/data/repositories/`.
+Four of the eleven services in `src/services/` extend `BaseService` and use its
+`session_scope()` / `readonly_session()` for transactional DB access; the rest
+manage sessions themselves. Prefer `BaseService` in new code. Repositories live
+alongside the models in `src/data/` (`snapshot_repo.py`, `cooldown_repo.py`).
+
+Most routes are still defined directly in `web_app.py`; only auth has been
+extracted to a blueprint under `src/web/routes/`.
 
 ## Configuration
 

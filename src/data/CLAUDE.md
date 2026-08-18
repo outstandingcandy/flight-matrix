@@ -1,7 +1,8 @@
 # src/data/
 
 Database layer: SQLAlchemy ORM models plus the connection manager and
-repositories that own all SQL in the application.
+repositories. Note that the repositories do **not** own all SQL — `web_app.py`
+still issues raw `text()` queries directly.
 
 ## Files
 
@@ -9,7 +10,9 @@ repositories that own all SQL in the application.
 |------|---------|
 | `models.py` | SQLAlchemy declarative models (one Python class per table) |
 | `db_manager.py` | `DatabaseManager` — engine + session factory; facade over the repositories |
-| `schema.py` | Raw-SQL DDL helpers (AUTOINCREMENT-aware SQLite, multi-user table bootstrap) |
+| `schema.py` | Raw-SQL DDL helpers (AUTOINCREMENT-aware SQLite, multi-user + scraper table bootstrap) |
+| `dialect.py` | SQL fragments that differ between PostgreSQL and SQLite — use these in raw SQL instead of `DISTINCT ON` / `::date` / `::text` / `AT TIME ZONE` / `NOW() - INTERVAL` |
+| `sql_validation.py` | Allow-list validation for user-supplied filter SQL |
 | `snapshot_repo.py` | `SnapshotRepository` — ADS-B snapshot ingest + queries |
 | `cooldown_repo.py` | `CooldownRepository` — report cooldown CRUD + rule evaluation |
 
