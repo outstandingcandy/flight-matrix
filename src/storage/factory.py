@@ -24,25 +24,52 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("storage.factory")
 
-__all__ = ["StorageFactory", "get_storage", "reset_storage", "resolve_public_base_url"]
+__all__ = [
+    "StorageFactory",
+    "get_storage",
+    "reset_storage",
+    "resolve_media_base_url",
+    "resolve_static_base_url",
+]
 
 _storage: ObjectStorage | None = None
 
+# Media and static assets are resolved separately because they are different
+# kinds of thing that only happen to share a host on aws.
+#
+# Media is data: the scraped aircraft images under `data/`, written by the
+# scrapers, over a terabyte of it, and never shipped with the code. It has to
+# come from object storage on any cloud target.
+#
+# Static assets are build artefacts of the deployed commit: four CSS and six JS
+# files in `web_static/`, which must match the templates referencing them and
+# which travel with the deploy.
+#
+# One resolver for both meant that configuring a bucket for the images also
+# pointed the templates at that bucket, where nothing had published `web_static/`.
+# The deploy still succeeded and `/` still returned 200 -- only a browser saw the
+# unstyled page.
 
-def resolve_public_base_url() -> str:
-    """Return the base URL that stored objects are publicly served from.
+
+def resolve_media_base_url() -> str:
+    """Return the base URL that objects in object storage are served from.
 
     Resolution order:
 
-    1. ``STATIC_BASE_URL`` — the target-neutral variable (a full URL).
-    2. ``CLOUDFRONT_DOMAIN`` — retained so the existing AWS deployment keeps
-       working without an environment change.
-    3. ``GCS_ASSETS_BUCKET`` — derives the public GCS bucket URL.
-    4. Empty string, meaning the app serves the files itself.
+    1. ``MEDIA_BASE_URL`` — the target-neutral variable (a full URL).
+    2. ``STATIC_BASE_URL`` — one variable used to cover both kinds of asset,
+       so deployments configured that way keep working.
+    3. ``CLOUDFRONT_DOMAIN`` — the existing AWS deployment, unchanged.
+    4. ``GCS_ASSETS_BUCKET`` — derives the public GCS bucket URL.
+    5. Empty string, meaning the app serves the files itself.
 
     Returns:
         A base URL without a trailing slash, or an empty string.
     """
+    media_base = os.environ.get("MEDIA_BASE_URL", "").strip()
+    if media_base:
+        return media_base.rstrip("/")
+
     static_base = os.environ.get("STATIC_BASE_URL", "").strip()
     if static_base:
         return static_base.rstrip("/")
@@ -54,6 +81,36 @@ def resolve_public_base_url() -> str:
     gcs_bucket = os.environ.get("GCS_ASSETS_BUCKET", "").strip()
     if gcs_bucket:
         return f"{GCS_PUBLIC_HOST}/{gcs_bucket}"
+
+    return ""
+
+
+def resolve_static_base_url() -> str:
+    """Return the base URL the application's own CSS and JavaScript come from.
+
+    Resolution order:
+
+    1. ``STATIC_BASE_URL`` — a full URL. Set this only when something actually
+       publishes ``web_static/`` there.
+    2. ``CLOUDFRONT_DOMAIN`` — the existing AWS deployment, where the CDK stack
+       syncs ``web_static/`` to the bucket CloudFront fronts.
+    3. Empty string, meaning Flask serves them from ``web_static/`` itself.
+
+    ``GCS_ASSETS_BUCKET`` is deliberately not consulted: holding the scrapers'
+    output says nothing about whether this commit's assets were published there.
+    Falling back to serving them from the app is always correct, if not always
+    the fastest.
+
+    Returns:
+        A base URL without a trailing slash, or an empty string.
+    """
+    static_base = os.environ.get("STATIC_BASE_URL", "").strip()
+    if static_base:
+        return static_base.rstrip("/")
+
+    cloudfront_domain = os.environ.get("CLOUDFRONT_DOMAIN", "").strip()
+    if cloudfront_domain:
+        return f"https://{cloudfront_domain}"
 
     return ""
 
@@ -86,9 +143,7 @@ class StorageFactory:
         """
         configured = yaml_config.get("storage.provider", "")
         provider = resolve_provider(configured, default_storage_provider())
-        public_base_url = (
-            yaml_config.get("storage.public_base_url", "") or resolve_public_base_url()
-        )
+        public_base_url = yaml_config.get("storage.public_base_url", "") or resolve_media_base_url()
 
         if provider == "s3":
             return S3Storage(
@@ -135,7 +190,7 @@ class StorageFactory:
             StorageError: If the provider is unsupported.
         """
         provider = resolve_provider(config.get("provider"), default_storage_provider())
-        public_base_url = config.get("public_base_url") or resolve_public_base_url()
+        public_base_url = config.get("public_base_url") or resolve_media_base_url()
 
         if provider == "s3":
             return S3Storage(

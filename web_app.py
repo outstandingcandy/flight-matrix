@@ -35,7 +35,11 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.services.aircraft_service import AircraftService
 from src.services.airport_service import AirportService
-from src.storage import ObjectStorage, resolve_public_base_url
+from src.storage import (
+    ObjectStorage,
+    resolve_media_base_url,
+    resolve_static_base_url,
+)
 from src.utils.database import DatabaseManager
 from src.utils.yaml_config import YAMLConfig
 from src.web.auth_shim import (
@@ -92,19 +96,19 @@ config = None
 @app.context_processor
 def inject_static_url():
     """
-    Inject static URL configuration into all templates.
+    Inject the static asset base URL into all templates.
 
-    aws: CloudFront domain. gcp: the public GCS bucket URL. local: /static.
-    Resolution lives in `resolve_public_base_url()`, which still honours
-    CLOUDFRONT_DOMAIN so the existing AWS deployment needs no env change.
+    aws: the CloudFront domain, which fronts the bucket the CDK stack syncs
+    `web_static/` to. Otherwise `/static`, served by Flask out of `web_static/`.
+
+    Deliberately `resolve_static_base_url()` and not the media resolver: these
+    are this commit's own CSS and JS, so they have to come from somewhere that
+    holds this commit's copy of them.
     """
-    base_url = resolve_public_base_url()
+    base_url = resolve_static_base_url()
     static_url = f"{base_url}/static" if base_url else "/static"
 
-    # `cloudfront_domain` is kept in the template context for backwards
-    # compatibility; templates should prefer `static_url`.
     return {
-        "cloudfront_domain": os.environ.get("CLOUDFRONT_DOMAIN", ""),
         "static_base_url": base_url,
         "static_url": static_url,
     }
@@ -221,9 +225,9 @@ def get_image_url(relative_path: str | None) -> str | None:
     if not relative_path.startswith("data/"):
         relative_path = f"data/{relative_path}"
 
-    # Images live in object storage and are served from the public base URL
-    # (CloudFront on aws, the GCS bucket on gcp).
-    base_url = resolve_public_base_url()
+    # Scraped images live in object storage and are served from the media base
+    # URL (CloudFront on aws, the public GCS bucket on gcp).
+    base_url = resolve_media_base_url()
     if not base_url:
         # No CDN configured; fall back to a relative path so local dev works.
         return f"/{relative_path}"
@@ -465,7 +469,7 @@ def serve_data_file(filepath):
     aws/gcp: Redirect to the CDN or public bucket
     local: Serve from local filesystem
     """
-    base_url = resolve_public_base_url()
+    base_url = resolve_media_base_url()
 
     if base_url:
         # Cloud deployment - redirect to the public asset host

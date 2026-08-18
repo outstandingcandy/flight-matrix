@@ -1,4 +1,4 @@
-"""Tests for `StorageFactory` and the public-base-URL resolution order.
+"""Tests for `StorageFactory` and the two base-URL resolution orders.
 
 Only the `local` provider is instantiated for real; `s3` and `gcs` are asserted
 on the class the factory *selects*, patched to avoid needing cloud credentials.
@@ -13,12 +13,16 @@ import pytest
 
 from src.core.deploy_target import ENV_VAR
 from src.core.exceptions import StorageError
-from src.storage.factory import StorageFactory, resolve_public_base_url
+from src.storage.factory import (
+    StorageFactory,
+    resolve_media_base_url,
+    resolve_static_base_url,
+)
 from src.storage.gcs import GCSStorage
 from src.storage.local import LocalStorage
 from src.storage.s3 import S3Storage
 
-_URL_ENV = ("STATIC_BASE_URL", "CLOUDFRONT_DOMAIN", "GCS_ASSETS_BUCKET")
+_URL_ENV = ("MEDIA_BASE_URL", "STATIC_BASE_URL", "CLOUDFRONT_DOMAIN", "GCS_ASSETS_BUCKET")
 
 
 @pytest.fixture(autouse=True)
@@ -41,29 +45,67 @@ class _FakeConfig:
 
 
 # ---------------------------------------------------------------------------
-# resolve_public_base_url
+# resolve_media_base_url / resolve_static_base_url
+#
+# The pair exists because one resolver for both made a bucket configured for the
+# scraped images also become the templates' asset host, where nothing had
+# published web_static/. `test_gcs_bucket_does_not_serve_static_assets` is the
+# regression test for that.
 # ---------------------------------------------------------------------------
 
 
-def test_static_base_url_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_media_base_url_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MEDIA_BASE_URL", "https://media.example.com/")
+    monkeypatch.setenv("STATIC_BASE_URL", "https://cdn.example.com")
+    monkeypatch.setenv("CLOUDFRONT_DOMAIN", "d123.cloudfront.net")
+    assert resolve_media_base_url() == "https://media.example.com"
+
+
+def test_static_base_url_wins_for_static(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("STATIC_BASE_URL", "https://cdn.example.com/")
     monkeypatch.setenv("CLOUDFRONT_DOMAIN", "d123.cloudfront.net")
-    assert resolve_public_base_url() == "https://cdn.example.com"
+    assert resolve_static_base_url() == "https://cdn.example.com"
 
 
-def test_cloudfront_domain_is_still_honoured(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The live AWS deployment sets only CLOUDFRONT_DOMAIN; it must keep working."""
+def test_media_falls_back_to_static_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One variable used to cover both; such a deployment must keep working."""
+    monkeypatch.setenv("STATIC_BASE_URL", "https://cdn.example.com")
+    assert resolve_media_base_url() == "https://cdn.example.com"
+
+
+def test_media_base_url_does_not_leak_into_static(monkeypatch: pytest.MonkeyPatch) -> None:
+    """MEDIA_BASE_URL says nothing about where this commit's CSS was published."""
+    monkeypatch.setenv("MEDIA_BASE_URL", "https://media.example.com")
+    assert resolve_static_base_url() == ""
+
+
+@pytest.mark.parametrize("resolve", [resolve_media_base_url, resolve_static_base_url])
+def test_cloudfront_domain_is_still_honoured(monkeypatch: pytest.MonkeyPatch, resolve: Any) -> None:
+    """The live AWS deployment sets only CLOUDFRONT_DOMAIN, and it fronts both."""
     monkeypatch.setenv("CLOUDFRONT_DOMAIN", "d123.cloudfront.net")
-    assert resolve_public_base_url() == "https://d123.cloudfront.net"
+    assert resolve() == "https://d123.cloudfront.net"
 
 
-def test_gcs_bucket_derives_the_public_url(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gcs_bucket_derives_the_public_media_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GCS_ASSETS_BUCKET", "proj-assets")
-    assert resolve_public_base_url() == "https://storage.googleapis.com/proj-assets"
+    assert resolve_media_base_url() == "https://storage.googleapis.com/proj-assets"
 
 
-def test_no_base_url_configured() -> None:
-    assert resolve_public_base_url() == ""
+def test_gcs_bucket_does_not_serve_static_assets(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: the images bucket must not become the templates' asset host.
+
+    Deriving it produced a deploy that succeeded, an app that answered 200, and
+    a page whose every stylesheet and script 404ed — visible only in a browser.
+    Empty means Flask serves them from web_static/, which always matches the
+    running commit.
+    """
+    monkeypatch.setenv("GCS_ASSETS_BUCKET", "proj-assets")
+    assert resolve_static_base_url() == ""
+
+
+@pytest.mark.parametrize("resolve", [resolve_media_base_url, resolve_static_base_url])
+def test_no_base_url_configured(resolve: Any) -> None:
+    assert resolve() == ""
 
 
 # ---------------------------------------------------------------------------

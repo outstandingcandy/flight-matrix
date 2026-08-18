@@ -11,7 +11,8 @@ from src.storage.factory import (
     StorageFactory,
     get_storage,
     reset_storage,
-    resolve_public_base_url,
+    resolve_media_base_url,
+    resolve_static_base_url,
 )
 from src.storage.gcs import GCSStorage
 from src.storage.local import LocalStorage
@@ -25,5 +26,6 @@ __all__ = [
     "StorageFactory",
     "get_storage",
     "reset_storage",
-    "resolve_public_base_url",
+    "resolve_media_base_url",
+    "resolve_static_base_url",
 ]

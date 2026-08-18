@@ -40,9 +40,13 @@
 #   --domain HOST         Hostname used for the post-deploy health check
 #   --tls-port PORT       Port nginx serves on, for the health check (default: 8080)
 #   --gcp-project ID      Value for GOOGLE_CLOUD_PROJECT (default: --project)
-#   --gcs-bucket NAME     Public assets bucket -> GCS_ASSETS_BUCKET
-#   --static-base-url URL Base URL images are served from -> STATIC_BASE_URL
-#                         (default: the public URL of --gcs-bucket)
+#   --gcs-bucket NAME     Bucket holding the scraped images -> GCS_ASSETS_BUCKET.
+#                         Serves data/ only; the app's own CSS and JS are served
+#                         by gunicorn out of web_static/.
+#   --static-base-url URL Serve web_static/ from this URL instead -> STATIC_BASE_URL.
+#                         Nothing here publishes those files, so only pass this
+#                         once something else does; otherwise every stylesheet
+#                         404s while the deploy still reports success.
 #   --clean               Wipe the application directory before extracting,
 #                         keeping .venv and data/
 #   --skip-deps           Do not run `uv sync` (code-only redeploy)
@@ -123,9 +127,11 @@ confirm() {
 [[ -n "$VM_NAME" ]] || die "--vm is required"
 [[ -n "$PROJECT" ]] || die "--project or a gcloud default project is required"
 [[ -n "$GCP_PROJECT" ]] || GCP_PROJECT="$PROJECT"
-if [[ -z "$STATIC_BASE_URL" && -n "$GCS_BUCKET" ]]; then
-    STATIC_BASE_URL="https://storage.googleapis.com/$GCS_BUCKET"
-fi
+# STATIC_BASE_URL is deliberately NOT derived from --gcs-bucket. That bucket
+# holds the scrapers' images; nothing publishes web_static/ into it, so pointing
+# the templates there made every stylesheet and script 404 while the deploy
+# reported success and / still answered 200. GCS_ASSETS_BUCKET alone is enough:
+# it feeds the media URL, and the app serves its own assets.
 
 # --- local preflight -------------------------------------------------------
 log "Preflight"
@@ -224,8 +230,8 @@ About to deploy flight-matrix to $VM_NAME ($VM_ZONE).
   database schema    $( [[ "$SKIP_SCHEMA" == true ]] && printf 'skipped (--skip-schema)' || printf 'created if missing (idempotent)' )
   existing files     $( [[ "$CLEAN" == true ]] && printf 'directory wiped first, .venv and data/ kept' || printf 'overwritten in place; local deletions are NOT propagated' )
   GOOGLE_CLOUD_PROJECT $GCP_PROJECT
-  GCS_ASSETS_BUCKET    ${GCS_BUCKET:-<left as found>}
-  STATIC_BASE_URL      ${STATIC_BASE_URL:-<left as found>}
+  GCS_ASSETS_BUCKET    ${GCS_BUCKET:-<left as found>}   (serves data/ images)
+  STATIC_BASE_URL      ${STATIC_BASE_URL:-<unset: gunicorn serves web_static/>}
 
 The web service is restarted at the end, so the site is briefly unavailable.
 EOF
