@@ -52,6 +52,7 @@ from src.web.auth_shim import (
     login_required,
     optional_login,
 )
+from src.web.errors import api_error
 from src.web.middleware import CustomDomainMiddleware, TTLCache
 from src.web.routes.auth import bp as auth_bp
 
@@ -616,8 +617,7 @@ def search_aircraft():
         return jsonify({"success": True, "data": results, "count": len(results)})
 
     except Exception as e:
-        logger.error(f"Error searching aircraft: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error searching aircraft")
 
 
 @app.route("/api/aircraft/tracks/<registration>")
@@ -670,8 +670,7 @@ def get_aircraft_tracks(registration):
         )
 
     except Exception as e:
-        logger.error(f"Error getting tracks for {registration}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting tracks for {registration}")
 
 
 @app.route("/api/flight/trail/<fr24_id>")
@@ -744,8 +743,7 @@ def get_fr24_flight_trail(fr24_id):
         logger.error(f"FR24 API timeout for flight {fr24_id}")
         return jsonify({"success": False, "error": "FR24 API timeout"}), 504
     except Exception as e:
-        logger.error(f"Error getting FR24 trail for {fr24_id}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting FR24 trail for {fr24_id}")
 
 
 @app.route("/api/aircraft/recent")
@@ -785,8 +783,7 @@ def get_recent_aircraft():
         return jsonify({"success": True, "data": results, "count": len(results)})
 
     except Exception as e:
-        logger.error(f"Error getting recent aircraft: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting recent aircraft")
 
 
 @app.route("/api/aircraft/types")
@@ -831,8 +828,7 @@ def get_aircraft_types():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting aircraft types: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting aircraft types")
 
 
 def get_aircraft_type_name(code: str) -> str:
@@ -924,8 +920,7 @@ def get_aircraft_type_info(type_code: str):
             db_session.close()
 
     except Exception as e:
-        logger.error(f"Error getting aircraft type info: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting aircraft type info")
 
 
 @app.route("/api/aircraft/types/<type_code>/instances")
@@ -993,8 +988,7 @@ def get_aircraft_type_instances(type_code: str):
             db_session.close()
 
     except Exception as e:
-        logger.error(f"Error getting aircraft type instances: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting aircraft type instances")
 
 
 @app.route("/api/statistics")
@@ -1005,8 +999,7 @@ def get_statistics():
         return jsonify({"success": True, "statistics": stats})
 
     except Exception as e:
-        logger.error(f"Error getting statistics: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting statistics")
 
 
 @app.route("/api/aircraft/unique")
@@ -1057,8 +1050,7 @@ def get_unique_aircraft():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting unique aircraft: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting unique aircraft")
 
 
 @app.route("/api/aircraft/static")
@@ -1128,8 +1120,7 @@ def get_all_static_info():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting static info list: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting static info list")
 
 
 @app.route("/api/aircraft/static/batch", methods=["POST"])
@@ -1218,8 +1209,7 @@ def get_batch_static_info():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting batch static info: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting batch static info")
 
 
 @app.route("/api/aircraft/static/<registration>")
@@ -1330,8 +1320,7 @@ def get_static_info(registration):
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting static info for {registration}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting static info for {registration}")
 
 
 @app.route("/api/aircraft/static/stats")
@@ -1404,8 +1393,7 @@ def get_static_info_stats():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting static info stats: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting static info stats")
 
 
 # ==================== 新增: 机场看板和搜索追踪功能 ====================
@@ -1524,8 +1512,7 @@ def unified_search():
             db_session.close()
 
     except Exception as e:
-        logger.error(f"Error in unified search: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error in unified search")
 
 
 @app.route("/api/search/suggestions")
@@ -1629,8 +1616,7 @@ def search_suggestions():
             db_session.close()
 
     except Exception as e:
-        logger.error(f"Error getting search suggestions: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting search suggestions")
 
 
 @app.route("/api/airports/search")
@@ -1655,8 +1641,7 @@ def search_airports():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error searching airports: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error searching airports")
 
 
 @app.route("/api/airports/<airport_code>")
@@ -1678,8 +1663,7 @@ def get_airport(airport_code):
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting airport {airport_code}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting airport {airport_code}")
 
 
 @app.route("/api/airports/<airport_code>/nearby")
@@ -1705,8 +1689,7 @@ def get_aircraft_near_airport(airport_code):
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting aircraft near airport {airport_code}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting aircraft near airport {airport_code}")
 
 
 @app.route("/api/airports/<airport_code>/realtime-aircraft")
@@ -1966,8 +1949,7 @@ def get_realtime_aircraft_near_airport(airport_code: str):
             db_session.close()
 
     except Exception as e:
-        logger.error(f"Error getting realtime aircraft near airport {airport_code}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting realtime aircraft near airport {airport_code}")
 
 
 @app.route("/api/airports/popular")
@@ -1987,8 +1969,7 @@ def get_popular_airports():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting popular airports: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting popular airports")
 
 
 @app.route("/api/search/aircraft")
@@ -2047,8 +2028,7 @@ def super_search_aircraft():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error in super search: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error in super search")
 
 
 @app.route("/api/aircraft/<identifier>/live")
@@ -2077,8 +2057,7 @@ def get_aircraft_live(identifier):
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting live position for {identifier}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting live position for {identifier}")
 
 
 @app.route("/api/aircraft/<identifier>/details")
@@ -2106,8 +2085,7 @@ def get_aircraft_details_api(identifier):
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting aircraft details for {identifier}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting aircraft details for {identifier}")
 
 
 @app.route("/api/aircraft/<identifier>/history")
@@ -2161,8 +2139,7 @@ def get_aircraft_history_api(identifier):
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting aircraft history for {identifier}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting aircraft history for {identifier}")
 
 
 @app.route("/api/aircraft/<identifier>/flight-dates")
@@ -2183,8 +2160,7 @@ def get_aircraft_flight_dates(identifier):
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting flight dates for {identifier}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting flight dates for {identifier}")
 
 
 @app.route("/api/admin/import-data", methods=["POST"])
@@ -2266,8 +2242,7 @@ def import_data_api():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error in import_data_api: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error in import_data_api")
 
 
 # ==================== Aircraft Info API ====================
@@ -2323,8 +2298,7 @@ def get_aircraft_recent_flights(registration: str):
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting recent flights for {registration}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting recent flights for {registration}")
 
 
 @app.route("/api/aircraft/<identifier>/images")
@@ -2405,8 +2379,7 @@ def get_aircraft_images_api(identifier):
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting aircraft images for {identifier}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting aircraft images for {identifier}")
 
 
 @app.route("/api/aircraft/<identifier>/static-info")
@@ -2469,8 +2442,7 @@ def get_aircraft_static_info_api(identifier):
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting static info for {identifier}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting static info for {identifier}")
 
 
 # ==================== Multi-User Management API ====================
@@ -2976,8 +2948,7 @@ def api_admin_aircraft_query(registration: str):
         finally:
             session.close()
     except Exception as e:
-        logger.error(f"Error querying aircraft data for {registration}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error querying aircraft data for {registration}")
 
 
 @app.route("/user/<email>/dashboard")
@@ -3032,8 +3003,7 @@ def api_admin_list_users():
         )
 
     except Exception as e:
-        logger.error(f"Error listing users: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error listing users")
 
 
 @app.route("/api/admin/users/stats", methods=["GET"])
@@ -3065,8 +3035,7 @@ def api_admin_user_stats():
         )
 
     except Exception as e:
-        logger.error(f"Error getting user stats: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting user stats")
 
 
 @app.route("/api/admin/users", methods=["POST"])
@@ -3093,8 +3062,7 @@ def api_admin_create_user():
             ), 400
 
     except Exception as e:
-        logger.error(f"Error creating user: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error creating user")
 
 
 @app.route("/api/admin/users/<int:user_id>", methods=["GET"])
@@ -3110,8 +3078,7 @@ def api_admin_get_user(user_id: int):
             return jsonify({"success": False, "error": "User not found"}), 404
 
     except Exception as e:
-        logger.error(f"Error getting user {user_id}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting user {user_id}")
 
 
 @app.route("/api/admin/users/<int:user_id>", methods=["PUT"])
@@ -3174,8 +3141,7 @@ def api_admin_update_user(user_id: int):
         return jsonify({"success": True})
 
     except Exception as e:
-        logger.error(f"Error updating user {user_id}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error updating user {user_id}")
 
 
 @app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
@@ -3191,8 +3157,7 @@ def api_admin_delete_user(user_id: int):
             return jsonify({"success": False, "error": "Failed to delete user"}), 400
 
     except Exception as e:
-        logger.error(f"Error deleting user {user_id}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error deleting user {user_id}")
 
 
 @app.route("/api/admin/users/<int:user_id>/api-key", methods=["POST"])
@@ -3208,8 +3173,7 @@ def api_admin_regenerate_api_key(user_id: int):
             return jsonify({"success": False, "error": "Failed to regenerate API key"}), 400
 
     except Exception as e:
-        logger.error(f"Error regenerating API key for user {user_id}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error regenerating API key for user {user_id}")
 
 
 # Admin API - Aircraft Management
@@ -3339,8 +3303,7 @@ def api_admin_list_aircraft():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error listing aircraft: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error listing aircraft")
 
 
 @app.route("/api/admin/aircraft/stats", methods=["GET"])
@@ -3390,8 +3353,7 @@ def api_admin_aircraft_stats():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting aircraft stats: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting aircraft stats")
 
 
 @app.route("/api/admin/aircraft/types", methods=["GET"])
@@ -3438,8 +3400,7 @@ def api_admin_aircraft_types():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting aircraft types: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting aircraft types")
 
 
 @app.route("/api/admin/aircraft/liveries", methods=["GET"])
@@ -3486,8 +3447,7 @@ def api_admin_aircraft_liveries():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting aircraft liveries: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting aircraft liveries")
 
 
 @app.route("/api/admin/aircraft/registrations", methods=["GET"])
@@ -3530,8 +3490,7 @@ def api_admin_aircraft_registrations():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error searching aircraft registrations: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error searching aircraft registrations")
 
 
 # Admin API - Report Management
@@ -3766,8 +3725,7 @@ def api_admin_list_reports():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error listing reports: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error listing reports")
 
 
 @app.route("/api/admin/reports/stats", methods=["GET"])
@@ -3831,8 +3789,7 @@ def api_admin_report_stats():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting report stats: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting report stats")
 
 
 @app.route("/api/admin/reports/<aircraft_hex>/detail", methods=["GET"])
@@ -3973,8 +3930,7 @@ def api_admin_report_detail(aircraft_hex: str):
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting report detail for {aircraft_hex}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting report detail for {aircraft_hex}")
 
 
 # ============== Scraped Data Admin APIs ==============
@@ -4059,8 +4015,7 @@ def api_admin_xhs_stats():
         finally:
             session.close()
     except Exception as e:
-        logger.error(f"Error getting XHS stats: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting XHS stats")
 
 
 @app.route("/api/admin/scraped-data/xiaohongshu/notes")
@@ -4157,8 +4112,7 @@ def api_admin_xhs_notes():
         finally:
             session.close()
     except Exception as e:
-        logger.error(f"Error getting XHS notes: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting XHS notes")
 
 
 @app.route("/api/admin/scraped-data/xiaohongshu/notes/<note_id>")
@@ -4225,8 +4179,7 @@ def api_admin_xhs_note_detail(note_id: str):
         finally:
             session.close()
     except Exception as e:
-        logger.error(f"Error getting XHS note detail: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting XHS note detail")
 
 
 @app.route("/api/admin/scraped-data/fr24/stats")
@@ -4275,8 +4228,7 @@ def api_admin_fr24_stats():
         finally:
             session.close()
     except Exception as e:
-        logger.error(f"Error getting FR24 stats: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting FR24 stats")
 
 
 @app.route("/api/admin/scraped-data/fr24/flights")
@@ -4346,8 +4298,7 @@ def api_admin_fr24_flights():
         finally:
             session.close()
     except Exception as e:
-        logger.error(f"Error getting FR24 flights: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting FR24 flights")
 
 
 @app.route("/api/admin/scraped-data/jetphotos/stats")
@@ -4405,8 +4356,7 @@ def api_admin_jetphotos_stats():
         finally:
             session.close()
     except Exception as e:
-        logger.error(f"Error getting JetPhotos stats: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting JetPhotos stats")
 
 
 @app.route("/api/admin/scraped-data/jetphotos/images")
@@ -4471,8 +4421,7 @@ def api_admin_jetphotos_images():
         finally:
             session.close()
     except Exception as e:
-        logger.error(f"Error getting JetPhotos images: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting JetPhotos images")
 
 
 # User API - Profile and Usage
@@ -4502,8 +4451,7 @@ def api_user_profile(email: str):
         )
 
     except Exception as e:
-        logger.error(f"Error getting profile for {email}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting profile for {email}")
 
 
 @app.route("/api/user/<email>/usage", methods=["GET"])
@@ -4521,8 +4469,7 @@ def api_user_usage(email: str):
         return jsonify({"success": True, "usage": usage})
 
     except Exception as e:
-        logger.error(f"Error getting usage for {email}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting usage for {email}")
 
 
 @app.route("/api/user/<email>/settings", methods=["PUT"])
@@ -4573,8 +4520,7 @@ def api_user_update_settings(email: str):
             return jsonify({"success": False, "error": "Failed to update settings"}), 400
 
     except Exception as e:
-        logger.error(f"Error updating settings for {email}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error updating settings for {email}")
 
 
 @app.route("/api/user/<email>/cooldowns", methods=["GET"])
@@ -4622,8 +4568,7 @@ def api_user_cooldowns(email: str):
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting cooldowns for {email}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting cooldowns for {email}")
 
 
 # User API - Filter Management
@@ -4643,8 +4588,7 @@ def api_user_list_filters(email: str):
         return jsonify({"success": True, "filters": [f.to_dict() for f in filters]})
 
     except Exception as e:
-        logger.error(f"Error listing filters for {email}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error listing filters for {email}")
 
 
 @app.route("/api/user/<email>/filters", methods=["POST"])
@@ -4687,8 +4631,7 @@ def api_user_create_filter(email: str):
             return jsonify({"success": False, "error": error_msg or "Invalid filter SQL"}), 400
 
     except Exception as e:
-        logger.error(f"Error creating filter for {email}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error creating filter for {email}")
 
 
 @app.route("/api/user/<email>/filters/<int:filter_id>", methods=["GET"])
@@ -4708,8 +4651,7 @@ def api_user_get_filter(email: str, filter_id: int):
         return jsonify({"success": True, "filter": user_filter.to_dict()})
 
     except Exception as e:
-        logger.error(f"Error getting filter {filter_id}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error getting filter {filter_id}")
 
 
 @app.route("/api/user/<email>/filters/<int:filter_id>", methods=["PUT"])
@@ -4744,8 +4686,7 @@ def api_user_update_filter(email: str, filter_id: int):
             ), 400
 
     except Exception as e:
-        logger.error(f"Error updating filter {filter_id}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error updating filter {filter_id}")
 
 
 @app.route("/api/user/<email>/filters/<int:filter_id>", methods=["DELETE"])
@@ -4770,8 +4711,7 @@ def api_user_delete_filter(email: str, filter_id: int):
             return jsonify({"success": False, "error": "Failed to delete filter"}), 400
 
     except Exception as e:
-        logger.error(f"Error deleting filter {filter_id}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, f"Error deleting filter {filter_id}")
 
 
 @app.route("/api/user/<email>/filters/test", methods=["POST"])
@@ -4799,8 +4739,7 @@ def api_user_test_filter(email: str):
             return jsonify({"success": False, "error": error}), 400
 
     except Exception as e:
-        logger.error(f"Error testing filter: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error testing filter")
 
 
 # ==================== Flight Schedules API ====================
@@ -5160,8 +5099,7 @@ def get_flight_schedules():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting flight schedules: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting flight schedules")
 
 
 @app.route("/api/flight-schedules/filter-options")
@@ -5340,8 +5278,7 @@ def get_flight_schedule_filter_options():
             session.close()
 
     except Exception as e:
-        logger.error(f"Error getting flight schedule filter options: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting flight schedule filter options")
 
 
 # ============================================================
@@ -5436,8 +5373,7 @@ def api_admin_scraper_stats():
         finally:
             session.close()
     except Exception as e:
-        logger.error(f"Error getting scraper stats: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting scraper stats")
 
 
 @app.route("/api/admin/scraper/workers")
@@ -5493,8 +5429,7 @@ def api_admin_scraper_workers():
         finally:
             session.close()
     except Exception as e:
-        logger.error(f"Error getting scraper workers: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting scraper workers")
 
 
 @app.route("/api/admin/scraper/recent-tasks")
@@ -5586,8 +5521,7 @@ def api_admin_scraper_recent_tasks():
         finally:
             session.close()
     except Exception as e:
-        logger.error(f"Error getting recent tasks: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return api_error(e, "Error getting recent tasks")
 
 
 # Main block for local development
