@@ -132,7 +132,12 @@ def ensure_report_cooldowns_table(session: Session) -> None:
         session.execute(text("SELECT 1 FROM report_cooldowns LIMIT 1"))
         return
     except Exception:
-        pass
+        # A failed statement puts a Postgres transaction into the aborted state,
+        # where every following command -- including the CREATE TABLE below --
+        # raises InFailedSqlTransaction. The probe failing is the normal path on
+        # a fresh database, so it has to be rolled back rather than swallowed.
+        # SQLite does not need this, which is why it went unnoticed.
+        session.rollback()
 
     try:
         session.execute(
@@ -178,7 +183,8 @@ def ensure_scraper_tables(session: Session, *, is_postgres: bool) -> None:
         logger.debug("Scraper tables already exist")
         return
     except Exception:
-        pass
+        # Roll back the aborted transaction; see ensure_report_cooldowns_table.
+        session.rollback()
 
     if is_postgres:
         pk = "BIGSERIAL PRIMARY KEY"
@@ -284,7 +290,8 @@ def ensure_xiaohongshu_tables(session: Session, *, is_postgres: bool) -> None:
         session.execute(text("SELECT 1 FROM xiaohongshu_notes LIMIT 1"))
         return
     except Exception:
-        pass
+        # Roll back the aborted transaction; see ensure_report_cooldowns_table.
+        session.rollback()
 
     if is_postgres:
         pk = "BIGSERIAL PRIMARY KEY"
@@ -361,7 +368,8 @@ def ensure_multi_user_tables(session: Session, *, is_postgres: bool) -> None:
         logger.debug("Multi-user tables already exist")
         return
     except Exception:
-        pass
+        # Roll back the aborted transaction; see ensure_report_cooldowns_table.
+        session.rollback()
 
     try:
         if is_postgres:
