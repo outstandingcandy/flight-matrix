@@ -225,6 +225,33 @@ def _to_iso(value) -> str | None:
     return value.isoformat()
 
 
+def _to_datetime(value) -> datetime | None:
+    """Read a timestamp column from a raw-SQL row as a `datetime`.
+
+    The mirror of `_to_iso`, for the callers that do arithmetic on the value
+    rather than rendering it: subtracting a `str` from a `datetime` is a
+    `TypeError`, so the same driver difference breaks those too.
+
+    Args:
+        value: A `datetime`, a timestamp string, or None.
+
+    Returns:
+        The value as a `datetime`, or None when it is None, empty, or not a
+        timestamp this can parse.
+    """
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            logger.warning(f"Unparseable timestamp from the database: {value!r}")
+            return None
+    return None
+
+
 def _table_exists(session, table_name: str) -> bool:
     """Dialect-agnostic 'does this table exist?' check.
 
@@ -2281,7 +2308,7 @@ def get_aircraft_recent_flights(registration: str):
                         "airport_iata": row[1],
                         "remote_airport_iata": row[2],
                         "remote_airport_name": row[3],
-                        "scheduled_time": row[4].isoformat() if row[4] else None,
+                        "scheduled_time": _to_iso(row[4]),
                         "status": row[5],
                     }
                 )
@@ -2353,7 +2380,7 @@ def get_aircraft_images_api(identifier):
                         {
                             "url": url,
                             "photographer": row[1],
-                            "photo_date": row[2].isoformat() if row[2] else None,
+                            "photo_date": _to_iso(row[2]),
                             "location": row[3],
                             "airport_name": row[4],
                             "notes": row[5],
@@ -2361,7 +2388,7 @@ def get_aircraft_images_api(identifier):
                             "is_primary": row[7],
                             "jetphotos_id": row[8],
                             "source_url": row[9],
-                            "upload_date": row[10].isoformat() if row[10] else None,
+                            "upload_date": _to_iso(row[10]),
                         }
                     )
 
@@ -2593,12 +2620,8 @@ def api_admin_aircraft_query(registration: str):
                     "country_of_registration": static_result.country_of_registration,
                     "ai_analysis": static_result.ai_analysis,
                     "images_downloaded": static_result.images_downloaded,
-                    "images_updated_at": static_result.images_updated_at.isoformat()
-                    if static_result.images_updated_at
-                    else None,
-                    "last_updated": static_result.last_updated.isoformat()
-                    if static_result.last_updated
-                    else None,
+                    "images_updated_at": _to_iso(static_result.images_updated_at),
+                    "last_updated": _to_iso(static_result.last_updated),
                     "data_source": static_result.data_source,
                     "ad_status": static_result.ad_status,
                     "ad_owner": static_result.ad_owner,
@@ -2608,12 +2631,8 @@ def api_admin_aircraft_query(registration: str):
                     "ad_delivery_date": static_result.ad_delivery_date,
                     "ps_status": static_result.ps_status,
                     "ps_airline": static_result.ps_airline,
-                    "ps_first_flight": static_result.ps_first_flight.isoformat()
-                    if static_result.ps_first_flight
-                    else None,
-                    "ps_delivery_date": static_result.ps_delivery_date.isoformat()
-                    if static_result.ps_delivery_date
-                    else None,
+                    "ps_first_flight": _to_iso(static_result.ps_first_flight),
+                    "ps_delivery_date": _to_iso(static_result.ps_delivery_date),
                     "jp_airline": static_result.jp_airline,
                     "jp_cn": static_result.jp_cn,
                 }
@@ -2640,9 +2659,7 @@ def api_admin_aircraft_query(registration: str):
                 snapshots_list.append(
                     {
                         "id": row.id,
-                        "snapshot_time": row.snapshot_time.isoformat()
-                        if row.snapshot_time
-                        else None,
+                        "snapshot_time": _to_iso(row.snapshot_time),
                         "hex": row.hex,
                         "flight_number": row.flight_number,
                         "aircraft_type": row.aircraft_type,
@@ -2703,10 +2720,8 @@ def api_admin_aircraft_query(registration: str):
                             "flight_number": row.flight_number,
                             "fr24_id": row.fr24_id,
                             "on_ground": row.on_ground,
-                            "fr24_timestamp": row.fr24_timestamp.isoformat()
-                            if row.fr24_timestamp
-                            else None,
-                            "scraped_at": row.scraped_at.isoformat() if row.scraped_at else None,
+                            "fr24_timestamp": _to_iso(row.fr24_timestamp),
+                            "scraped_at": _to_iso(row.scraped_at),
                         }
                     )
                 result_data["realtime_positions"] = {
@@ -2743,8 +2758,8 @@ def api_admin_aircraft_query(registration: str):
                         "source_url": row.source_url,
                         "source": row.source,
                         "photographer": row.photographer,
-                        "photo_date": row.photo_date.isoformat() if row.photo_date else None,
-                        "upload_date": row.upload_date.isoformat() if row.upload_date else None,
+                        "photo_date": _to_iso(row.photo_date),
+                        "upload_date": _to_iso(row.upload_date),
                         "location": row.location,
                         "airport_icao": row.airport_icao,
                         "airport_name": row.airport_name,
@@ -2791,17 +2806,13 @@ def api_admin_aircraft_query(registration: str):
                         "remote_airport_iata": row.remote_airport_iata,
                         "remote_airport_name": row.remote_airport_name,
                         "aircraft_type": row.aircraft_type,
-                        "scheduled_time": row.scheduled_time.isoformat()
-                        if row.scheduled_time
-                        else None,
-                        "estimated_time": row.estimated_time.isoformat()
-                        if row.estimated_time
-                        else None,
-                        "actual_time": row.actual_time.isoformat() if row.actual_time else None,
+                        "scheduled_time": _to_iso(row.scheduled_time),
+                        "estimated_time": _to_iso(row.estimated_time),
+                        "actual_time": _to_iso(row.actual_time),
                         "status": row.status,
                         "terminal": row.terminal,
                         "gate": row.gate,
-                        "scraped_at": row.scraped_at.isoformat() if row.scraped_at else None,
+                        "scraped_at": _to_iso(row.scraped_at),
                     }
                 )
             result_data["flight_schedules"] = {
@@ -2873,7 +2884,7 @@ def api_admin_aircraft_query(registration: str):
                             "content_type": row.content_type,
                             "sentiment": row.sentiment,
                             "topics": row.topics,
-                            "analyzed_at": row.analyzed_at.isoformat() if row.analyzed_at else None,
+                            "analyzed_at": _to_iso(row.analyzed_at),
                             "title": row.title,
                             "author_name": row.author_name,
                             "author_id": row.author_id,
@@ -2885,9 +2896,7 @@ def api_admin_aircraft_query(registration: str):
                             "location": row.location,
                             "tags": row.tags,
                             "image_urls": image_urls,  # S3 images preferred, fallback to original URLs
-                            "note_scraped_at": row.note_scraped_at.isoformat()
-                            if row.note_scraped_at
-                            else None,
+                            "note_scraped_at": _to_iso(row.note_scraped_at),
                         }
                     )
                 result_data["social_mentions"] = {
@@ -2921,12 +2930,8 @@ def api_admin_aircraft_query(registration: str):
                         "max_attention_index": attention_result.max_attention_index,
                         "mentions_7d": attention_result.mentions_7d,
                         "mentions_30d": attention_result.mentions_30d,
-                        "first_seen": attention_result.first_seen.isoformat()
-                        if attention_result.first_seen
-                        else None,
-                        "last_seen": attention_result.last_seen.isoformat()
-                        if attention_result.last_seen
-                        else None,
+                        "first_seen": _to_iso(attention_result.first_seen),
+                        "last_seen": _to_iso(attention_result.last_seen),
                         "top_topics": attention_result.top_topics,
                         "sentiment_distribution": attention_result.sentiment_distribution,
                         "source_distribution": attention_result.source_distribution,
@@ -2934,9 +2939,7 @@ def api_admin_aircraft_query(registration: str):
                         "trending_score": float(attention_result.trending_score)
                         if attention_result.trending_score
                         else None,
-                        "updated_at": attention_result.updated_at.isoformat()
-                        if attention_result.updated_at
-                        else None,
+                        "updated_at": _to_iso(attention_result.updated_at),
                     }
             query_times["attention_metrics"] = _time.time() - t0
 
@@ -3267,7 +3270,7 @@ def api_admin_list_aircraft():
                     "year_built": row[9],
                     "image_url": get_image_url(row[10]) if row[10] else None,
                     "images_downloaded": row[11],
-                    "last_updated": row[12].isoformat() if row[12] else None,
+                    "last_updated": _to_iso(row[12]),
                     "livery_name": row[13],
                     "aircraft_type_code": row[3],  # Use aircraft_type as type_code
                     "aircraft_type_full": None,
@@ -3880,14 +3883,12 @@ def api_admin_report_detail(aircraft_hex: str):
             cooldown_data = {
                 "id": cooldown[0],
                 "aircraft_hex": cooldown[1],
-                "last_report_time": cooldown[2].isoformat() if cooldown[2] else None,
-                "last_report_time_beijing": convert_utc_to_beijing(cooldown[2].isoformat())
-                if cooldown[2]
-                else None,
+                "last_report_time": _to_iso(cooldown[2]),
+                "last_report_time_beijing": convert_utc_to_beijing(_to_iso(cooldown[2])),
                 "last_latitude": float(cooldown[3]) if cooldown[3] else None,
                 "last_longitude": float(cooldown[4]) if cooldown[4] else None,
                 "report_count": cooldown[5],
-                "updated_at": cooldown[6].isoformat() if cooldown[6] else None,
+                "updated_at": _to_iso(cooldown[6]),
             }
 
             # Add user info in multi-user mode
@@ -3900,10 +3901,8 @@ def api_admin_report_detail(aircraft_hex: str):
                 "recent_snapshots": [
                     {
                         "id": s[0],
-                        "snapshot_time": s[1].isoformat() if s[1] else None,
-                        "snapshot_time_beijing": convert_utc_to_beijing(s[1].isoformat())
-                        if s[1]
-                        else None,
+                        "snapshot_time": _to_iso(s[1]),
+                        "snapshot_time_beijing": convert_utc_to_beijing(_to_iso(s[1])),
                         "hex": s[2],
                         "registration": s[3],
                         "aircraft_type": s[4],
@@ -4097,8 +4096,8 @@ def api_admin_xhs_notes():
                         "comment_count": row.comment_count,
                         "share_count": row.share_count,
                         "location": row.location,
-                        "scraped_at": row.scraped_at.isoformat() if row.scraped_at else None,
-                        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                        "scraped_at": _to_iso(row.scraped_at),
+                        "updated_at": _to_iso(row.updated_at),
                         "content": row.content[:200] + "..."
                         if row.content and len(row.content) > 200
                         else row.content,
@@ -4171,8 +4170,8 @@ def api_admin_xhs_note_detail(note_id: str):
                 "comment_count": row.comment_count,
                 "share_count": row.share_count,
                 "comments": row.comments,
-                "note_created_at": row.note_created_at.isoformat() if row.note_created_at else None,
-                "scraped_at": row.scraped_at.isoformat() if row.scraped_at else None,
+                "note_created_at": _to_iso(row.note_created_at),
+                "scraped_at": _to_iso(row.scraped_at),
             }
 
             return jsonify({"success": True, "note": note})
@@ -4286,11 +4285,9 @@ def api_admin_fr24_flights():
                         "remote_airport_name": row.remote_airport_name,
                         "aircraft_type": row.aircraft_type,
                         "aircraft_registration": row.aircraft_registration,
-                        "scheduled_time": row.scheduled_time.isoformat()
-                        if row.scheduled_time
-                        else None,
+                        "scheduled_time": _to_iso(row.scheduled_time),
                         "status": row.status,
-                        "scraped_at": row.scraped_at.isoformat() if row.scraped_at else None,
+                        "scraped_at": _to_iso(row.scraped_at),
                     }
                 )
 
@@ -4406,14 +4403,14 @@ def api_admin_jetphotos_images():
                         "source_url": row.source_url,
                         "jetphotos_id": row.jetphotos_id,
                         "photographer": row.photographer,
-                        "photo_date": row.photo_date.isoformat() if row.photo_date else None,
+                        "photo_date": _to_iso(row.photo_date),
                         "location": row.location,
                         "airport_icao": row.airport_icao,
                         "width": row.width,
                         "height": row.height,
                         "file_size_bytes": row.file_size_bytes,
                         "notes": row.notes,
-                        "created_at": row.created_at.isoformat() if row.created_at else None,
+                        "created_at": _to_iso(row.created_at),
                     }
                 )
 
@@ -4551,11 +4548,14 @@ def api_user_cooldowns(email: str):
 
             cooldowns = []
             for row in result:
-                hours_since = (datetime.now() - row[1]).total_seconds() / 3600
+                reported_at = _to_datetime(row[1])
+                hours_since = (
+                    (datetime.now() - reported_at).total_seconds() / 3600 if reported_at else None
+                )
                 cooldowns.append(
                     {
                         "aircraft_hex": row[0],
-                        "last_report_time": row[1].isoformat() if row[1] else None,
+                        "last_report_time": _to_iso(row[1]),
                         "hours_since_last_report": hours_since,
                         "last_latitude": float(row[2]) if row[2] else None,
                         "last_longitude": float(row[3]) if row[3] else None,
@@ -5401,24 +5401,13 @@ def api_admin_scraper_workers():
             now = datetime.utcnow()
             workers = []
             for row in result:
-                secs = None
-                if row.last_heartbeat:
-                    hb = row.last_heartbeat
-                    # SQLite returns strings; Postgres returns datetime.
-                    if isinstance(hb, str):
-                        try:
-                            hb = datetime.fromisoformat(hb)
-                        except ValueError:
-                            hb = None
-                    if hb is not None:
-                        secs = (now - hb).total_seconds()
+                heartbeat = _to_datetime(row.last_heartbeat)
+                secs = (now - heartbeat).total_seconds() if heartbeat else None
                 workers.append(
                     {
                         "worker_id": row.worker_id,
                         "status": row.status,
-                        "last_heartbeat": row.last_heartbeat.isoformat()
-                        if row.last_heartbeat and not isinstance(row.last_heartbeat, str)
-                        else row.last_heartbeat,
+                        "last_heartbeat": _to_iso(row.last_heartbeat),
                         "tasks_completed": row.tasks_completed,
                         "current_task_id": row.current_task_id,
                         "metadata": row.metadata or {},
@@ -5488,8 +5477,8 @@ def api_admin_scraper_recent_tasks():
                         "attempts": row.attempts,
                         "max_attempts": row.max_attempts,
                         "last_error": row.last_error,
-                        "created_at": row.created_at.isoformat() if row.created_at else None,
-                        "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+                        "created_at": _to_iso(row.created_at),
+                        "completed_at": _to_iso(row.completed_at),
                         "claimed_by": row.claimed_by,
                         "duration_seconds": float(row.duration_seconds)
                         if row.duration_seconds
