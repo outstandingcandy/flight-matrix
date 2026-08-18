@@ -1,0 +1,52 @@
+# =================================
+# Deployment Target Configuration
+# =================================
+# The application runs against one of three deployment targets. The
+# authoritative selector is the DEPLOY_TARGET environment variable
+# (aws | gcp | local, defaulting to local) — src/core/deploy_target.py reads
+# it directly. The `deploy.target` key below mirrors it so that config
+# consumers and the /auth/debug endpoint can report the resolved value.
+#
+# Every provider block follows the same convention:
+#   provider: ""      -> resolve from DEPLOY_TARGET
+#   provider: "gcs"   -> explicit override, wins over the target default
+#
+# The override exists so Gemini can be debugged on a laptop and so GCP can
+# temporarily fall back to Bedrock; it is a supported path, not a leftover.
+deploy:
+  target: "${DEPLOY_TARGET}"
+
+# =================================
+# Object Storage
+# =================================
+storage:
+  provider: ""                              # s3 | gcs | local
+
+  # Base URL that public object keys are served from. On aws this is the
+  # CloudFront domain, on gcp the GCS bucket URL, and locally it is left
+  # empty so the app serves /static itself.
+  public_base_url: "${STATIC_BASE_URL}"
+
+  s3:
+    bucket: "${S3_BUCKET_NAME}"
+    region: "${AWS_REGION}"
+
+  gcs:
+    bucket: "${GCS_ASSETS_BUCKET}"
+    project_id: "${GOOGLE_CLOUD_PROJECT}"
+
+  local:
+    # Filesystem root for the local provider. Defaults to the process working
+    # directory so that object keys are byte-identical across the three
+    # providers: the key "data/images/a.jpg" is an S3/GCS key on the cloud
+    # targets and ./data/images/a.jpg locally. Paths stored in the database
+    # therefore keep resolving after a target switch.
+    root: "${LOCAL_STORAGE_ROOT}"
+
+# =================================
+# Google Cloud Platform
+# =================================
+gcp:
+  project_id: "${GOOGLE_CLOUD_PROJECT}"
+  assets_bucket: "${GCS_ASSETS_BUCKET}"
+  private_bucket: "${GCS_PRIVATE_BUCKET}"
