@@ -1,8 +1,8 @@
 """End-to-end live scraping tests for every non-submodule scraper.
 
 These tests hit real third-party websites (airport-data.com, JetPhotos,
-flightradar24.com) with production configuration (non-headless Chromium
-via DrissionPage, backed by an Xvfb virtual display).
+flightradar24.com) with production configuration — a non-headless Chromium
+driven by DrissionPage.
 
 They're marked `integration` and skipped by default. To run them:
 
@@ -10,9 +10,12 @@ They're marked `integration` and skipped by default. To run them:
 
 Requirements for a green run:
 
-  - Xvfb installed and a display available (`:55` by default, override
-    with `$DISPLAY`). A local display fixture auto-starts Xvfb if the
-    display isn't already up.
+  - A way to show a real (non-headless) browser window. On Linux that
+    means Xvfb and a display (`:55` by default, override with `$DISPLAY`);
+    the display fixture auto-starts Xvfb if it isn't already up. On macOS
+    and Windows the browser window is native, so no virtual display is
+    involved and the fixture is a no-op — do NOT skip there, or these
+    tests silently cover nothing on a developer's laptop.
   - Chromium or Chrome installed (DrissionPage auto-detects).
   - Network access to airport-data.com, jetphotos.com, and
     flightradar24.com. Cloudflare sometimes throws a challenge that
@@ -22,7 +25,7 @@ Requirements for a green run:
 Why these tests exist: it's easy to refactor the scraper framework and
 not notice until production that a specific site's DOM shifted or the
 project's Cloudflare bypass stopped working. A live smoke per scraper
-catches this in CI (if CI runs with Xvfb).
+catches this in CI (if CI can show a browser window).
 
 These tests are slow (~4 minutes for the full suite) and network-flaky
 by nature; CI should schedule them nightly rather than on every PR.
@@ -33,6 +36,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import time
 from collections.abc import Iterator
 
@@ -50,12 +54,22 @@ pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
 
 @pytest.fixture(scope="module")
-def xvfb_display() -> Iterator[str]:
-    """Ensure an X11 display is available; auto-start Xvfb if not.
+def xvfb_display() -> Iterator[str | None]:
+    """Ensure a non-headless browser window can be shown.
 
-    Yields the display string (e.g. ":55"). Skips the whole module if the
-    host lacks Xvfb and the tests therefore can't run non-headless.
+    Yields the X11 display string (e.g. ":55") on Linux, or ``None`` on
+    platforms where a virtual display is neither needed nor available.
+
+    Only X11 needs a display server. On macOS a Chromium window is a native
+    Cocoa window and on Windows it is a native Win32 window, so there is
+    nothing to start and nothing to point `$DISPLAY` at — gating on Xvfb
+    there would skip every test in this module and report a green run that
+    exercised no scraper at all.
     """
+    if not sys.platform.startswith("linux"):
+        yield None
+        return
+
     display = os.environ.get("DISPLAY", ":55")
 
     # If a display is already up, reuse it.
@@ -67,7 +81,7 @@ def xvfb_display() -> Iterator[str]:
 
     # Otherwise auto-start Xvfb, which the test lifecycle owns.
     if shutil.which("Xvfb") is None:
-        pytest.skip("Xvfb not installed; live scrapers need a virtual display")
+        pytest.skip("Xvfb not installed; live scrapers need a virtual display on Linux")
 
     # Don't call `with subprocess.Popen(...)` — Xvfb is daemon-style, we
     # just detach and kill it in teardown.
@@ -92,9 +106,15 @@ def xvfb_display() -> Iterator[str]:
 
 
 @pytest.fixture
-def browser_pool(xvfb_display: str) -> Iterator[BrowserPool]:
-    """A single-slot, non-headless browser pool on the test's Xvfb display."""
-    os.environ["DISPLAY"] = xvfb_display
+def browser_pool(xvfb_display: str | None) -> Iterator[BrowserPool]:
+    """A single-slot, non-headless browser pool on the test's display.
+
+    `xvfb_display` is None off Linux, where the window is native — leave
+    `$DISPLAY` alone there rather than pointing Chromium at an X server
+    that doesn't exist.
+    """
+    if xvfb_display is not None:
+        os.environ["DISPLAY"] = xvfb_display
     settings = BrowserSettings(pool=True, size=1, max_tasks_per_browser=50, headless=False)
     pool = BrowserPool(settings)
     pool.initialize()
