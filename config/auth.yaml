@@ -1,0 +1,38 @@
+# =================================
+# Authentication Configuration
+# =================================
+# Provider resolution follows the DEPLOY_TARGET convention (see deploy.yaml):
+#   aws   -> cognito
+#   gcp   -> google
+#   local -> none (auth bypassed via SKIP_AUTH=true + STAGE=local)
+auth:
+  provider: ""                              # cognito | google | none
+
+  cognito:
+    user_pool_id: "${COGNITO_USER_POOL_ID}"
+    client_id: "${COGNITO_CLIENT_ID}"
+    client_secret: "${COGNITO_CLIENT_SECRET}"
+    domain: "${COGNITO_DOMAIN}"
+    callback_url: "${COGNITO_CALLBACK_URL}"
+    logout_url: "${COGNITO_LOGOUT_URL}"
+
+  google:
+    client_id: "${GOOGLE_OAUTH_CLIENT_ID}"
+    client_secret: "${GOOGLE_OAUTH_CLIENT_SECRET}"
+    callback_url: "${GOOGLE_OAUTH_CALLBACK_URL}"
+    logout_url: "${GOOGLE_OAUTH_LOGOUT_URL}"
+
+    # Google ID tokens carry no group claim (Cognito supplies `cognito:groups`),
+    # so group membership is driven from this file. An email that matches no
+    # group authenticates successfully but is denied by the group decorators,
+    # which is the intended behaviour.
+    #
+    # Leave allowed_domains empty to accept any verified Google account; set it
+    # to e.g. ["example.com"] to restrict logins to that domain.
+    allowed_domains: []
+
+    groups:
+      admins:
+        - "outstandingcandy@gmail.com"
+      flight-schedules-viewers:
+        - "outstandingcandy@gmail.com"

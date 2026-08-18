@@ -5,7 +5,9 @@
 # All includes are relative to this file's directory.
 
 includes:
+  - deploy.yaml
   - aws.yaml
+  - auth.yaml
   - database.yaml
   - api.yaml
   - email.yaml

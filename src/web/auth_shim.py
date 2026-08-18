@@ -4,9 +4,10 @@ The rules:
 
 - If `--skip-auth` was on the CLI or `SKIP_AUTH=true` in the environment,
   auth is disabled — we hand out no-op decorators and a mock user.
-- Otherwise we try to import the real Cognito decorators. If that import
-  fails (e.g. Cognito not configured yet), we still fall back to the
-  no-op decorators.
+- Otherwise we try to import the real decorators. The identity provider
+  behind them follows `DEPLOY_TARGET` (Cognito on aws, Google on gcp) and is
+  resolved by `src/auth/factory.py`. If that import fails (e.g. the auth
+  extras are not installed), we still fall back to the no-op decorators.
 
 This module consolidates the three copies of that logic that lived in
 `web_app.py` before the Phase 5.3 split.
@@ -74,7 +75,6 @@ if SKIP_AUTH:
     from src.auth.decorators import get_current_user
 else:
     try:
-        from src.auth.cognito_auth import get_cognito_auth, get_user_from_token
         from src.auth.decorators import (
             admin_required,
             flight_schedules_required,
@@ -83,6 +83,7 @@ else:
             login_required,
             optional_login,
         )
+        from src.auth.factory import get_auth_provider, get_user_from_token
 
         AUTH_ENABLED = True
     except ImportError as e:

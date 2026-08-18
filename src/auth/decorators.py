@@ -1,7 +1,12 @@
 """
 Flask Authentication Decorators
 
-Provides decorators for protecting Flask routes with Cognito authentication.
+Provides decorators for protecting Flask routes. The identity provider behind
+them is chosen by `src/auth/factory.py` from the active deployment target
+(Cognito on aws, Google on gcp, bypassed locally), so nothing in this module is
+provider-specific: group membership is read from the `groups` field that every
+provider's `get_user_from_token()` returns.
+
 Supports role-based and group-based access control.
 """
 
@@ -19,7 +24,7 @@ from flask import (
     url_for,
 )
 
-from src.auth.cognito_auth import get_cognito_auth, get_user_from_token
+from src.auth.factory import get_auth_provider, get_user_from_token
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +95,7 @@ def get_current_user() -> dict | None:
     refresh_token = session.get("refresh_token")
     if refresh_token:
         try:
-            auth = get_cognito_auth()
+            auth = get_auth_provider()
             if auth:
                 logger.debug("Attempting token refresh")
                 tokens = auth.refresh_tokens(refresh_token)
@@ -143,14 +148,18 @@ def login_required(f: Callable) -> Callable:
             # Store the original URL for redirect after login
             session["next_url"] = request.url
 
-            # Check if Cognito is configured
-            auth = get_cognito_auth()
+            # Check if an identity provider is configured
+            auth = get_auth_provider()
             if auth:
-                # Redirect to Cognito login
-                return redirect(url_for("login"))
+                # Redirect to the provider's hosted login. The endpoint is
+                # "auth.login", not "login": /login lives on the auth blueprint,
+                # and the bare name raises BuildError. This branch only runs once
+                # a provider is configured, so the wrong name stayed invisible
+                # while the deployment had no identity provider.
+                return redirect(url_for("auth.login"))
             else:
-                # Cognito not configured, show error
-                logger.warning("Authentication required but Cognito not configured")
+                # No provider configured, show error
+                logger.warning("Authentication required but no auth provider configured")
                 return render_template(
                     "403.html",
                     message="Authentication system not configured",
@@ -163,7 +172,11 @@ def login_required(f: Callable) -> Callable:
 
 
 def group_required(allowed_groups: list[str]) -> Callable:
-    """Decorator factory to require user membership in specific Cognito groups.
+    """Decorator factory to require user membership in specific groups.
+
+    Groups come from whichever provider is active: the `cognito:groups` claim on
+    aws, `auth.google.groups` in `config/auth.yaml` on gcp, `LOCAL_DEV_GROUPS`
+    when auth is skipped.
 
     Usage:
         @app.route('/premium')
@@ -188,11 +201,11 @@ def group_required(allowed_groups: list[str]) -> Callable:
                 # Store the original URL for redirect after login
                 session["next_url"] = request.url
 
-                auth = get_cognito_auth()
+                auth = get_auth_provider()
                 if auth:
-                    return redirect(url_for("login"))
+                    return redirect(url_for("auth.login"))
                 else:
-                    logger.warning("Group access required but Cognito not configured")
+                    logger.warning("Group access required but no auth provider configured")
                     return render_template(
                         "403.html",
                         message="Authentication system not configured",
@@ -274,11 +287,11 @@ def admin_required(f: Callable) -> Callable:
             # Store the original URL for redirect after login
             session["next_url"] = request.url
 
-            auth = get_cognito_auth()
+            auth = get_auth_provider()
             if auth:
-                return redirect(url_for("login"))
+                return redirect(url_for("auth.login"))
             else:
-                logger.warning("Admin access required but Cognito not configured")
+                logger.warning("Admin access required but no auth provider configured")
                 return render_template(
                     "403.html",
                     message="Authentication system not configured",
