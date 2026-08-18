@@ -1,8 +1,9 @@
 """
 Social Media Note Aircraft Analysis Service
 
-Uses Claude (AWS Bedrock) to analyze social media notes (Xiaohongshu, Weibo, Douyin)
-and extract aircraft registrations, calculate attention indices, and identify trends.
+Uses an LLM (Bedrock on the aws target, Gemini on gcp — see src/llm/) to analyze
+social media notes (Xiaohongshu, Weibo, Douyin) and extract aircraft
+registrations, calculate attention indices, and identify trends.
 
 Results are stored in:
 - note_aircraft_analysis: Individual note analysis results
@@ -30,12 +31,12 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import boto3
 from botocore.exceptions import ClientError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src.data.models import AircraftAttentionAggregate, NoteAircraftAnalysis
+from src.llm.factory import LLMClientFactory, resolve_llm_provider_name, resolve_model_id
 from src.utils.database import DatabaseManager
 from src.utils.yaml_config import YAMLConfig
 
@@ -236,8 +237,8 @@ class NoteAnalysisService:
         self.yaml_config = YAMLConfig(config_file)
         self.db = self._init_database()
 
-        # Initialize AWS Bedrock client
-        self._init_aws_clients()
+        # Initialize the LLM client
+        self._init_llm_client()
 
         # Load note analysis configuration
         self._load_config()
@@ -288,31 +289,41 @@ class NoteAnalysisService:
         finally:
             session.close()
 
-    def _init_aws_clients(self) -> None:
-        """Initialize AWS Bedrock client."""
+    def _init_llm_client(self) -> None:
+        """Initialize the LLM client for the active deployment target."""
         region = self.yaml_config.get("aws.region", "us-east-1")
         access_key = self.yaml_config.get("aws.access_key_id")
         secret_key = self.yaml_config.get("aws.secret_access_key")
 
-        # Get model ID from note_analysis config or fall back to llm config
-        self.model_id = self.yaml_config.get(
-            "note_analysis.bedrock_model_id",
-            self.yaml_config.get(
-                "llm.bedrock_model_id", "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+        llm_config = self.yaml_config.get_llm_config()
+        self.provider = resolve_llm_provider_name(llm_config.get("provider"))
+
+        # Bedrock model ID comes from note_analysis config or falls back to llm config
+        self.model_id = resolve_model_id(
+            llm_config,
+            self.provider,
+            bedrock_model_id=self.yaml_config.get(
+                "note_analysis.bedrock_model_id",
+                self.yaml_config.get(
+                    "llm.bedrock_model_id", "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+                ),
             ),
         )
 
-        if access_key and secret_key:
-            self.bedrock = boto3.client(
-                "bedrock-runtime",
-                region_name=region,
-                aws_access_key_id=access_key,
-                aws_secret_access_key=secret_key,
-            )
-        else:
-            self.bedrock = boto3.client("bedrock-runtime", region_name=region)
+        self.llm_client = LLMClientFactory.create_from_dict(
+            {
+                **llm_config,
+                "provider": self.provider,
+                "aws_region": region,
+                "aws_access_key_id": access_key,
+                "aws_secret_access_key": secret_key,
+            }
+        )
 
-        logger.info(f"AWS Bedrock client initialized (region={region}, model={self.model_id})")
+        logger.info(
+            f"LLM client initialized (provider={self.provider}, region={region}, "
+            f"model={self.model_id})"
+        )
 
     def _load_config(self) -> None:
         """Load note analysis configuration."""
@@ -572,7 +583,7 @@ class NoteAnalysisService:
         }
 
         try:
-            response = self.bedrock.converse(**request_body)
+            response = self.llm_client.converse(**request_body)
 
             # Extract token usage
             usage = response.get("usage", {})
@@ -610,6 +621,7 @@ class NoteAnalysisService:
                 return None
 
         except ClientError as e:
+            # Bedrock-specific; Gemini failures surface as AnalysisError below.
             logger.error(f"Bedrock API error for note {note_id}: {e}")
             return None
         except Exception as e:

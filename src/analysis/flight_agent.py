@@ -1,12 +1,17 @@
 """
-FlightAnalysisAgent - Aviation intelligence analysis agent based on the AWS Bedrock API.
+FlightAnalysisAgent - Aviation intelligence analysis agent.
 
-A professional aviation intelligence analyst that calls the Claude model directly via
-the AWS Bedrock API. It accepts real-time aircraft flight data, combines it with
-internet search, and analyzes and reports on an aircraft's affiliation, likely
-destination, and mission purpose.
+A professional aviation intelligence analyst that calls a large language model
+through :mod:`src.llm` — Bedrock on the aws target, Gemini on gcp. It accepts
+real-time aircraft flight data, combines it with internet search, and analyzes
+and reports on an aircraft's affiliation, likely destination, and mission
+purpose.
 
-Based on AWS Bedrock API with Tavily search integration.
+The tool loop below is hand-written on purpose (iteration ceiling, progress
+callback, partial-result recovery), which is why the LLM abstraction keeps the
+Bedrock Converse request shape rather than each provider's native one.
+
+Tool execution uses Tavily search integration.
 """
 
 import json
@@ -16,12 +21,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-try:
-    import boto3
-except ImportError:
-    logging.error("boto3 package not found. Please install with: pip install boto3")
-    raise ImportError("boto3 package is required")
-
+from src.llm.factory import LLMClientFactory, resolve_llm_provider_name, resolve_model_id
 from src.media.markdown_converter import convert_markdown_to_html
 from src.utils.yaml_config import YAMLConfig
 
@@ -1002,22 +1002,26 @@ class FlightAnalysisAgent:
         self.progress_callback = progress_callback
         self.current_progress = AnalysisProgress()
 
-        # Initialize the Bedrock client
+        # Initialize the LLM client for the active deployment target
         try:
-            # Get AWS configuration from config or environment variables
+            self.provider = resolve_llm_provider_name(self.provider_config.get("provider"))
+            # AWS region from config or environment; unused by non-Bedrock providers
             region_name = self.provider_config.get("aws_region") or os.getenv(
                 "AWS_REGION", "us-west-2"
             )
-            self.model_id = self.provider_config.get(
-                "bedrock_model_id", "anthropic.claude-sonnet-4-20250514-v1:0"
+            self.model_id = resolve_model_id(
+                self.provider_config,
+                self.provider,
+                bedrock_model_id=self.provider_config.get("bedrock_model_id")
+                or "anthropic.claude-sonnet-4-20250514-v1:0",
             )
 
-            self.bedrock = boto3.client(service_name="bedrock-runtime", region_name=region_name)
-            logger.info(
-                f"Initialized Bedrock client in region {region_name}, model: {self.model_id}"
+            self.llm_client = LLMClientFactory.create_from_dict(
+                {**self.provider_config, "provider": self.provider, "aws_region": region_name}
             )
+            logger.info(f"Initialized {self.provider} client, model: {self.model_id}")
         except Exception as e:
-            logger.error(f"Failed to initialize Bedrock client: {e}")
+            logger.error(f"Failed to initialize LLM client: {e}")
             raise
 
         # Token usage statistics
@@ -1051,11 +1055,11 @@ class FlightAnalysisAgent:
             except Exception as e:
                 logger.warning(f"Progress callback failed: {e}")
 
-    def _call_bedrock_with_tools(
+    def _call_llm_with_tools(
         self, user_message: str, max_iterations: int = 10
     ) -> tuple[str, TokenUsage]:
         """
-        Call the Bedrock API with tool support.
+        Call the LLM with tool support.
 
         Args:
             user_message: User-provided input message
@@ -1073,7 +1077,7 @@ class FlightAnalysisAgent:
         self._report_progress(1, "Initializing analysis", "Preparing analysis environment...")
 
         for iteration in range(max_iterations):
-            logger.info(f"--- Bedrock API Call Iteration {iteration + 1} ---")
+            logger.info(f"--- LLM Call Iteration {iteration + 1} ---")
             self._report_progress(
                 2 + iteration, "AI analyzing", f"Reasoning round {iteration + 1}..."
             )
@@ -1098,8 +1102,8 @@ class FlightAnalysisAgent:
                 }
 
             try:
-                # Call the Bedrock API
-                response = self.bedrock.converse(**request_body)
+                # Call the LLM
+                response = self.llm_client.converse(**request_body)
 
                 # Collect token usage statistics
                 usage = response.get("usage", {})
@@ -1212,7 +1216,7 @@ class FlightAnalysisAgent:
                     return "Failed to generate analysis result", token_usage
 
             except Exception as e:
-                logger.error(f"Bedrock API call failed at iteration {iteration}: {e}")
+                logger.error(f"LLM call failed at iteration {iteration}: {e}")
                 if iteration == 0:
                     raise
                 else:
@@ -1260,9 +1264,9 @@ class FlightAnalysisAgent:
             # 2. Build analysis input
             flight_input = flight_data.to_analysis_string()
 
-            # 3. Call the Bedrock API to run the analysis
+            # 3. Call the LLM to run the analysis
             logger.info("Sending request to aviation intelligence analyst...")
-            analysis_markdown_result, token_usage = self._call_bedrock_with_tools(flight_input)
+            analysis_markdown_result, token_usage = self._call_llm_with_tools(flight_input)
             html_analysis_result = convert_markdown_to_html(analysis_markdown_result)
 
             # 4. Save token usage statistics

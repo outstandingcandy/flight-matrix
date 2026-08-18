@@ -2,7 +2,13 @@
 # AI Service Configuration (for aircraft analysis)
 # =================================
 llm:
-  provider: "aws_bedrock"              # anthropic | openai | aws_bedrock
+  # aws_bedrock | gemini | anthropic | openai
+  # Leave empty to resolve from DEPLOY_TARGET: aws -> aws_bedrock,
+  # gcp -> gemini, local -> gemini when GEMINI_API_KEY is set else aws_bedrock.
+  # Set it explicitly to override — that is how you debug Gemini on a laptop or
+  # fall back to Bedrock on GCP. Only aws_bedrock and gemini are implemented by
+  # the analysis call sites; anthropic/openai raise ConfigurationError.
+  provider: ""
 
   # AWS Bedrock model configuration (uses top-level aws.region)
   # Available models:
@@ -11,6 +17,14 @@ llm:
   #   - us.anthropic.claude-opus-4-5-20251101-v1:0 (Claude Opus 4.5)
   bedrock_model_id: "us.anthropic.claude-opus-4-5-20251101-v1:0"
   # bedrock_model_id: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+  # Gemini configuration (gcp deployment target)
+  # Model IDs move fast; list what your key can reach with:
+  #   curl -s "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_API_KEY" \
+  #     | jq -r '.models[].name'
+  gemini_api_key: "${GEMINI_API_KEY}"
+  gemini_model: "gemini-3.7-flash"          # agent loop + note analysis
+  gemini_vision_model: "gemini-2.5-pro"     # aircraft image analysis, quality first
 
   # Anthropic/OpenAI API keys (if using corresponding provider)
   anthropic_api_key: "${ANTHROPIC_API_KEY}"

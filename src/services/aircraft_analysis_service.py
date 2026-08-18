@@ -1,8 +1,8 @@
 """
 Comprehensive Aircraft Analysis Service
 
-Uses Claude Vision (AWS Bedrock) to perform comprehensive aircraft intelligence analysis
-by combining:
+Uses a vision-capable LLM (Bedrock on the aws target, Gemini on gcp — see
+src/llm/) to perform comprehensive aircraft intelligence analysis by combining:
 - Static aircraft information (owner, operator, registration details)
 - Flight track history (recent positions, flight patterns)
 - Aircraft images (up to 3 photos)
@@ -39,8 +39,11 @@ import os
 from datetime import datetime, timedelta
 
 import boto3
-from botocore.exceptions import ClientError
 
+from src.core.deploy_target import DeployTarget, current_target
+from src.core.exceptions import StorageError
+from src.llm.factory import LLMClientFactory, resolve_llm_provider_name, resolve_model_id
+from src.storage import ObjectStorage, StorageFactory
 from src.utils.database import DatabaseManager
 from src.utils.yaml_config import YAMLConfig
 
@@ -122,7 +125,7 @@ After the JSON block, output the full analysis report in Markdown format.
 
 
 class AircraftAnalysisService:
-    """Comprehensive Aircraft Analysis Service using Claude Vision."""
+    """Comprehensive Aircraft Analysis Service using a vision-capable LLM."""
 
     def __init__(self, config_file: str = "config.yaml"):
         """Initialize the aircraft analysis service.
@@ -134,15 +137,18 @@ class AircraftAnalysisService:
         self.yaml_config = YAMLConfig(config_file)
         self.db = self._init_database()
 
-        # Initialize AWS clients
-        self._init_aws_clients()
+        # Initialize the LLM client
+        self._init_llm_client()
 
-        # Load S3 configuration
+        # Load remote-image configuration. The `image_download.s3.*` keys
+        # predate the storage abstraction and are read as written; the provider
+        # they resolve to now follows DEPLOY_TARGET.
         image_config = self.yaml_config.config.get("image_download", {})
         s3_config = image_config.get("s3", {})
-        self.s3_enabled = s3_config.get("enabled", False)
-        self.s3_bucket = self.yaml_config.get("image_download.s3.bucket", "")
+        self.remote_images_enabled = s3_config.get("enabled", False)
+        self.image_bucket = self.yaml_config.get("image_download.s3.bucket", "")
         self.local_images_dir = image_config.get("images_dir", "data/jetphotos_images")
+        self.storage = self._init_storage()
 
         # Analysis configuration
         self.track_days = 30  # Days of track history to include
@@ -156,8 +162,8 @@ class AircraftAnalysisService:
         self._total_output_tokens = 0
 
         logger.info(
-            f"AircraftAnalysisService initialized "
-            f"(model={self.model_id}, s3_enabled={self.s3_enabled})"
+            f"AircraftAnalysisService initialized (model={self.model_id}, "
+            f"storage={type(self.storage).__name__ if self.storage else 'local files only'})"
         )
 
     def _init_database(self) -> DatabaseManager:
@@ -213,34 +219,72 @@ class AircraftAnalysisService:
 
         logger.debug("Analysis columns check completed")
 
-    def _init_aws_clients(self) -> None:
-        """Initialize AWS Bedrock and S3 clients."""
+    def _init_llm_client(self) -> None:
+        """Initialize the vision-capable LLM client for the active target."""
         region = self.yaml_config.get("aws.region", "us-east-1")
         access_key = self.yaml_config.get("aws.access_key_id")
         secret_key = self.yaml_config.get("aws.secret_access_key")
 
-        self.model_id = self.yaml_config.get(
-            "llm.bedrock_model_id", "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+        llm_config = self.yaml_config.get_llm_config()
+        self.provider = resolve_llm_provider_name(llm_config.get("provider"))
+
+        # Image analysis takes the vision model, which on Gemini is a separate
+        # (quality-first) model; Bedrock uses one multimodal model for both.
+        self.model_id = resolve_model_id(
+            llm_config,
+            self.provider,
+            bedrock_model_id=self.yaml_config.get(
+                "llm.bedrock_model_id", "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+            ),
+            vision=True,
         )
 
-        if access_key and secret_key:
-            self.bedrock = boto3.client(
-                "bedrock-runtime",
-                region_name=region,
-                aws_access_key_id=access_key,
-                aws_secret_access_key=secret_key,
-            )
-            self.s3_client = boto3.client(
-                "s3",
-                region_name=region,
-                aws_access_key_id=access_key,
-                aws_secret_access_key=secret_key,
-            )
-        else:
-            self.bedrock = boto3.client("bedrock-runtime", region_name=region)
-            self.s3_client = boto3.client("s3", region_name=region)
+        self.llm_client = LLMClientFactory.create_from_dict(
+            {
+                **llm_config,
+                "provider": self.provider,
+                "aws_region": region,
+                "aws_access_key_id": access_key,
+                "aws_secret_access_key": secret_key,
+            }
+        )
 
-        logger.info(f"AWS clients initialized (region={region}, model={self.model_id})")
+        logger.info(
+            f"LLM client initialized (provider={self.provider}, region={region}, "
+            f"model={self.model_id})"
+        )
+
+    def _init_storage(self) -> ObjectStorage | None:
+        """Create the object storage used for remote aircraft images.
+
+        Returns:
+            The storage instance, or ``None`` when remote images are disabled
+            or misconfigured — in which case only the local filesystem is
+            consulted, matching the previous behaviour.
+        """
+        if not self.remote_images_enabled:
+            return None
+
+        # Explicit static credentials only apply to S3; every other provider
+        # authenticates through its own ambient credential chain.
+        client = None
+        access_key = self.yaml_config.get("aws.access_key_id")
+        secret_key = self.yaml_config.get("aws.secret_access_key")
+        if current_target() is DeployTarget.AWS and access_key and secret_key:
+            client = boto3.client(
+                "s3",
+                region_name=self.yaml_config.get("aws.region", "us-east-1"),
+                aws_access_key_id=access_key,
+                aws_secret_access_key=secret_key,
+            )
+
+        try:
+            return StorageFactory.create(
+                self.yaml_config, bucket=self.image_bucket or None, client=client
+            )
+        except StorageError as e:
+            logger.warning(f"Remote image storage unavailable, using local files only: {e}")
+            return None
 
     # -------------------------------------------------------------------------
     # Data Collection Methods
@@ -428,13 +472,15 @@ class AircraftAnalysisService:
     # Image Loading Methods
     # -------------------------------------------------------------------------
 
-    def _load_image_from_s3(self, s3_key: str) -> bytes | None:
-        """Load image from S3 bucket."""
+    def _load_image_from_storage(self, key: str) -> bytes | None:
+        """Load image from object storage."""
+        if self.storage is None:
+            return None
+
         try:
-            response = self.s3_client.get_object(Bucket=self.s3_bucket, Key=s3_key)
-            return response["Body"].read()
-        except ClientError as e:
-            logger.error(f"Failed to load image from S3 ({s3_key}): {e}")
+            return self.storage.download_bytes(key)
+        except StorageError as e:
+            logger.error(f"Failed to load image from object storage ({key}): {e}")
             return None
 
     def _load_image_from_local(self, path: str) -> bytes | None:
@@ -520,14 +566,14 @@ class AircraftAnalysisService:
             return image_data
 
     def load_image(self, image_path: str) -> bytes | None:
-        """Load image from S3 or local storage, compressing if needed for Bedrock."""
+        """Load image from object storage or local files, compressing for Bedrock."""
         if not image_path:
             return None
 
         image_data = None
 
-        if self.s3_enabled and self.s3_bucket:
-            image_data = self._load_image_from_s3(image_path)
+        if self.storage is not None:
+            image_data = self._load_image_from_storage(image_path)
 
         if not image_data:
             image_data = self._load_image_from_local(image_path)
@@ -629,7 +675,7 @@ class AircraftAnalysisService:
     def analyze_aircraft(
         self, static_info: dict, tracks: list[dict], images: list[tuple[bytes, str]]
     ) -> tuple[str | None, dict]:
-        """Perform comprehensive aircraft analysis using Claude Vision.
+        """Perform comprehensive aircraft analysis using a vision-capable LLM.
 
         Args:
             static_info: Static aircraft information dict
@@ -668,7 +714,7 @@ class AircraftAnalysisService:
         logger.info(f"Analyzing aircraft with {len(images)} image(s), {len(tracks)} track points")
 
         try:
-            response = self.bedrock.converse(**request_body)
+            response = self.llm_client.converse(**request_body)
 
             # Extract token usage
             usage = response.get("usage", {})
@@ -694,7 +740,7 @@ class AircraftAnalysisService:
             return result_text, token_usage
 
         except Exception as e:
-            logger.error(f"Bedrock API call failed: {e}")
+            logger.error(f"LLM call failed: {e}")
             return None, {"input_tokens": 0, "output_tokens": 0}
 
     def parse_structured_analysis(self, analysis_text: str) -> tuple[dict | None, str]:
@@ -992,7 +1038,7 @@ class AircraftAnalysisService:
             "success": self._success_count,
             "failed": self._failed_count,
             "model": self.model_id,
-            "s3_enabled": self.s3_enabled,
+            "remote_images_enabled": self.storage is not None,
             "total_input_tokens": self._total_input_tokens,
             "total_output_tokens": self._total_output_tokens,
             "total_tokens": self._total_input_tokens + self._total_output_tokens,

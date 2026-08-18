@@ -153,10 +153,12 @@ class YAMLConfig:
             },
             # LLM configuration
             "llm": {
-                "provider": "anthropic",  # anthropic | openai | aws_bedrock
+                # Empty resolves from DEPLOY_TARGET; see config/llm.yaml.
+                "provider": "",
                 "anthropic_api_key": "${ANTHROPIC_API_KEY}",
                 "openai_api_key": "${OPENAI_API_KEY}",
                 "aws_bedrock_region": "us-east-1",
+                "gemini_api_key": "${GEMINI_API_KEY}",
                 "tavily_api_key": "${TAVILY_API_KEY}",
             },
             # Recall configuration
@@ -457,14 +459,22 @@ class YAMLConfig:
         }
 
     def get_llm_config(self) -> dict:
-        """Get LLM configuration"""
+        """Get LLM configuration.
+
+        ``provider`` is returned as configured — an empty value means "resolve
+        from ``DEPLOY_TARGET``" and is resolved by
+        :func:`src.llm.factory.resolve_llm_provider_name`, not here.
+        """
         aws_config = self.get_aws_config()
         return {
-            "provider": self.get("llm.provider", "aws_bedrock"),
+            "provider": self.get("llm.provider", ""),
             "bedrock_model_id": self.get(
                 "llm.bedrock_model_id", "anthropic.claude-sonnet-4-20250514-v1:0"
             ),
             "aws_region": aws_config["region"],
+            "gemini_api_key": self.get("llm.gemini_api_key", ""),
+            "gemini_model": self.get("llm.gemini_model", ""),
+            "gemini_vision_model": self.get("llm.gemini_vision_model", ""),
             "anthropic_api_key": self.get("llm.anthropic_api_key", ""),
             "openai_api_key": self.get("llm.openai_api_key", ""),
             "tavily_api_key": self.get("llm.tavily_api_key", ""),
