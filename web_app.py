@@ -40,7 +40,7 @@ from src.storage import (
     resolve_media_base_url,
     resolve_static_base_url,
 )
-from src.utils.database import DatabaseManager
+from src.utils.database import DatabaseManager, mask_database_url
 from src.utils.yaml_config import YAMLConfig
 from src.web.auth_shim import (
     AUTH_ENABLED,
@@ -435,14 +435,12 @@ def init_app():
 
         # 使用环境变量覆盖数据库URL (Lambda部署时使用)
         db_url = os.environ.get("DATABASE_URL", db_config["url"])
-        logger.info(f"Database URL: {db_url}")
+        logger.info(f"Database URL: {mask_database_url(db_url)}")
 
         # 初始化数据库 (支持PostgreSQL和SQLite)
         db_manager = DatabaseManager(db_url)
 
-        logger.info(
-            f"Web application initialized successfully (DB: {db_url.split('@')[0] if '@' in db_url else 'local'})"
-        )
+        logger.info("Web application initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize web application: {e}")
         raise

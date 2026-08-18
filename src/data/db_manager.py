@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -44,6 +45,46 @@ _PROD_HOST_MARKERS = (
 def _looks_like_prod_host(database_url: str) -> bool:
     """Heuristic: does this URL point at a managed AWS database?"""
     return any(marker in database_url for marker in _PROD_HOST_MARKERS)
+
+
+def mask_database_url(database_url: str) -> str:
+    """Return `database_url` with the password replaced by ``***``.
+
+    Every DSN that reaches a log line must go through this first. A URL like
+    ``postgresql+psycopg2://user:s3cret@db.example.com:5432/flight`` becomes
+    ``postgresql+psycopg2://user:***@db.example.com:5432/flight``, so the host
+    and database stay readable — which is the part that's useful when
+    diagnosing "why did it connect *there*".
+
+    Parsing rather than string-splitting matters: ``url.split("@")[0]`` keeps
+    the password and throws away the host, and ``split("@")[-1]`` silently
+    drops the whole userinfo when the password itself contains an ``@``.
+
+    Args:
+        database_url: A SQLAlchemy URL, or any string that looks like one.
+
+    Returns:
+        The URL with its password masked. SQLite URLs carry no credentials and
+        are returned unchanged. A URL that cannot be parsed is reduced to just
+        its scheme, because leaking it would be worse than losing the detail.
+    """
+    if not database_url:
+        return database_url
+
+    try:
+        parts = urlsplit(database_url)
+    except ValueError:
+        scheme, sep, _ = database_url.partition("://")
+        return f"{scheme}{sep}***" if sep else "***"
+
+    if parts.password is None:
+        return database_url
+
+    userinfo = f"{parts.username or ''}:***"
+    host = parts.hostname or ""
+    if parts.port is not None:
+        host = f"{host}:{parts.port}"
+    return urlunsplit(parts._replace(netloc=f"{userinfo}@{host}"))
 
 
 class DatabaseManager:
@@ -93,7 +134,7 @@ class DatabaseManager:
 
         logger.info("Ensuring all database tables exist...")
         self._bootstrap_schema()
-        logger.info(f"SQL database initialized: {self.database_url}")
+        logger.info(f"SQL database initialized: {mask_database_url(self.database_url)}")
 
     @staticmethod
     def _normalize_url(database_url: str) -> str:

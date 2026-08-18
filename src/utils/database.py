@@ -13,7 +13,7 @@ new code should import from `src.data.*` directly.
 
 from __future__ import annotations
 
-from src.data.db_manager import DatabaseManager
+from src.data.db_manager import DatabaseManager, mask_database_url
 from src.data.models import (
     AircraftSnapshot,
     Base,
@@ -27,4 +27,5 @@ __all__ = [
     "DatabaseManager",
     "GeographicRegion",
     "ReportCooldown",
+    "mask_database_url",
 ]

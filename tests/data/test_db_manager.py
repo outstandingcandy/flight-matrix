@@ -6,11 +6,66 @@ the repositories. Database is always in-memory SQLite.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from src.data.cooldown_repo import CooldownRepository
-from src.data.db_manager import DatabaseManager
+from src.data.db_manager import DatabaseManager, mask_database_url
 from src.data.snapshot_repo import SnapshotRepository
+
+
+class TestPasswordMasking:
+    """`mask_database_url` is the only thing standing between a production
+    DSN and CloudWatch, so it gets tested on the shapes that actually break
+    naive string-splitting."""
+
+    def test_password_is_replaced_but_host_and_db_survive(self) -> None:
+        masked = mask_database_url(
+            "postgresql+psycopg2://flight:s3cret@db.abc.rds.amazonaws.com:5432/flight"
+        )
+        assert "s3cret" not in masked
+        assert masked == "postgresql+psycopg2://flight:***@db.abc.rds.amazonaws.com:5432/flight"
+
+    @pytest.mark.parametrize("password", ["p@ss", "pa:ss", "p@ss:word", "@:@"])
+    def test_punctuation_in_password_still_masked(self, password: str) -> None:
+        """`split("@")` gets these wrong; parsing gets them right."""
+        masked = mask_database_url(f"postgresql://user:{password}@host:5432/db")
+        assert password not in masked
+        assert masked == "postgresql://user:***@host:5432/db"
+
+    def test_sqlite_url_is_unchanged(self) -> None:
+        assert mask_database_url("sqlite:///aircraft_data.db") == "sqlite:///aircraft_data.db"
+        assert mask_database_url("sqlite:///:memory:") == "sqlite:///:memory:"
+
+    def test_url_without_credentials_is_unchanged(self) -> None:
+        assert mask_database_url("postgresql://host/db") == "postgresql://host/db"
+
+    def test_empty_string(self) -> None:
+        assert mask_database_url("") == ""
+
+    def test_unparseable_url_is_redacted_not_echoed(self) -> None:
+        """Losing the detail beats leaking it."""
+        assert mask_database_url("postgresql://u:p@[bad") == "postgresql://***"
+
+    def test_init_does_not_log_the_password(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Regression: `__init__` logged the raw DSN at INFO, so every process
+        that touched the database wrote the production password to its log.
+
+        A real Postgres URL is used because SQLite has no password to leak.
+        `create_engine` is lazy, so nothing connects; only the schema bootstrap
+        would, and it's stubbed out.
+        """
+        monkeypatch.setattr(DatabaseManager, "_bootstrap_schema", lambda self: None)
+
+        with caplog.at_level(logging.INFO):
+            DatabaseManager("postgresql+psycopg2://flight:s3cret@db.example.com:5432/flight")
+
+        assert "SQL database initialized" in caplog.text
+        assert "s3cret" not in caplog.text
+        assert "db.example.com" in caplog.text
 
 
 class TestURLNormalisation:

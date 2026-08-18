@@ -37,7 +37,8 @@ sys.path.insert(0, str(project_root))
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from src.data.models import Base, Airport
+from src.data.db_manager import mask_database_url
+from src.data.models import Airport, Base
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -233,7 +234,7 @@ def import_airports_to_db(airports: List[Dict], database_url: str):
         airports: List of airport dictionaries
         database_url: SQLAlchemy database URL
     """
-    logger.info(f"Connecting to database: {database_url}")
+    logger.info(f"Connecting to database: {mask_database_url(database_url)}")
 
     # Create engine and session
     engine = create_engine(database_url, echo=False)
