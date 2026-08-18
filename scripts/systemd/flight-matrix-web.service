@@ -1,0 +1,53 @@
+[Unit]
+Description=Flight-Matrix web application (gunicorn)
+After=network.target
+# No Requires= on a database unit: the gcp target reaches Postgres over
+# 127.0.0.1 and the DB may be a container, a host service, or (on a shared
+# host) neither of the two this unit could name. gunicorn workers retry the
+# connection, so an ordering dependency would buy nothing and would break the
+# unit on any host whose database is not a systemd service.
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/flight-matrix
+# DEPLOY_TARGET / STAGE / DATABASE_URL / the Google OAuth credentials all come
+# from /etc/flight-matrix/env, the same file the scraper and scheduler units
+# read. The leading `-` keeps the unit startable when the file is absent so the
+# failure surfaces as a missing setting rather than a missing unit.
+EnvironmentFile=-/etc/flight-matrix/env
+Environment=PYTHONUNBUFFERED=1
+# Bound to loopback on purpose: nginx terminates TLS and proxies here. Exposing
+# gunicorn directly would serve the app over plain HTTP and, because
+# SESSION_COOKIE_SECURE is on whenever STAGE != local, silently break login.
+#
+# --timeout 300 matches nginx's proxy_read_timeout. Aircraft analysis calls an
+# LLM inline and legitimately runs for minutes; gunicorn's 30s default would
+# kill the worker mid-request and return 502.
+#
+# 2 workers x 4 threads rather than the usual (2*CPU)+1: the workload is
+# IO-bound on the database and the LLM, and each worker is a full copy of the
+# app (SQLAlchemy, plotly, the Google SDKs), so worker count is the dominant
+# term in resident memory. deploy-app.sh rewrites these numbers for the host it
+# is deploying to.
+ExecStart=/home/ubuntu/flight-matrix/.venv/bin/gunicorn \
+    --bind 127.0.0.1:8000 \
+    --workers 2 \
+    --threads 4 \
+    --timeout 300 \
+    --graceful-timeout 30 \
+    --keep-alive 5 \
+    --access-logfile - \
+    --error-logfile - \
+    web_app:app
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/flight-matrix/web.log
+StandardError=append:/var/log/flight-matrix/web.log
+LimitNOFILE=65536
+MemoryMax=2G
+
+[Install]
+WantedBy=multi-user.target
