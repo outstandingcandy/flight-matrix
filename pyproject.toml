@@ -199,7 +199,13 @@ exclude = [
 # strict-clean; the rest is being cleaned up as part of the Phase 5 module
 # splits.
 [[tool.mypy.overrides]]
-module = ["src.core.*", "src.llm.*", "src.media.image_loader", "src.storage.*"]
+module = [
+    "src.core.*",
+    "src.data.dialect",
+    "src.llm.*",
+    "src.media.image_loader",
+    "src.storage.*",
+]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_return_any = true

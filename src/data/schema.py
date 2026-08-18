@@ -169,23 +169,19 @@ def ensure_report_cooldowns_table(session: Session) -> None:
 
 
 def ensure_scraper_tables(session: Session, *, is_postgres: bool) -> None:
-    """Create scraper_tasks, scraper_workers, scraper_results on demand.
+    """Create the tables the scraper writes and the web app reads.
 
-    The scraper framework creates these via `TaskQueue.ensure_tables_exist()`
-    at worker startup using Postgres-specific DDL. The web admin pages read
-    these tables too and fail on a fresh SQLite DB without them, so this
-    helper builds them early with dialect-appropriate types.
+    Covers scraper_tasks, scraper_workers, scraper_results and
+    aircraft_realtime_positions.
+
+    The scraper framework creates these at worker startup —
+    `TaskQueue.ensure_tables_exist()` for the first three,
+    `FR24MapSink._ensure_table()` for the last — using Postgres-specific DDL.
+    The web app reads them too and fails on a fresh SQLite DB without them, so
+    this helper builds them early with dialect-appropriate types.
 
     Idempotent: returns early if the tables already exist.
     """
-    try:
-        session.execute(text("SELECT 1 FROM scraper_tasks LIMIT 1"))
-        logger.debug("Scraper tables already exist")
-        return
-    except Exception:
-        # Roll back the aborted transaction; see ensure_report_cooldowns_table.
-        session.rollback()
-
     if is_postgres:
         pk = "BIGSERIAL PRIMARY KEY"
         ts = "TIMESTAMPTZ"
@@ -193,6 +189,7 @@ def ensure_scraper_tables(session: Session, *, is_postgres: bool) -> None:
         json_col = "JSONB"
         json_default = "JSONB NOT NULL DEFAULT '{}'"
         numeric = "NUMERIC(10, 3)"
+        dbl = "DOUBLE PRECISION"
     else:
         pk = "INTEGER PRIMARY KEY AUTOINCREMENT"
         ts = "DATETIME"
@@ -200,6 +197,17 @@ def ensure_scraper_tables(session: Session, *, is_postgres: bool) -> None:
         json_col = "TEXT"
         json_default = "TEXT NOT NULL DEFAULT '{}'"
         numeric = "REAL"
+        dbl = "REAL"
+
+    _ensure_realtime_positions_table(session, pk=pk, ts=ts, ts_default_now=ts_default_now, dbl=dbl)
+
+    try:
+        session.execute(text("SELECT 1 FROM scraper_tasks LIMIT 1"))
+        logger.debug("Scraper tables already exist")
+        return
+    except Exception:
+        # Roll back the aborted transaction; see ensure_report_cooldowns_table.
+        session.rollback()
 
     try:
         session.execute(
@@ -278,6 +286,71 @@ def ensure_scraper_tables(session: Session, *, is_postgres: bool) -> None:
     except Exception as e:
         session.rollback()
         logger.error(f"Error creating scraper tables: {e}")
+        raise
+
+
+def _ensure_realtime_positions_table(
+    session: Session, *, pk: str, ts: str, ts_default_now: str, dbl: str
+) -> None:
+    """Create aircraft_realtime_positions if missing.
+
+    Mirrors `FR24MapSink._ensure_table`, which is the writer. Kept separate from
+    the scraper_tasks block because that block short-circuits on scraper_tasks
+    alone, and this table was added later — a database bootstrapped before it
+    existed has the task tables but not this one.
+
+    Args:
+        session: Session to execute DDL on.
+        pk: Dialect-appropriate primary-key clause.
+        ts: Dialect-appropriate timestamp type.
+        ts_default_now: Timestamp type with a now() default.
+        dbl: Dialect-appropriate double-precision type.
+    """
+    try:
+        session.execute(text("SELECT 1 FROM aircraft_realtime_positions LIMIT 1"))
+        return
+    except Exception:
+        session.rollback()
+
+    try:
+        session.execute(
+            text(f"""
+                CREATE TABLE IF NOT EXISTS aircraft_realtime_positions (
+                    id {pk},
+                    fr24_id VARCHAR(32),
+                    flight_number VARCHAR(16),
+                    callsign VARCHAR(16),
+                    registration VARCHAR(16),
+                    aircraft_type VARCHAR(8),
+                    latitude {dbl},
+                    longitude {dbl},
+                    altitude INTEGER,
+                    ground_speed INTEGER,
+                    heading INTEGER,
+                    vertical_speed INTEGER,
+                    squawk VARCHAR(8),
+                    origin_iata VARCHAR(4),
+                    destination_iata VARCHAR(4),
+                    on_ground BOOLEAN DEFAULT FALSE,
+                    fr24_timestamp {ts},
+                    scraped_at {ts_default_now},
+                    scrape_task_key VARCHAR(64),
+                    UNIQUE (fr24_id, fr24_timestamp)
+                )
+            """)
+        )
+        for column in ("fr24_id", "registration", "scraped_at", "flight_number"):
+            session.execute(
+                text(
+                    f"CREATE INDEX IF NOT EXISTS idx_aircraft_realtime_{column} "
+                    f"ON aircraft_realtime_positions({column})"
+                )
+            )
+        session.commit()
+        logger.info("aircraft_realtime_positions table created successfully")
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error creating aircraft_realtime_positions table: {e}")
         raise
 
 

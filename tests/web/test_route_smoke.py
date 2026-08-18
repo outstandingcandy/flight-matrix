@@ -163,11 +163,21 @@ def test_api_search_get(app_client, path: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+# NOTE ON PARAMETERS: several handlers return 400 before touching the database
+# when a required query parameter is missing, and 400 is in `OK` above. That
+# combination hid four Postgres-only queries from this suite for a year -- the
+# probe below used to pass `?airport_code=`, which
+# `/api/flight-schedules` does not read (it reads `airport`), so the SQL never
+# ran. Probes here must carry whatever parameters get the handler past its
+# validation and into its query.
 API_MISC_GET_ROUTES = [
     "/api/statistics",
     "/api/flight-schedules",
-    "/api/flight-schedules?airport_code=JFK",
+    "/api/flight-schedules?airport=JFK",
+    "/api/flight-schedules?airport=JFK&date=2026-01-02",
+    # filter-options skips all of its SQL unless `airport` or `search` is given.
     "/api/flight-schedules/filter-options",
+    "/api/flight-schedules/filter-options?airport=JFK&search=JFK",
     "/api/flight/trail/abc123",
 ]
 

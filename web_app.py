@@ -33,6 +33,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 # Ensure the project root is on sys.path before importing anything under `src.`.
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+from src.data.dialect import beijing_date, day_of, latest_rows, minutes_ago, minutes_from_now
 from src.services.aircraft_service import AircraftService
 from src.services.airport_service import AirportService
 from src.storage import (
@@ -188,6 +189,39 @@ def inject_auth_config():
 # Timezone settings
 UTC = pytz.UTC
 BEIJING_TZ = pytz.timezone("Asia/Shanghai")
+
+# "This aircraft has a livery worth showing", as a SQL predicate on
+# `aircraft_static_info asi`.
+#
+# Three queries used to write `asi.has_special_livery = TRUE`, but no such
+# column exists in any environment: it is absent from `AircraftStaticInfo`,
+# from `_ensure_analysis_columns()` in the analysis service, and from every
+# migration script. Those queries raised "no such column" on both dialects.
+# `livery_type` is the field the analysis service actually populates (free text
+# such as "special livery" or "government VIP"), so its presence is the
+# available expression of the same idea.
+HAS_LIVERY_SQL = "(asi.livery_type IS NOT NULL AND asi.livery_type != '')"
+
+
+def _to_iso(value) -> str | None:
+    """Render a timestamp column from a raw-SQL row as an ISO-8601 string.
+
+    A `text()` query carries no type information, so the driver decides what a
+    timestamp column becomes: psycopg2 returns a `datetime`, but SQLite hands
+    back the stored string. `value.isoformat()` therefore raises
+    `AttributeError` on SQLite for SQL that works fine against Aurora.
+
+    Args:
+        value: A `datetime`, a timestamp string, or None.
+
+    Returns:
+        The ISO-8601 form, or None when `value` is None or empty.
+    """
+    if not value:
+        return None
+    if isinstance(value, str):
+        return value
+    return value.isoformat()
 
 
 def _table_exists(session, table_name: str) -> bool:
@@ -1685,7 +1719,7 @@ def get_realtime_aircraft_near_airport(airport_code: str):
     try:
         import math
 
-        from sqlalchemy import text
+        from sqlalchemy import bindparam, text
 
         radius_km_param = request.args.get("radius_km")
         radius_km = float(radius_km_param) if radius_km_param else None
@@ -1733,30 +1767,42 @@ def get_realtime_aircraft_near_airport(airport_code: str):
                 )
                 geo_filter_clause = "AND latitude BETWEEN :min_lat AND :max_lat AND longitude BETWEEN :min_lon AND :max_lon"
 
-            # Flight numbers filter clause (optional)
+            # Flight numbers filter clause (optional). `IN` with an expanding
+            # bind parameter rather than Postgres's `= ANY(:param)`, which SQLite
+            # cannot parse.
             flight_numbers_clause = ""
             if flight_numbers_filter:
-                flight_numbers_clause = "WHERE UPPER(flight_number) = ANY(:flight_numbers)"
+                flight_numbers_clause = "WHERE UPPER(flight_number) IN :flight_numbers"
                 query_params["flight_numbers"] = flight_numbers_filter
+
+            latest_positions = latest_rows(
+                columns="""fr24_id, flight_number, callsign, registration, aircraft_type,
+                        latitude, longitude, altitude, ground_speed, heading,
+                        vertical_speed, squawk, origin_iata, destination_iata,
+                        on_ground, fr24_timestamp, scraped_at""",
+                source="aircraft_realtime_positions",
+                partition_by="fr24_id",
+                order_by="scraped_at DESC",
+                where=f"""scraped_at >= {
+                    minutes_ago(minutes_back_int, is_postgres=db_manager.is_postgres)
+                }
+                      {geo_filter_clause}""",
+                is_postgres=db_manager.is_postgres,
+            )
 
             query = f"""
                 WITH latest_positions AS (
-                    SELECT DISTINCT ON (fr24_id)
-                        fr24_id, flight_number, callsign, registration, aircraft_type,
-                        latitude, longitude, altitude, ground_speed, heading,
-                        vertical_speed, squawk, origin_iata, destination_iata,
-                        on_ground, fr24_timestamp, scraped_at
-                    FROM aircraft_realtime_positions
-                    WHERE scraped_at >= NOW() - INTERVAL '{minutes_back_int} minutes'
-                      {geo_filter_clause}
-                    ORDER BY fr24_id, scraped_at DESC
+                    {latest_positions}
                 )
                 SELECT * FROM latest_positions
                 {flight_numbers_clause}
             """
 
             # Execute query
-            result = db_session.execute(text(query), query_params)
+            statement = text(query)
+            if flight_numbers_filter:
+                statement = statement.bindparams(bindparam("flight_numbers", expanding=True))
+            result = db_session.execute(statement, query_params)
 
             # Process results and calculate distance
             aircraft_list = []
@@ -1822,7 +1868,7 @@ def get_realtime_aircraft_near_airport(airport_code: str):
                     "on_ground": row.on_ground,
                     "distance_km": round(distance_km, 2),
                     "flight_status": status,
-                    "scraped_at": row.scraped_at.isoformat() if row.scraped_at else None,
+                    "scraped_at": _to_iso(row.scraped_at),
                     # Frontend compatibility fields (not available in realtime data)
                     "is_military": False,
                     "is_widebody": False,
@@ -1837,7 +1883,8 @@ def get_realtime_aircraft_near_airport(airport_code: str):
             # Match aircraft with flight schedules
             airport_iata = airport.get("iata_code", "").upper()
             if airport_iata:
-                schedule_query = """
+                is_postgres = db_manager.is_postgres
+                schedule_query = f"""
                     SELECT
                         fs.id as schedule_id,
                         fs.flight_number,
@@ -1847,7 +1894,9 @@ def get_realtime_aircraft_near_airport(airport_code: str):
                         fs.flight_type
                     FROM flight_schedules fs
                     WHERE fs.airport_iata = :airport_iata
-                      AND fs.scheduled_time BETWEEN NOW() - INTERVAL '2 hours' AND NOW() + INTERVAL '4 hours'
+                      AND fs.scheduled_time BETWEEN
+                          {minutes_from_now(-2 * 60, is_postgres=is_postgres)}
+                          AND {minutes_from_now(4 * 60, is_postgres=is_postgres)}
                 """
                 schedule_result = db_session.execute(
                     text(schedule_query), {"airport_iata": airport_iata}
@@ -1882,7 +1931,7 @@ def get_realtime_aircraft_near_airport(airport_code: str):
                         ac["has_schedule"] = True
                         sched_time = matched_schedule.get("scheduled_time")
                         ac["scheduled_time"] = (
-                            convert_utc_to_beijing(sched_time.isoformat()) if sched_time else None
+                            convert_utc_to_beijing(_to_iso(sched_time)) if sched_time else None
                         )
                         ac["schedule_status"] = matched_schedule.get("status")
                         ac["schedule_flight_type"] = matched_schedule.get("flight_type")
@@ -3509,9 +3558,19 @@ def api_admin_list_reports():
         try:
             params = {"limit": limit, "offset": offset}
 
+            latest_snapshot = latest_rows(
+                columns=(
+                    "hex, registration, aircraft_type, flight_number, is_military, current_country"
+                ),
+                source="aircraft_snapshots",
+                partition_by="hex",
+                order_by="snapshot_time DESC",
+                is_postgres=db_manager.is_postgres,
+            )
+
             if multi_user_enabled:
                 # Multi-user mode: query from user_cooldowns
-                base_query = """
+                base_query = f"""
                     SELECT
                         uc.id,
                         uc.aircraft_hex,
@@ -3531,17 +3590,7 @@ def api_admin_list_reports():
                     FROM user_cooldowns uc
                     LEFT JOIN users u ON uc.user_id = u.id
                     LEFT JOIN (
-                        -- Latest snapshot per hex (dialect-agnostic alternative
-                        -- to Postgres's DISTINCT ON).
-                        SELECT a.hex, a.registration, a.aircraft_type,
-                               a.flight_number, a.is_military, a.current_country
-                        FROM aircraft_snapshots a
-                        INNER JOIN (
-                            SELECT hex, MAX(snapshot_time) AS max_ts
-                            FROM aircraft_snapshots
-                            GROUP BY hex
-                        ) latest ON a.hex = latest.hex
-                                 AND a.snapshot_time = latest.max_ts
+                        {latest_snapshot}
                     ) s ON uc.aircraft_hex = s.hex
                 """
 
@@ -3574,14 +3623,14 @@ def api_admin_list_reports():
                     report = {
                         "id": row[0],
                         "aircraft_hex": row[1],
-                        "last_report_time": row[2].isoformat() if row[2] else None,
-                        "last_report_time_beijing": convert_utc_to_beijing(row[2].isoformat())
+                        "last_report_time": _to_iso(row[2]),
+                        "last_report_time_beijing": convert_utc_to_beijing(_to_iso(row[2]))
                         if row[2]
                         else None,
                         "last_latitude": float(row[3]) if row[3] else None,
                         "last_longitude": float(row[4]) if row[4] else None,
                         "report_count": row[5],
-                        "updated_at": row[6].isoformat() if row[6] else None,
+                        "updated_at": _to_iso(row[6]),
                         "registration": row[7],
                         "aircraft_type": row[8],
                         "flight_number": row[9],
@@ -3623,7 +3672,7 @@ def api_admin_list_reports():
 
             else:
                 # Single-user mode: query from report_cooldowns (original behavior)
-                base_query = """
+                base_query = f"""
                     SELECT
                         rc.id,
                         rc.aircraft_hex,
@@ -3640,37 +3689,9 @@ def api_admin_list_reports():
                         (SELECT ai.image_path FROM aircraft_images ai WHERE ai.registration = s.registration ORDER BY ai.display_order LIMIT 1) as image_path
                     FROM report_cooldowns rc
                     LEFT JOIN (
-                        SELECT DISTINCT ON (hex) hex, registration, aircraft_type, flight_number, is_military, current_country
-                        FROM aircraft_snapshots
-                        ORDER BY hex, snapshot_time DESC
+                        {latest_snapshot}
                     ) s ON rc.aircraft_hex = s.hex
                 """
-
-                # SQLite compatibility - use different DISTINCT syntax
-                if db_manager.is_sqlite:
-                    base_query = """
-                        SELECT
-                            rc.id,
-                            rc.aircraft_hex,
-                            rc.last_report_time,
-                            rc.last_latitude,
-                            rc.last_longitude,
-                            rc.report_count,
-                            rc.updated_at,
-                            s.registration,
-                            s.aircraft_type,
-                            s.flight_number,
-                            s.is_military,
-                            s.current_country,
-                            (SELECT ai.image_path FROM aircraft_images ai WHERE ai.registration = s.registration ORDER BY ai.display_order LIMIT 1) as image_path
-                        FROM report_cooldowns rc
-                        LEFT JOIN (
-                            SELECT hex, registration, aircraft_type, flight_number, is_military, current_country FROM aircraft_snapshots
-                            WHERE id IN (
-                                SELECT MAX(id) FROM aircraft_snapshots GROUP BY hex
-                            )
-                        ) s ON rc.aircraft_hex = s.hex
-                    """
 
                 # Add search filter
                 if search:
@@ -3694,14 +3715,14 @@ def api_admin_list_reports():
                     report = {
                         "id": row[0],
                         "aircraft_hex": row[1],
-                        "last_report_time": row[2].isoformat() if row[2] else None,
-                        "last_report_time_beijing": convert_utc_to_beijing(row[2].isoformat())
+                        "last_report_time": _to_iso(row[2]),
+                        "last_report_time_beijing": convert_utc_to_beijing(_to_iso(row[2]))
                         if row[2]
                         else None,
                         "last_latitude": float(row[3]) if row[3] else None,
                         "last_longitude": float(row[4]) if row[4] else None,
                         "report_count": row[5],
-                        "updated_at": row[6].isoformat() if row[6] else None,
+                        "updated_at": _to_iso(row[6]),
                         "registration": row[7],
                         "aircraft_type": row[8],
                         "flight_number": row[9],
@@ -3767,16 +3788,14 @@ def api_admin_report_stats():
             # Total reports
             total = session.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar() or 0
 
-            # Reports today
+            # Reports today. Comparing both sides as dates also excludes rows
+            # timestamped in the future, which `>= CURRENT_DATE` counted.
+            is_postgres = db_manager.is_postgres
             today_query = f"""
                 SELECT COUNT(*) FROM {table_name}
-                WHERE last_report_time >= CURRENT_DATE
+                WHERE {day_of("last_report_time", is_postgres=is_postgres)}
+                      = {day_of("CURRENT_TIMESTAMP", is_postgres=is_postgres)}
             """
-            if db_manager.is_sqlite:
-                today_query = f"""
-                    SELECT COUNT(*) FROM {table_name}
-                    WHERE date(last_report_time) = date('now')
-                """
             today = session.execute(text(today_query)).scalar() or 0
 
             # Total report count (sum of all report_count)
@@ -4924,20 +4943,16 @@ def get_flight_schedules():
                 outer_where_conditions.append("asi.livery_type = :livery_type")
                 params["livery_type"] = livery
             if has_livery:
-                outer_where_conditions.append("asi.has_special_livery = TRUE")
+                outer_where_conditions.append(HAS_LIVERY_SQL)
             outer_where_clause = (
                 " AND ".join(outer_where_conditions) if outer_where_conditions else "1=1"
             )
 
             # Main query: first deduplicate flights, then join with asi and filter by livery
             # This is much faster because we join only ~hundreds of flights instead of scanning 100k+ asi rows
-            query = f"""
-                WITH base_data AS (
-                    SELECT DISTINCT ON (
-                        COALESCE(fs.flight_number, fs.callsign),
-                        fs.scheduled_time::date
-                    )
-                        fs.id,
+            is_postgres = db_manager.is_postgres
+            base_data = latest_rows(
+                columns="""fs.id,
                         fs.flight_type,
                         fs.flight_number,
                         fs.callsign,
@@ -4952,14 +4967,22 @@ def get_flight_schedules():
                         fs.actual_time,
                         fs.status,
                         fs.terminal,
-                        fs.gate
-                    FROM flight_schedules fs
-                    WHERE {where_clause}
-                    ORDER BY
-                        COALESCE(fs.flight_number, fs.callsign),
-                        fs.scheduled_time::date,
-                        CASE WHEN fs.aircraft_registration IS NOT NULL THEN 0 ELSE 1 END,
-                        fs.scheduled_time DESC
+                        fs.gate""",
+                source="flight_schedules fs",
+                partition_by=(
+                    "COALESCE(fs.flight_number, fs.callsign), "
+                    f"{day_of('fs.scheduled_time', is_postgres=is_postgres)}"
+                ),
+                order_by=(
+                    "CASE WHEN fs.aircraft_registration IS NOT NULL THEN 0 ELSE 1 END, "
+                    "fs.scheduled_time DESC"
+                ),
+                where=where_clause,
+                is_postgres=is_postgres,
+            )
+            query = f"""
+                WITH base_data AS (
+                    {base_data}
                 ),
                 -- Join with aircraft_static_info and apply livery filter
                 filtered_data AS (
@@ -5048,31 +5071,32 @@ def get_flight_schedules():
                     outer_livery_conditions.append("asi.livery_type = :livery_type")
                     type_count_params["livery_type"] = livery
                 if has_livery:
-                    outer_livery_conditions.append("asi.has_special_livery = TRUE")
+                    outer_livery_conditions.append(HAS_LIVERY_SQL)
                 outer_livery_clause = (
                     " AND ".join(outer_livery_conditions) if outer_livery_conditions else "1=1"
                 )
 
+                deduped_types = latest_rows(
+                    columns="fs.flight_type, fs.aircraft_registration",
+                    source="flight_schedules fs",
+                    partition_by=(
+                        "COALESCE(fs.flight_number, fs.callsign), "
+                        f"{day_of('fs.scheduled_time', is_postgres=is_postgres)}, "
+                        "fs.flight_type"
+                    ),
+                    order_by=(
+                        "CASE WHEN fs.aircraft_registration IS NOT NULL THEN 0 ELSE 1 END, "
+                        "fs.scheduled_time DESC"
+                    ),
+                    where=base_where_clause,
+                    is_postgres=is_postgres,
+                )
                 type_count_query = f"""
                     SELECT
                         COUNT(*) FILTER (WHERE flight_type = 'arrival') as arrivals,
                         COUNT(*) FILTER (WHERE flight_type = 'departure') as departures
                     FROM (
-                        SELECT DISTINCT ON (
-                            COALESCE(fs.flight_number, fs.callsign),
-                            fs.scheduled_time::date,
-                            fs.flight_type
-                        )
-                            fs.flight_type,
-                            fs.aircraft_registration
-                        FROM flight_schedules fs
-                        WHERE {base_where_clause}
-                        ORDER BY
-                            COALESCE(fs.flight_number, fs.callsign),
-                            fs.scheduled_time::date,
-                            fs.flight_type,
-                            CASE WHEN fs.aircraft_registration IS NOT NULL THEN 0 ELSE 1 END,
-                            fs.scheduled_time DESC
+                        {deduped_types}
                     ) deduped
                     LEFT JOIN aircraft_static_info asi ON deduped.aircraft_registration = asi.registration
                     WHERE {outer_livery_clause}
@@ -5100,13 +5124,13 @@ def get_flight_schedules():
                     "remote_airport_name": row[7],
                     "aircraft_type": row[8],
                     "aircraft_registration": row[9],
-                    "scheduled_time": convert_utc_to_beijing(scheduled_time.isoformat())
+                    "scheduled_time": convert_utc_to_beijing(_to_iso(scheduled_time))
                     if scheduled_time
                     else None,
-                    "estimated_time": convert_utc_to_beijing(estimated_time.isoformat())
+                    "estimated_time": convert_utc_to_beijing(_to_iso(estimated_time))
                     if estimated_time
                     else None,
-                    "actual_time": convert_utc_to_beijing(actual_time.isoformat())
+                    "actual_time": convert_utc_to_beijing(_to_iso(actual_time))
                     if actual_time
                     else None,
                     "status": row[13],
@@ -5241,9 +5265,10 @@ def get_flight_schedule_filter_options():
 
                 # Execute all 3 queries in a single round-trip using UNION ALL
                 # This is faster than 3 separate queries
+                local_day = beijing_date("fs.scheduled_time", is_postgres=db_manager.is_postgres)
                 combined_query = f"""
                     -- Query 1: Aircraft types
-                    SELECT 'type' as query_type, fs.aircraft_type as value, COUNT(DISTINCT fs.aircraft_registration)::text as count
+                    SELECT 'type' as query_type, fs.aircraft_type as value, CAST(COUNT(DISTINCT fs.aircraft_registration) AS TEXT) as count
                     FROM flight_schedules fs
                     WHERE fs.airport_iata = :airport_iata
                       AND fs.aircraft_type IS NOT NULL
@@ -5254,11 +5279,11 @@ def get_flight_schedule_filter_options():
                     UNION ALL
 
                     -- Query 2: Liveries
-                    SELECT 'livery' as query_type, asi.livery_type as value, COUNT(DISTINCT fs.aircraft_registration)::text as count
+                    SELECT 'livery' as query_type, asi.livery_type as value, CAST(COUNT(DISTINCT fs.aircraft_registration) AS TEXT) as count
                     FROM flight_schedules fs
                     JOIN aircraft_static_info asi ON fs.aircraft_registration = asi.registration
                     WHERE fs.airport_iata = :airport_iata
-                      AND asi.has_special_livery = TRUE
+                      AND {HAS_LIVERY_SQL}
                       {date_filter}
                     GROUP BY asi.livery_type
 
@@ -5266,12 +5291,12 @@ def get_flight_schedule_filter_options():
 
                     -- Query 3: Dates
                     SELECT 'date' as query_type,
-                           TO_CHAR(DATE(fs.scheduled_time AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Shanghai'), 'YYYY-MM-DD') as value,
+                           {local_day} as value,
                            '0' as count
                     FROM flight_schedules fs
                     WHERE fs.airport_iata = :airport_iata
                       {date_filter}
-                    GROUP BY DATE(fs.scheduled_time AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Shanghai')
+                    GROUP BY {local_day}
                 """
                 combined_result = session.execute(
                     text(combined_query), {"airport_iata": airport, **params}
