@@ -61,6 +61,32 @@ class NotificationError(FlightMatrixError):
     """
 
 
+class StorageError(FlightMatrixError):
+    """Raised when an object-storage operation fails.
+
+    Examples:
+        - S3 / GCS upload or download failures
+        - Missing bucket configuration
+        - Permission errors
+    """
+
+
+class ObjectNotFoundError(StorageError):
+    """Raised when an object-storage key does not exist.
+
+    Kept distinct from :class:`StorageError` so callers can treat "absent"
+    differently from "broken", which is how the S3 call sites already behave
+    (they special-case ``NoSuchKey``).
+
+    Attributes:
+        key: The object key that was not found.
+    """
+
+    def __init__(self, message: str, key: str | None = None) -> None:
+        super().__init__(message)
+        self.key = key
+
+
 class SearchError(FlightMatrixError):
     """Raised when there is a search provider error.
 

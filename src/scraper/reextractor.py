@@ -1,8 +1,9 @@
 """
 ReExtractor for extracting fields from saved HTML files.
 
-Enables batch re-extraction of fields from HTML files stored in S3,
-useful when extraction logic changes or new fields are added.
+Enables batch re-extraction of fields from HTML files held in object storage
+(S3, GCS or the local filesystem depending on `DEPLOY_TARGET`), useful when
+extraction logic changes or new fields are added.
 """
 
 import gzip
@@ -10,24 +11,27 @@ import logging
 from collections.abc import Iterator
 from typing import Any
 
-import boto3
-from botocore.exceptions import ClientError
 from resilient_scraper.extractors.base import BaseExtractor
 from resilient_scraper.scrapers.aviation.airport_data.extractor import AirportDataExtractor
 from resilient_scraper.scrapers.aviation.jetphotos.extractor import JetPhotosExtractor
+
+from src.core.exceptions import ObjectNotFoundError, StorageError
+from src.storage.base import ObjectStorage
 
 logger = logging.getLogger("scraper.reextractor")
 
 
 class ReExtractor:
-    """Re-extract fields from saved HTML files in S3.
+    """Re-extract fields from saved HTML files in object storage.
 
-    Supports batch processing of HTML files stored in S3, enabling
-    re-extraction when extraction logic changes or new fields are added.
+    Supports batch processing of stored HTML files, enabling re-extraction
+    when extraction logic changes or new fields are added.
 
     Example:
         ```python
-        reextractor = ReExtractor(s3_bucket="my-bucket")
+        from src.storage import StorageFactory
+
+        reextractor = ReExtractor(storage=StorageFactory.create(config))
 
         # Single file re-extraction
         fields = reextractor.reextract(
@@ -48,19 +52,13 @@ class ReExtractor:
         "airport_data": AirportDataExtractor,
     }
 
-    def __init__(
-        self,
-        s3_bucket: str,
-        s3_client: Any = None,
-    ) -> None:
+    def __init__(self, storage: ObjectStorage) -> None:
         """Initialize the ReExtractor.
 
         Args:
-            s3_bucket: S3 bucket name containing HTML files.
-            s3_client: Optional boto3 S3 client (created if not provided).
+            storage: Object storage holding the saved HTML files.
         """
-        self.s3_bucket = s3_bucket
-        self.s3_client = s3_client or boto3.client("s3")
+        self.storage = storage
 
         # Initialize extractors
         self.extractors: dict[str, BaseExtractor] = {
@@ -83,35 +81,31 @@ class ReExtractor:
             raise ValueError(f"Unknown source: {source}. Supported: {list(self.extractors.keys())}")
         return self.extractors[source]
 
-    def download_html(self, s3_key: str) -> str:
-        """Download HTML content from S3.
+    def download_html(self, key: str) -> str:
+        """Download HTML content from object storage.
 
         Args:
-            s3_key: S3 object key (path within bucket).
+            key: Object key (path within the bucket or storage root).
 
         Returns:
             HTML content as string.
 
         Raises:
-            FileNotFoundError: If the S3 object does not exist.
+            FileNotFoundError: If the object does not exist.
             RuntimeError: If download fails.
         """
         try:
-            response = self.s3_client.get_object(Bucket=self.s3_bucket, Key=s3_key)
-            content = response["Body"].read()
-
-            # Handle gzip-compressed content
-            if s3_key.endswith(".gz"):
-                content = gzip.decompress(content)
-
-            return content.decode("utf-8")
-        except ClientError as e:
-            error_code = e.response.get("Error", {}).get("Code", "")
-            if error_code == "NoSuchKey":
-                raise FileNotFoundError(
-                    f"HTML file not found: s3://{self.s3_bucket}/{s3_key}"
-                ) from e
+            content = self.storage.download_bytes(key)
+        except ObjectNotFoundError as e:
+            raise FileNotFoundError(f"HTML file not found: {key}") from e
+        except StorageError as e:
             raise RuntimeError(f"Failed to download HTML: {e}") from e
+
+        # Handle gzip-compressed content
+        if key.endswith(".gz"):
+            content = gzip.decompress(content)
+
+        return content.decode("utf-8")
 
     def reextract(
         self,
@@ -222,25 +216,22 @@ class ReExtractor:
         prefix: str,
         max_files: int = 1000,
     ) -> list[str]:
-        """List HTML files in S3 under a given prefix.
+        """List HTML files in object storage under a given prefix.
 
         Args:
-            prefix: S3 key prefix to search under.
+            prefix: Key prefix to search under.
             max_files: Maximum number of files to return.
 
         Returns:
-            List of S3 keys for HTML files.
+            List of object keys for HTML files.
         """
         html_files: list[str] = []
-        paginator = self.s3_client.get_paginator("list_objects_v2")
 
-        for page in paginator.paginate(Bucket=self.s3_bucket, Prefix=prefix):
-            for obj in page.get("Contents", []):
-                key = obj["Key"]
-                if key.endswith(".html") or key.endswith(".html.gz"):
-                    html_files.append(key)
-                    if len(html_files) >= max_files:
-                        return html_files
+        for key in self.storage.list_keys(prefix):
+            if key.endswith((".html", ".html.gz")):
+                html_files.append(key)
+                if len(html_files) >= max_files:
+                    return html_files
 
         return html_files
 

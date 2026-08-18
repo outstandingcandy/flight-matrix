@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Re-extract fields from saved HTML files in S3.
+Re-extract fields from saved HTML files in object storage.
+
+The storage backend follows `DEPLOY_TARGET` (S3 on aws, GCS on gcp, the local
+filesystem otherwise); `--bucket` overrides the configured bucket.
 
 This script enables batch re-extraction of metadata fields from HTML files
 that were previously saved during scraping. Useful when:
@@ -39,6 +42,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.scraper.reextractor import ReExtractor
+from src.storage import StorageFactory
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,8 +51,9 @@ logging.basicConfig(
 logger = logging.getLogger("reextract_fields")
 
 
-# Default S3 bucket for HTML files; set S3_BUCKET_NAME in env to override.
-DEFAULT_S3_BUCKET = os.environ.get("S3_BUCKET_NAME", "")
+# Default bucket for HTML files; set S3_BUCKET_NAME (aws) or
+# GCS_ASSETS_BUCKET (gcp) in env to override.
+DEFAULT_BUCKET = os.environ.get("S3_BUCKET_NAME", "") or os.environ.get("GCS_ASSETS_BUCKET", "")
 
 # Default prefixes for each source
 DEFAULT_PREFIXES = {
@@ -224,12 +229,12 @@ def main() -> int:
     )
     parser.add_argument(
         "--bucket",
-        default=DEFAULT_S3_BUCKET,
-        help=f"S3 bucket name (default: {DEFAULT_S3_BUCKET})",
+        default=DEFAULT_BUCKET,
+        help=f"Object storage bucket name (default: {DEFAULT_BUCKET})",
     )
     parser.add_argument(
         "--prefix",
-        help="S3 prefix to search for HTML files (default: source-specific)",
+        help="Key prefix to search for HTML files (default: source-specific)",
     )
     parser.add_argument(
         "--file",
@@ -266,7 +271,8 @@ def main() -> int:
         help="Output results to JSON file",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Enable verbose logging",
     )
@@ -276,8 +282,8 @@ def main() -> int:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    # Initialize reextractor
-    reextractor = ReExtractor(s3_bucket=args.bucket)
+    # Initialize reextractor on the storage backend for the active target
+    reextractor = ReExtractor(storage=StorageFactory.create_from_dict({"bucket": args.bucket}))
 
     # List extractors mode
     if args.list_extractors:
@@ -309,7 +315,7 @@ def main() -> int:
         html_paths = [args.file]
     else:
         prefix = args.prefix or DEFAULT_PREFIXES.get(args.source, "")
-        logger.info(f"Listing HTML files from s3://{args.bucket}/{prefix}")
+        logger.info(f"Listing HTML files from {args.bucket or 'local storage'}/{prefix}")
         html_paths = reextractor.list_html_files(prefix, max_files=args.limit)
         logger.info(f"Found {len(html_paths)} HTML files")
 
@@ -342,7 +348,9 @@ def main() -> int:
             elif args.update_db and db_engine:
                 # Update database
                 if args.source == "jetphotos":
-                    photo_id = fields.get("jetphotos_id") or context.get("source_url", "").split("/")[-1]
+                    photo_id = (
+                        fields.get("jetphotos_id") or context.get("source_url", "").split("/")[-1]
+                    )
                     if photo_id:
                         if update_jetphotos_metadata(db_engine, photo_id, fields):
                             update_count += 1

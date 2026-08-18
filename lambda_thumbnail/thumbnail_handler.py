@@ -6,6 +6,15 @@ to the jetphotos_images folder. It automatically generates thumbnails and upload
 them to the jetphotos_thumbnails folder.
 
 Trigger: S3 PUT events on data/jetphotos_images/*
+
+This handler deliberately talks to boto3 directly rather than going through
+`src.storage`: `scripts/deploy_thumbnail_lambda.sh` zips this single file, so
+the deployment package has no `src/` tree, and the function only ever runs on
+the aws deployment target behind an S3 event notification. The gcp and local
+targets get the same thumbnails from `scripts/generate_thumbnails.py`, which
+does use the storage abstraction. Keep the two in sync: THUMB_SIZE,
+THUMB_QUALITY, the `_full_` -> `_thumb_` key mapping, and the Cache-Control
+header must match.
 """
 
 import io

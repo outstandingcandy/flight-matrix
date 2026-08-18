@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Generate thumbnails for aircraft images stored in S3.
+Generate thumbnails for aircraft images held in object storage.
+
+The storage backend follows `DEPLOY_TARGET` (S3 on aws, GCS on gcp, the local
+filesystem otherwise).
 
 Usage:
     python scripts/generate_thumbnails.py --count          # Count images needing thumbnails
@@ -10,113 +13,124 @@ Usage:
 """
 
 import argparse
-import boto3
 import io
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from PIL import Image
-import sys
 import os
+import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from PIL import Image
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger('thumbnail_generator')
+from src.core.exceptions import StorageError
+from src.storage import ObjectStorage, StorageFactory
+from src.utils.yaml_config import YAMLConfig
 
-# Configuration (read from env; S3_BUCKET_NAME is required)
-S3_BUCKET = os.environ.get('S3_BUCKET_NAME') or ''
-S3_REGION = os.environ.get('AWS_REGION', 'us-east-1')
-if not S3_BUCKET:
-    raise SystemExit('S3_BUCKET_NAME must be set in the environment')
-SOURCE_PREFIX = 'data/jetphotos_images/'
-THUMB_PREFIX = 'data/jetphotos_thumbnails/'
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger("thumbnail_generator")
+
+SOURCE_PREFIX = "data/jetphotos_images/"
+THUMB_PREFIX = "data/jetphotos_thumbnails/"
 THUMB_SIZE = (400, 300)  # width, height
 THUMB_QUALITY = 85
+THUMB_CACHE_CONTROL = "public, max-age=31536000"  # 1 year cache
+SOURCE_EXTENSIONS = (".jpg", ".jpeg", ".png")
 
 
 class ThumbnailGenerator:
-    def __init__(self):
-        self.s3 = boto3.client('s3', region_name=S3_REGION)
+    """Resizes stored aircraft images into CDN-cacheable thumbnails."""
 
-    def list_source_images(self) -> list:
-        """List all source images in S3."""
-        images = []
-        paginator = self.s3.get_paginator('list_objects_v2')
+    def __init__(self, storage: ObjectStorage) -> None:
+        """Initialize the generator.
 
-        for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=SOURCE_PREFIX):
-            for obj in page.get('Contents', []):
-                key = obj['Key']
-                if key.endswith('.jpg') or key.endswith('.jpeg') or key.endswith('.png'):
-                    images.append(key)
+        Args:
+            storage: Object storage holding both source images and thumbnails.
+        """
+        self.storage = storage
 
-        return images
+    def list_source_images(self) -> list[str]:
+        """List all source image keys.
 
-    def list_existing_thumbnails(self) -> set:
-        """List existing thumbnails in S3."""
-        thumbnails = set()
-        paginator = self.s3.get_paginator('list_objects_v2')
+        Returns:
+            Keys of every source image with a supported extension.
+        """
+        return [
+            key for key in self.storage.list_keys(SOURCE_PREFIX) if key.endswith(SOURCE_EXTENSIONS)
+        ]
 
-        for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=THUMB_PREFIX):
-            for obj in page.get('Contents', []):
-                key = obj['Key']
-                # Extract original filename from thumbnail path
-                filename = key.replace(THUMB_PREFIX, '').replace('_thumb', '_full')
-                thumbnails.add(filename)
+    def list_existing_thumbnails(self) -> set[str]:
+        """List the source filenames that already have a thumbnail.
 
-        return thumbnails
+        Returns:
+            Source filenames (thumbnail names mapped back to `_full`).
+        """
+        return {
+            key.replace(THUMB_PREFIX, "").replace("_thumb", "_full")
+            for key in self.storage.list_keys(THUMB_PREFIX)
+        }
 
     def get_thumbnail_key(self, source_key: str) -> str:
-        """Convert source image key to thumbnail key."""
-        filename = source_key.replace(SOURCE_PREFIX, '')
+        """Convert a source image key to its thumbnail key.
+
+        Args:
+            source_key: Key of the full-size image.
+
+        Returns:
+            Key the thumbnail is stored under.
+        """
+        filename = source_key.replace(SOURCE_PREFIX, "")
         # Replace _full with _thumb in filename
-        thumb_filename = filename.replace('_full_', '_thumb_')
+        thumb_filename = filename.replace("_full_", "_thumb_")
         return THUMB_PREFIX + thumb_filename
 
     def generate_thumbnail(self, source_key: str) -> bool:
-        """Generate and upload thumbnail for a single image."""
+        """Generate and upload the thumbnail for a single image.
+
+        Args:
+            source_key: Key of the full-size image.
+
+        Returns:
+            True when the thumbnail was written.
+        """
         try:
             thumb_key = self.get_thumbnail_key(source_key)
+            image_data = self.storage.download_bytes(source_key)
 
-            # Download source image
-            response = self.s3.get_object(Bucket=S3_BUCKET, Key=source_key)
-            image_data = response['Body'].read()
-
-            # Open and resize image
             img = Image.open(io.BytesIO(image_data))
 
             # Convert to RGB if necessary (for PNG with alpha)
-            if img.mode in ('RGBA', 'P'):
-                img = img.convert('RGB')
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
 
             # Create thumbnail maintaining aspect ratio
             img.thumbnail(THUMB_SIZE, Image.Resampling.LANCZOS)
 
-            # Save to buffer
             buffer = io.BytesIO()
-            img.save(buffer, format='JPEG', quality=THUMB_QUALITY, optimize=True)
-            buffer.seek(0)
+            img.save(buffer, format="JPEG", quality=THUMB_QUALITY, optimize=True)
 
-            # Upload to S3
-            self.s3.put_object(
-                Bucket=S3_BUCKET,
-                Key=thumb_key,
-                Body=buffer,
-                ContentType='image/jpeg',
-                CacheControl='public, max-age=31536000'  # 1 year cache
+            self.storage.upload_bytes(
+                thumb_key,
+                buffer.getvalue(),
+                content_type="image/jpeg",
+                cache_control=THUMB_CACHE_CONTROL,
             )
 
             return True
 
-        except Exception as e:
+        except (StorageError, OSError, ValueError) as e:
             logger.error(f"Failed to generate thumbnail for {source_key}: {e}")
             return False
 
-    def get_pending_images(self) -> list:
-        """Get list of images that need thumbnails."""
+    def get_pending_images(self) -> list[str]:
+        """Find images that have no thumbnail yet.
+
+        Returns:
+            Source keys still needing a thumbnail.
+        """
         logger.info("Listing source images...")
         source_images = self.list_source_images()
         logger.info(f"Found {len(source_images)} source images")
@@ -128,14 +142,22 @@ class ThumbnailGenerator:
         # Find images without thumbnails
         pending = []
         for source_key in source_images:
-            filename = source_key.replace(SOURCE_PREFIX, '')
+            filename = source_key.replace(SOURCE_PREFIX, "")
             if filename not in existing_thumbs:
                 pending.append(source_key)
 
         return pending
 
-    def process_batch(self, images: list, workers: int = 4) -> tuple:
-        """Process a batch of images with parallel workers."""
+    def process_batch(self, images: list[str], workers: int = 4) -> tuple[int, int]:
+        """Process a batch of images with parallel workers.
+
+        Args:
+            images: Source keys to process.
+            workers: Thread pool size.
+
+        Returns:
+            Tuple of (success_count, failed_count).
+        """
         success = 0
         failed = 0
         total = len(images)
@@ -160,16 +182,25 @@ class ThumbnailGenerator:
         return success, failed
 
 
-def main():
-    parser = argparse.ArgumentParser(description='Generate thumbnails for aircraft images')
-    parser.add_argument('--count', action='store_true', help='Count images needing thumbnails')
-    parser.add_argument('--limit', type=int, help='Process up to N images')
-    parser.add_argument('--all', action='store_true', help='Process all pending images')
-    parser.add_argument('--workers', type=int, default=8, help='Number of parallel workers (default: 8)')
+def main() -> None:
+    """Parse arguments and run thumbnail generation."""
+    parser = argparse.ArgumentParser(description="Generate thumbnails for aircraft images")
+    parser.add_argument("--count", action="store_true", help="Count images needing thumbnails")
+    parser.add_argument("--limit", type=int, help="Process up to N images")
+    parser.add_argument("--all", action="store_true", help="Process all pending images")
+    parser.add_argument("--config", default="config/config.yaml", help="Config file path")
+    parser.add_argument(
+        "--workers", type=int, default=8, help="Number of parallel workers (default: 8)"
+    )
 
     args = parser.parse_args()
 
-    generator = ThumbnailGenerator()
+    try:
+        storage = StorageFactory.create(YAMLConfig(args.config))
+    except StorageError as e:
+        raise SystemExit(f"Object storage unavailable: {e}") from e
+
+    generator = ThumbnailGenerator(storage)
 
     if args.count:
         pending = generator.get_pending_images()
@@ -189,19 +220,19 @@ def main():
 
     # Limit if specified
     if args.limit:
-        pending = pending[:args.limit]
+        pending = pending[: args.limit]
 
     print(f"\nProcessing {len(pending)} images with {args.workers} workers...")
 
     success, failed = generator.process_batch(pending, workers=args.workers)
 
-    print(f"\n{'='*50}")
-    print(f"Thumbnail Generation Complete:")
+    print(f"\n{'=' * 50}")
+    print("Thumbnail Generation Complete:")
     print(f"  Success: {success}")
     print(f"  Failed: {failed}")
     print(f"  Total: {len(pending)}")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
