@@ -23,6 +23,7 @@ from resilient_scraper.scrapers.aviation.jetphotos.models import (
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
+from src.core.exceptions import StorageError
 from src.storage.base import ObjectStorage
 
 if TYPE_CHECKING:
@@ -36,9 +37,9 @@ class JetPhotosSink:
 
     Args:
         database_url: SQLAlchemy URL. An empty value disables the DB writes.
-        storage: Object storage for this deployment target, used to write
-            thumbnails. ``None`` disables thumbnail generation, leaving the
-            backfill script as the only producer.
+        storage: Object storage for this deployment target, used by
+            :meth:`store_object` and to write thumbnails. ``None`` disables
+            both, leaving the backfill scripts as the only producers.
         images_dir: Directory the scraper downloads into, searched for a source
             image whose stored key is not resolvable as-is.
     """
@@ -49,6 +50,7 @@ class JetPhotosSink:
         storage: ObjectStorage | None = None,
         images_dir: str = "",
     ) -> None:
+        self.storage = storage
         self.db_engine: Any | None = None
         if database_url:
             try:
@@ -71,6 +73,41 @@ class JetPhotosSink:
                 # images_dir, so reading it back out of the bucket would be a
                 # wasted round trip.
                 self.thumbnails = _ThumbnailService(storage, local_dirs, prefer_local=True)
+
+    # Callback wired into scraper config as ``upload_callback``
+    def store_object(
+        self,
+        key: str,
+        data: bytes,
+        content_type: str | None = None,
+        cache_control: str | None = None,
+    ) -> bool:
+        """Write scraped bytes to this deployment's object storage.
+
+        The scraper's own upload path is boto3, so on the ``gcp`` and ``local``
+        targets it silently stored nothing: downloaded images kept only their
+        local copy and the saved page HTML that ``src/scraper/reextractor.py``
+        re-reads was never written at all. Routing it through here makes the
+        same keys appear on whichever provider is configured.
+
+        Args:
+            key: Object key chosen by the scraper.
+            data: Raw bytes to store.
+            content_type: MIME type to record with the object.
+            cache_control: ``Cache-Control`` header to serve the object with.
+
+        Returns:
+            True if the bytes were stored.
+        """
+        if self.storage is None:
+            return False
+
+        try:
+            self.storage.upload_bytes(key, data, content_type, cache_control)
+        except StorageError as e:
+            logger.warning(f"Failed to store {key}: {e}")
+            return False
+        return True
 
     # Callback wired into scraper config as ``persist_images_callback``
     def persist_images(

@@ -516,15 +516,23 @@ def _build_sinks_and_augment_configs(
 
     if "jetphotos" in configs:
         cls, cfg = configs["jetphotos"]
-        # The thumbnail step goes through ObjectStorage, so it works the same on
-        # every deployment target. The scraper's own upload path is boto3-only.
-        sink = JetPhotosSink(
+        # Everything the JetPhotos scraper stores -- the images, the saved page
+        # HTML, and the thumbnails derived from them -- goes through
+        # ObjectStorage, so it lands on whichever provider this target uses
+        # rather than only on S3.
+        storage = _build_storage(config)
+        jetphotos_sink = JetPhotosSink(
             database_url,
-            storage=_build_storage(config),
+            storage=storage,
             images_dir=str(cfg.get("images_dir", "")),
         )
-        cfg.setdefault("persist_images_callback", sink.persist_images)
-        sinks["jetphotos"] = sink
+        cfg.setdefault("persist_images_callback", jetphotos_sink.persist_images)
+        if storage is not None:
+            # Left unset when no provider could be built, so the scraper keeps
+            # its own boto3 path rather than routing uploads into a sink that
+            # has nowhere to put them.
+            cfg.setdefault("upload_callback", jetphotos_sink.store_object)
+        sinks["jetphotos"] = jetphotos_sink
 
     return sinks
 

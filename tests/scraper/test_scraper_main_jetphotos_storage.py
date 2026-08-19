@@ -115,3 +115,24 @@ class TestSinkWiring:
         assert (
             configs["jetphotos"][1]["persist_images_callback"] == sinks["jetphotos"].persist_images
         )
+
+    def test_the_upload_callback_is_wired_when_a_provider_exists(
+        self, db_url: str, tmp_path: Path
+    ) -> None:
+        """Without this the scraper falls back to boto3, which stores nothing on
+        the `gcp` and `local` targets."""
+        configs = _configs(db_url)
+        sinks = _build_sinks_and_augment_configs(
+            configs, db_url, _config("local", local={"root": str(tmp_path)})
+        )
+
+        assert configs["jetphotos"][1]["upload_callback"] == sinks["jetphotos"].store_object
+
+    def test_no_provider_leaves_the_scraper_its_own_upload_path(self, db_url: str) -> None:
+        """An `aws` deployment whose provider could not be built still has a
+        working boto3 client; routing uploads into a sink with nowhere to put
+        them would take that away."""
+        configs = _configs(db_url)
+        _build_sinks_and_augment_configs(configs, db_url)
+
+        assert "upload_callback" not in configs["jetphotos"][1]

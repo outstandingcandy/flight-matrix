@@ -13,10 +13,13 @@ This package owns the flight-matrix-specific parts:
   what the submodule Worker actually consumes.
 - `sinks/` — flight-matrix DB writes. Bound onto each aviation scraper at
   registration time so the scraper stays persistence-agnostic. `JetPhotosSink`
-  also writes each downloaded image's thumbnail, through
-  `src.media.thumbnails` and therefore through `ObjectStorage`, so it works the
-  same on `aws`, `gcp` and `local`. The scraper's own image upload still uses
-  boto3 directly and only works on `aws`.
+  additionally owns *all* storage for that scraper: the thumbnails it derives
+  (`src.media.thumbnails`) and, via the `upload_callback` config key, the images
+  and saved page HTML the scraper itself writes. All of it goes through
+  `ObjectStorage`, so it behaves the same on `aws`, `gcp` and `local`. The
+  submodule keeps a boto3 fallback for callers that inject no callback; the
+  other scrapers' uploads (`airport_data`, `planespotters`, `xiaohongshu`,
+  `ebay`) still take it and so remain AWS-only.
 - `sources/` — domain-table pollers (aircraft_static_info etc.) used by
   `LocalTaskQueue` for local-mode scraping.
 - `task_scheduler.py` / `xiaohongshu_cycle_scheduler.py` — standalone
