@@ -6,6 +6,22 @@ would plausibly type into a search box. Queries return **registrations only**
 the index can be rebuilt from scratch at any time and a stale document costs a
 missing or extra match, never a wrong one.
 
+The index answers the admin list page whole — text, the type / livery / category
+filters, the sort, the page window, the totals and the filter dropdowns — not
+just the search box (:meth:`AircraftSearchIndex.query_page`,
+:meth:`~AircraftSearchIndex.field_counts`,
+:meth:`~AircraftSearchIndex.summary_counts`). Two consequences follow:
+
+* **Ordering must be total.** Thousands of rows share one ``last_updated``, and
+  a tie under ``from``/``size`` lets a row appear on two pages or on none, so
+  ``registration`` always breaks it.
+* **Freshness is now visible on the first page load,** not only in search
+  results. A row the incremental sync has not reached yet is ordered by its
+  older ``last_updated``, and one it has never reached is absent from the list
+  entirely. Nothing in this project deletes from ``aircraft_static_info``, so
+  the opposite drift — a document with no row — only arises from manual
+  deletion; the caller hydrates from PostgreSQL and simply skips those.
+
 Two shapes of match have to work at once:
 
 * substring on identity fields — ``B-12`` finding ``B-1234``, which is what the
@@ -24,6 +40,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -34,11 +51,15 @@ logger = logging.getLogger("search.aircraft_index")
 
 __all__ = [
     "AIRCRAFT_INDEX",
+    "DERIVED_FIELDS",
     "DOCUMENT_FIELDS",
     "INDEX_SETTINGS",
     "MAPPINGS",
+    "MAX_WINDOW",
     "PROSE_FIELD",
     "SEARCH_FIELDS",
+    "SORT_FIELDS",
+    "AircraftPage",
     "AircraftSearchIndex",
     "build_document",
 ]
@@ -75,7 +96,13 @@ KEYWORD_FIELDS = ("data_source", "attention_level", "ad_status", "ps_status")
 
 BOOLEAN_FIELDS = ("is_military", "is_government", "is_vip", "images_downloaded")
 
-INTEGER_FIELDS = ("year_built",)
+INTEGER_FIELDS = ("year_built", "photographer_count")
+
+# Fields no ``aircraft_static_info`` column supplies. ``photographer_count`` is
+# aggregated from ``aircraft_images`` by :mod:`src.search.aircraft_sync`, because
+# the list page sorts on it and the index cannot sort on a value it does not
+# hold. Listed separately so the sync does not look for a column of that name.
+DERIVED_FIELDS = ("photographer_count",)
 
 # The AI report. Analysed but given no `.keyword` sub-field and no norms: it is
 # prose, nobody filters or sorts on it, and `ignore_above` would silently drop
@@ -124,6 +151,27 @@ SEARCH_FIELDS: tuple[str, ...] = (
 # while the queries this field exists to serve lose nothing ("special livery"
 # 3 either way, "a350" 252 either way).
 PROSE_FIELD = "ai_analysis"
+
+# Sort keys the list page offers -> the field that implements each. The keys are
+# the endpoint's own (`sort=photographers`), so an unknown value can never reach
+# a field name.
+SORT_FIELDS: dict[str, str] = {
+    "last_updated": "last_updated",
+    "photographers": "photographer_count",
+    "registration": "registration.keyword",
+}
+
+_DEFAULT_SORT = "last_updated"
+
+# Every sort ends here, so that rows tied on the requested field still have one
+# definite order and `from`/`size` cannot show a row twice or skip it.
+_TIEBREAK = "registration.keyword"
+
+# `index.max_result_window`, the cluster's own default. `from + size` past this
+# is rejected outright, so pages that deep have to be served by SQL — which
+# orders by the same two fields, though its tie-breaking collation is the
+# database's rather than bytewise, so the two are not identical at a boundary.
+MAX_WINDOW = 10_000
 
 _MIN_GRAM = 2
 _MAX_GRAM = 20
@@ -211,6 +259,19 @@ MAPPINGS: dict[str, Any] = {
         **{name: {"type": "date"} for name in DATE_FIELDS},
     }
 }
+
+
+@dataclass(frozen=True)
+class AircraftPage:
+    """One page of the admin aircraft list, as the index sees it.
+
+    Attributes:
+        registrations: Registrations in the order they should be rendered.
+        total: How many aircraft match the filters in total, across all pages.
+    """
+
+    registrations: list[str]
+    total: int
 
 
 def build_document(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -502,6 +563,272 @@ class AircraftSearchIndex:
             }
         }
 
+    def query_page(
+        self,
+        *,
+        text: str = "",
+        aircraft_type: str = "",
+        livery: str = "",
+        attention_levels: Sequence[str] = (),
+        sort: str = _DEFAULT_SORT,
+        order: str = "desc",
+        offset: int = 0,
+        limit: int = 20,
+    ) -> AircraftPage:
+        """Answer the admin list query: filter, sort, page and count in one request.
+
+        Unlike :meth:`search_registrations` this is the whole query, including the
+        case where the admin typed nothing at all — the first load of the page is
+        a ``match_all`` sorted by ``last_updated``.
+
+        Args:
+            text: Free-text search, empty for "no text filter".
+            aircraft_type: Exact ``aircraft_type`` to keep, empty for all.
+            livery: Exact ``livery_name`` to keep, empty for all.
+            attention_levels: ``attention_level`` values to keep; empty for all.
+                This is how the page's ``category=special`` filter is expressed.
+            sort: A key of :data:`SORT_FIELDS`; anything else sorts by
+                ``last_updated`` rather than failing, so a stale bookmark still
+                renders a list.
+            order: ``asc`` or ``desc``; anything else is ``desc``.
+            offset: Documents to skip. ``offset + limit`` must not exceed
+                :data:`MAX_WINDOW`.
+            limit: Page size.
+
+        Returns:
+            The registrations for this page and the total match count.
+
+        Raises:
+            SearchError: If the cluster cannot be reached or rejects the query,
+                which includes a window deeper than :data:`MAX_WINDOW`.
+        """
+        query = self._build_list_query(
+            text=text.strip(),
+            aircraft_type=aircraft_type.strip(),
+            livery=livery.strip(),
+            attention_levels=[level for level in attention_levels if level],
+        )
+        field = SORT_FIELDS.get(sort, SORT_FIELDS[_DEFAULT_SORT])
+        direction = "asc" if order == "asc" else "desc"
+        # `missing: _last` is the `NULLS LAST` the SQL path uses, so a page looks
+        # the same whichever backend answered it.
+        sort_clauses: list[Any] = [{field: {"order": direction, "missing": "_last"}}]
+        if field != _TIEBREAK:
+            sort_clauses.append({_TIEBREAK: {"order": "asc"}})
+
+        try:
+            response = self.client.search(
+                index=self.index,
+                body={
+                    "query": query,
+                    "_source": False,
+                    "from": max(offset, 0),
+                    "size": max(limit, 0),
+                    "sort": sort_clauses,
+                    # The page count needs the real number of matches; the
+                    # default stops counting at 10,000 and reports a lower bound.
+                    "track_total_hits": True,
+                },
+            )
+        except Exception as e:
+            raise SearchError(f"List query on {self.index} failed: {e}") from e
+
+        hits = response.get("hits", {})
+        return AircraftPage(
+            registrations=[hit["_id"] for hit in hits.get("hits", []) if hit.get("_id")],
+            total=_total_hits(hits),
+        )
+
+    def field_counts(
+        self, field: str, *, contains: str = "", limit: int = 200
+    ) -> list[tuple[str, int]]:
+        """Return a field's most common values and how many aircraft have each.
+
+        This is what fills the type and livery dropdowns, which the page loads
+        before the admin has typed anything.
+
+        Args:
+            field: A field from :data:`TEXT_FIELDS`. Its ``.keyword`` sub-field
+                is aggregated, so ``Air China Cargo`` counts as one value rather
+                than three words.
+            contains: Case-insensitive substring the value must contain, empty
+                for all values.
+            limit: Most values to return.
+
+        Returns:
+            ``(value, count)`` pairs, most common first. Values that are empty or
+            absent are never indexed, so they cannot appear; values longer than
+            the ``ignore_above`` of 256 characters have no keyword and cannot
+            either.
+
+        Raises:
+            SearchError: If ``field`` has no keyword sub-field to aggregate, or
+                the request fails.
+        """
+        if field not in TEXT_FIELDS:
+            raise SearchError(f"{field} is not one of the aggregatable text fields")
+
+        keyword = f"{field}.keyword"
+        fragment = contains.strip()
+        query: dict[str, Any] = {"match_all": {}}
+        if fragment:
+            # A whole-value wildcard, because the SQL this replaces was
+            # `LIKE '%…%'` on the column, not a word match.
+            query = {
+                "wildcard": {
+                    keyword: {"value": f"*{_escape_wildcard(fragment)}*", "case_insensitive": True}
+                }
+            }
+
+        try:
+            response = self.client.search(
+                index=self.index,
+                body={
+                    "query": query,
+                    "size": 0,
+                    "aggs": {"values": {"terms": {"field": keyword, "size": max(limit, 1)}}},
+                    "track_total_hits": False,
+                },
+            )
+        except Exception as e:
+            raise SearchError(f"Aggregation on {self.index}.{field} failed: {e}") from e
+
+        buckets = response.get("aggregations", {}).get("values", {}).get("buckets", [])
+        return [
+            (bucket["key"], int(bucket["doc_count"])) for bucket in buckets if bucket.get("key")
+        ]
+
+    def summary_counts(self, special_attention_levels: Sequence[str] = ()) -> dict[str, int]:
+        """Return the totals the list page's header shows.
+
+        Args:
+            special_attention_levels: ``attention_level`` values that count as
+                "special"; empty means none do.
+
+        Returns:
+            ``total``, ``with_images`` and ``special`` counts. ``total`` is the
+            number of *indexed* aircraft, which lags the table by at most one
+            sync interval.
+
+        Raises:
+            SearchError: If the request fails.
+        """
+        levels = [level for level in special_attention_levels if level]
+        aggregations: dict[str, Any] = {
+            "with_images": {"filter": {"term": {"images_downloaded": True}}}
+        }
+        if levels:
+            aggregations["special"] = {"filter": {"terms": {"attention_level": levels}}}
+
+        try:
+            response = self.client.search(
+                index=self.index,
+                body={
+                    "query": {"match_all": {}},
+                    "size": 0,
+                    "aggs": aggregations,
+                    "track_total_hits": True,
+                },
+            )
+        except Exception as e:
+            raise SearchError(f"Summary aggregation on {self.index} failed: {e}") from e
+
+        results = response.get("aggregations", {})
+        return {
+            "total": _total_hits(response.get("hits", {})),
+            "with_images": int(results.get("with_images", {}).get("doc_count", 0)),
+            "special": int(results.get("special", {}).get("doc_count", 0)),
+        }
+
+    def suggest_registrations(self, query: str, limit: int = 15) -> list[str]:
+        """Return registrations for the autocomplete dropdown, prefix matches first.
+
+        Args:
+            query: The fragment typed so far. Empty returns nothing.
+            limit: Most registrations to return.
+
+        Returns:
+            Registrations, those starting with the fragment before those merely
+            containing it or matching on hex code.
+
+        Raises:
+            SearchError: If the request fails.
+        """
+        fragment = query.strip()
+        if not fragment:
+            return []
+
+        try:
+            response = self.client.search(
+                index=self.index,
+                body={
+                    "query": {
+                        "bool": {
+                            "should": [
+                                {
+                                    "prefix": {
+                                        "registration.keyword": {
+                                            "value": fragment,
+                                            "case_insensitive": True,
+                                            "boost": 10,
+                                        }
+                                    }
+                                },
+                                {"match": {"registration": {"query": fragment, "boost": 2}}},
+                                {"match": {"hex_code": {"query": fragment}}},
+                            ],
+                            "minimum_should_match": 1,
+                        }
+                    },
+                    "_source": False,
+                    "size": max(limit, 1),
+                    # Relevance first so prefix matches lead, then alphabetical,
+                    # which is the order the SQL `CASE WHEN … THEN 0` produced.
+                    "sort": ["_score", {_TIEBREAK: {"order": "asc"}}],
+                    "track_total_hits": False,
+                },
+            )
+        except Exception as e:
+            raise SearchError(f"Suggest on {self.index} failed: {e}") from e
+
+        hits = response.get("hits", {}).get("hits", [])
+        return [hit["_id"] for hit in hits if hit.get("_id")]
+
+    @staticmethod
+    def _build_list_query(
+        *, text: str, aircraft_type: str, livery: str, attention_levels: Sequence[str]
+    ) -> dict[str, Any]:
+        """Build the list query: the text clause, if any, plus the exact filters.
+
+        Args:
+            text: Stripped free-text query, empty for none.
+            aircraft_type: Stripped exact type, empty for none.
+            livery: Stripped exact livery name, empty for none.
+            attention_levels: Non-empty ``attention_level`` values to keep.
+
+        Returns:
+            An OpenSearch ``query`` clause; ``match_all`` when nothing filters.
+        """
+        # `filter` rather than `must`: these are yes/no, and scoring them would
+        # only add noise to the relevance the text clause produces.
+        filters: list[dict[str, Any]] = []
+        if aircraft_type:
+            filters.append({"term": {"aircraft_type.keyword": aircraft_type}})
+        if livery:
+            filters.append({"term": {"livery_name.keyword": livery}})
+        if attention_levels:
+            filters.append({"terms": {"attention_level": list(attention_levels)}})
+
+        if not text and not filters:
+            return {"match_all": {}}
+
+        clause: dict[str, Any] = {}
+        if text:
+            clause["must"] = [AircraftSearchIndex._build_query(text)]
+        if filters:
+            clause["filter"] = filters
+        return {"bool": clause}
+
     def document_count(self) -> int:
         """Return how many documents the index holds.
 
@@ -549,6 +876,40 @@ class AircraftSearchIndex:
 
         newest = response.get("aggregations", {}).get("newest", {})
         return _parse_watermark(newest)
+
+
+def _total_hits(hits: Mapping[str, Any]) -> int:
+    """Read the match count out of a ``hits`` block.
+
+    Args:
+        hits: The ``hits`` object of a search response. ``total`` is a
+            ``{"value": n, "relation": …}`` object on current versions and a bare
+            integer on older ones.
+
+    Returns:
+        The number of matching documents, 0 when the response carries no total.
+    """
+    total = hits.get("total")
+    if isinstance(total, Mapping):
+        return int(total.get("value", 0))
+    if total is None:
+        return 0
+    return int(total)
+
+
+def _escape_wildcard(value: str) -> str:
+    """Escape the characters a ``wildcard`` query would otherwise interpret.
+
+    Args:
+        value: A literal substring an admin typed.
+
+    Returns:
+        The same substring with ``\\``, ``*`` and ``?`` escaped, so that typing
+        ``*`` looks for an asterisk rather than matching everything.
+    """
+    for character in ("\\", "*", "?"):
+        value = value.replace(character, f"\\{character}")
+    return value
 
 
 def _parse_watermark(aggregation: Mapping[str, Any]) -> datetime | None:

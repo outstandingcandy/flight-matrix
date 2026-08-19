@@ -15,6 +15,12 @@ overlap costs a little work and no correctness.
 The overlap matters because the two clocks are not the same one and rows are
 written inside transactions that commit after their timestamp is taken; without
 it, a row committed moments after a sync read the table would never be picked up.
+
+One indexed value is not a column: ``photographer_count`` is aggregated from
+``aircraft_images`` because the list page sorts on it and the index cannot sort
+on what it does not hold. Its freshness rides on the same watermark, which works
+because ``jetphotos_sink`` bumps ``last_updated`` on the aircraft whenever it
+stores new photos.
 """
 
 from __future__ import annotations
@@ -27,7 +33,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import bindparam, inspect, text
 
-from src.search.aircraft_index import DOCUMENT_FIELDS, AircraftSearchIndex, build_document
+from src.search.aircraft_index import (
+    DERIVED_FIELDS,
+    DOCUMENT_FIELDS,
+    AircraftSearchIndex,
+    build_document,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -47,6 +58,7 @@ __all__ = [
 DEFAULT_OVERLAP = timedelta(minutes=15)
 
 _TABLE = "aircraft_static_info"
+_IMAGES_TABLE = "aircraft_images"
 
 
 @dataclass(frozen=True)
@@ -92,6 +104,9 @@ def _selectable_fields(engine: Engine) -> list[str]:
     would mean no search at all rather than search without one field. Since the
     index is an accelerator, dropping the absent fields is the better trade.
 
+    ``DERIVED_FIELDS`` are excluded: they are computed by the query rather than
+    read from a column, so their absence here is expected and not worth a warning.
+
     Args:
         engine: Database engine to introspect.
 
@@ -104,12 +119,13 @@ def _selectable_fields(engine: Engine) -> list[str]:
             leave every document without an id.
     """
     available = {column["name"] for column in inspect(engine).get_columns(_TABLE)}
-    fields = [field for field in DOCUMENT_FIELDS if field in available]
+    wanted = [field for field in DOCUMENT_FIELDS if field not in DERIVED_FIELDS]
+    fields = [field for field in wanted if field in available]
 
     if "registration" not in available:
         raise ValueError(f"{_TABLE} has no registration column; nothing can be indexed")
 
-    absent = [field for field in DOCUMENT_FIELDS if field not in available]
+    absent = [field for field in wanted if field not in available]
     if absent:
         # Not an error, but it silently narrows what an admin can search on, so
         # say it out loud on every pass rather than only on the first.
@@ -119,6 +135,49 @@ def _selectable_fields(engine: Engine) -> list[str]:
             ", ".join(absent),
         )
     return fields
+
+
+def _photographer_count_sql(engine: Engine) -> tuple[str, str]:
+    """Return the SELECT item and JOIN that count an aircraft's JetPhotos contributors.
+
+    The list page can sort on this number, and sorting happens inside the index,
+    so the value has to be denormalised into the document. It is aggregated once
+    per pass and hash-joined rather than fetched per row — the same shape the
+    endpoint used when it did this in SQL on every page load.
+
+    Args:
+        engine: Database engine to introspect.
+
+    Returns:
+        A ``(select_item, join_sql)`` pair, both empty strings when
+        ``aircraft_images`` or the columns the count needs are absent. The field
+        is then simply not indexed, and sorting by it falls back to SQL.
+    """
+    inspector = inspect(engine)
+    if not inspector.has_table(_IMAGES_TABLE):
+        logger.warning(
+            "%s is absent; aircraft will be indexed without a photographer count", _IMAGES_TABLE
+        )
+        return "", ""
+
+    columns = {column["name"] for column in inspector.get_columns(_IMAGES_TABLE)}
+    if not {"registration", "photographer", "source"} <= columns:
+        logger.warning(
+            "%s lacks the columns a photographer count needs; indexing without it", _IMAGES_TABLE
+        )
+        return "", ""
+
+    return (
+        "COALESCE(pc.photographer_count, 0) AS photographer_count",
+        f"""LEFT JOIN (
+                SELECT registration, COUNT(DISTINCT photographer) AS photographer_count
+                FROM {_IMAGES_TABLE}
+                WHERE source = 'jetphotos'
+                  AND photographer IS NOT NULL
+                  AND photographer <> ''
+                GROUP BY registration
+            ) pc ON pc.registration = asi.registration""",
+    )
 
 
 def sync_aircraft_index(
@@ -149,23 +208,31 @@ def sync_aircraft_index(
         SQLAlchemyError: If the read fails.
         ValueError: If the table has no ``registration`` column.
     """
-    columns = ", ".join(_selectable_fields(engine))
+    # Every column is qualified with `asi.`: the photographer-count join below
+    # also exposes a `registration` column, so a bare name would be ambiguous.
+    select_items = [f"asi.{field}" for field in _selectable_fields(engine)]
+    photographers, join_sql = _photographer_count_sql(engine)
+    if photographers:
+        select_items.append(photographers)
+
     clauses: list[str] = []
     params: dict[str, Any] = {}
 
     if since is not None:
-        clauses.append("last_updated >= :since")
+        clauses.append("asi.last_updated >= :since")
         params["since"] = since
     if registrations is not None:
         if not registrations:
             return SyncStats(indexed=0, batches=0, since=since)
-        clauses.append("registration IN :registrations")
+        clauses.append("asi.registration IN :registrations")
         params["registrations"] = list(registrations)
 
     where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     # Ordered by primary key so that a pass which fails part-way through is
     # resumable by eye, and so tests see a deterministic batch split.
-    statement = text(f"SELECT {columns} FROM {_TABLE} {where_sql} ORDER BY id")
+    statement = text(
+        f"SELECT {', '.join(select_items)} FROM {_TABLE} asi {join_sql} {where_sql} ORDER BY asi.id"
+    )
     if registrations is not None:
         statement = statement.bindparams(bindparam("registrations", expanding=True))
 

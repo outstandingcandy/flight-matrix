@@ -11,13 +11,16 @@ knows nothing about. Nothing in it touches OpenSearch.
 
 ## Aircraft full-text index (`opensearch_client.py`, `aircraft_index.py`, `aircraft_sync.py`)
 
-The project's own OpenSearch index over `aircraft_static_info`, backing the
-`search` parameter of `/api/admin/aircraft`.
+The project's own OpenSearch index over `aircraft_static_info`. It answers the
+admin aircraft list *whole* — the text search, the type / livery / category
+filters, the sort, the page window, the total, the header counts, the two filter
+dropdowns and the registration autocomplete — including the first page load,
+where nothing is filtered at all.
 
 ```
 aircraft_static_info ──▶ aircraft_sync.sync_aircraft_index ──▶ OpenSearch
                                                                    │
-web_app.search_aircraft_registrations ◀── registrations only ◀──────┘
+web_app.with_aircraft_index ◀────── registrations only ◀────────────┘
         │
         └──▶ SQL: WHERE asi.registration IN (…)  ── rows come from PostgreSQL
 ```
@@ -25,14 +28,24 @@ web_app.search_aircraft_registrations ◀── registrations only ◀───�
 Invariants, all load-bearing:
 
 - **The index is never the source of truth.** Queries ask for
-  `_source: false` and get ids back; PostgreSQL supplies every rendered field.
-  So the index can be dropped and rebuilt at any time, and a stale document
-  costs a missing or extra match rather than a wrong row.
+  `_source: false` and get ids back; PostgreSQL supplies every rendered field,
+  for the twenty rows of one page. So the index can be dropped and rebuilt at
+  any time, and a stale document costs a missing or extra row rather than a
+  wrong one.
+- **Ordering must be total.** `query_page` always appends
+  `registration.keyword` to the sort. A batch update leaves thousands of rows
+  sharing one `last_updated`, and `from`/`size` over an ambiguous order shows a
+  row on two pages or on none.
 - **Search failure is not endpoint failure.** `get_client` returns `None` when
-  unconfigured or when `opensearch-py` is absent, `search_registrations` raises
-  `SearchError`, and `web_app.search_aircraft_registrations` turns both into
-  `None` so the caller falls back to the old `LIKE` filter. Never let a search
-  problem reach the client as a 500.
+  unconfigured or when `opensearch-py` is absent, every query method raises
+  `SearchError`, and `web_app.with_aircraft_index` turns both into `None` so the
+  caller runs its SQL branch instead. The SQL branch is not dead code: it also
+  serves pages deeper than `MAX_WINDOW`. Never let a search problem reach the
+  client as a 500.
+- **One indexed value is not a column.** `photographer_count` is aggregated
+  from `aircraft_images` by `aircraft_sync`, because the list sorts on it and
+  the index cannot sort on what it does not hold. Adding such a field needs a
+  `--full` pass, not just `ensure_index()`.
 - **Freshness comes from `last_updated`, not dual writes.** Nine raw-SQL
   statements in `src/` write this table, one of them on the hot ADS-B path;
   `aircraft_sync` resyncs off the watermark stored in the index itself

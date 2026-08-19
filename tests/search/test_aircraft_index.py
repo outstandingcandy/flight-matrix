@@ -327,6 +327,233 @@ class TestSearch:
             AircraftSearchIndex(broken).search_registrations("air china")
 
 
+class TestQueryPage:
+    """The list query: the index filters, sorts, pages and counts in one request."""
+
+    def test_an_unfiltered_page_matches_everything(self, index: AircraftSearchIndex) -> None:
+        """The admin list's first load. `search_registrations` returns nothing for
+        an empty query; this has to return the fleet instead."""
+        index.query_page()
+
+        assert index.client.last_search_body["query"] == {"match_all": {}}
+
+    def test_the_filters_are_exact_and_unscored(self, index: AircraftSearchIndex) -> None:
+        """`Air China` is one livery, not three words, and a yes/no filter has no
+        business influencing relevance."""
+        index.query_page(aircraft_type="A350", livery="Air China", attention_levels=["高"])
+
+        query = index.client.last_search_body["query"]["bool"]
+        assert query["filter"] == [
+            {"term": {"aircraft_type.keyword": "A350"}},
+            {"term": {"livery_name.keyword": "Air China"}},
+            {"terms": {"attention_level": ["高"]}},
+        ]
+        assert "must" not in query
+
+    def test_text_and_filters_combine(self, index: AircraftSearchIndex) -> None:
+        index.query_page(text="pan am", aircraft_type="B747")
+
+        query = index.client.last_search_body["query"]["bool"]
+        assert query["filter"] == [{"term": {"aircraft_type.keyword": "B747"}}]
+        assert query["must"], "the typed text was dropped"
+
+    def test_every_sort_ends_with_the_registration(self, index: AircraftSearchIndex) -> None:
+        """Thousands of rows share one `last_updated` after a batch update, and an
+        ambiguous order over `from`/`size` shows a row on two pages or on none."""
+        index.query_page(sort="last_updated", order="desc")
+
+        assert index.client.last_search_body["sort"] == [
+            {"last_updated": {"order": "desc", "missing": "_last"}},
+            {"registration.keyword": {"order": "asc"}},
+        ]
+
+    def test_sorting_by_the_tiebreak_does_not_repeat_it(self, index: AircraftSearchIndex) -> None:
+        index.query_page(sort="registration", order="asc")
+
+        assert index.client.last_search_body["sort"] == [
+            {"registration.keyword": {"order": "asc", "missing": "_last"}}
+        ]
+
+    def test_an_unknown_sort_key_falls_back_rather_than_failing(
+        self, index: AircraftSearchIndex
+    ) -> None:
+        """A stale bookmark still has to render a list."""
+        index.query_page(sort="phase_of_moon")
+
+        assert index.client.last_search_body["sort"][0] == {
+            "last_updated": {"order": "desc", "missing": "_last"}
+        }
+
+    def test_the_window_is_asked_for_as_from_and_size(self, index: AircraftSearchIndex) -> None:
+        index.query_page(offset=40, limit=20)
+
+        body = index.client.last_search_body
+        assert (body["from"], body["size"]) == (40, 20)
+        assert body["_source"] is False
+
+    def test_the_whole_match_count_is_asked_for(self, index: AircraftSearchIndex) -> None:
+        """Left to itself the cluster stops counting at 10,000 and reports a lower
+        bound, which would cap the pager at 500 pages."""
+        index.query_page()
+
+        assert index.client.last_search_body["track_total_hits"] is True
+
+    def test_the_page_and_the_total_are_returned(self, index: AircraftSearchIndex) -> None:
+        index.client.queue_hits("B-1234", "N703PA", total=1250)
+
+        page = index.query_page(limit=2)
+
+        assert page.registrations == ["B-1234", "N703PA"]
+        assert page.total == 1250
+
+    def test_a_total_reported_as_a_bare_number_is_understood(
+        self, index: AircraftSearchIndex
+    ) -> None:
+        """Clusters configured with `rest_total_hits_as_int` answer this way, and
+        reading it as a mapping would silently page over a total of zero."""
+
+        class OldStyle(FakeOpenSearch):
+            def search(self, index: str, body: dict[str, object]) -> dict[str, object]:
+                response = super().search(index, body)
+                hits = response["hits"]
+                assert isinstance(hits, dict)
+                hits["total"] = 7
+                return response
+
+        index.client = OldStyle()
+
+        assert index.query_page().total == 7
+
+    def test_a_failure_becomes_a_search_error(self) -> None:
+        """Including a window past `max_result_window`, which `web_app` avoids
+        asking for but the cluster would reject."""
+        broken = FakeOpenSearch(fail_with=ConnectionError("connection refused"))
+
+        with pytest.raises(SearchError, match="List query on"):
+            AircraftSearchIndex(broken).query_page()
+
+
+class TestFieldCounts:
+    """What fills the type and livery dropdowns."""
+
+    @staticmethod
+    def _seed(index: AircraftSearchIndex) -> None:
+        index.index_documents(
+            [
+                build_document({"registration": "B-1", "livery_name": "Star Alliance"}),
+                build_document({"registration": "B-2", "livery_name": "Star Alliance"}),
+                build_document({"registration": "B-3", "livery_name": "Retro"}),
+            ]
+        )
+
+    def test_values_come_back_most_common_first(self, index: AircraftSearchIndex) -> None:
+        self._seed(index)
+
+        assert index.field_counts("livery_name") == [("Star Alliance", 2), ("Retro", 1)]
+
+    def test_the_whole_value_is_counted_not_its_words(self, index: AircraftSearchIndex) -> None:
+        """`Star Alliance` is one dropdown entry; the analysed field would make
+        it two."""
+        self._seed(index)
+        index.field_counts("livery_name")
+
+        aggregation = index.client.last_search_body["aggs"]["values"]["terms"]
+        assert aggregation["field"] == "livery_name.keyword"
+
+    def test_a_fragment_matches_inside_the_value(self, index: AircraftSearchIndex) -> None:
+        """The SQL this replaces was `LIKE '%…%'` on the column."""
+        self._seed(index)
+
+        assert index.field_counts("livery_name", contains="alli") == [("Star Alliance", 2)]
+
+    def test_a_fragments_wildcards_are_escaped(self, index: AircraftSearchIndex) -> None:
+        """Otherwise a typed `*` would match every livery."""
+        index.field_counts("livery_name", contains="a*b")
+
+        value = index.client.last_search_body["query"]["wildcard"]["livery_name.keyword"]["value"]
+        assert value == r"*a\*b*"
+
+    def test_the_limit_is_passed_through(self, index: AircraftSearchIndex) -> None:
+        index.field_counts("aircraft_type", limit=20)
+
+        assert index.client.last_search_body["aggs"]["values"]["terms"]["size"] == 20
+
+    def test_a_field_with_no_keyword_is_refused(self, index: AircraftSearchIndex) -> None:
+        """Aggregating the analysed field would return n-grams as dropdown
+        entries, which is worse than an error."""
+        with pytest.raises(SearchError, match="aggregatable"):
+            index.field_counts("year_built")
+
+
+class TestSummaryCounts:
+    def test_the_header_counts_are_one_request(self, index: AircraftSearchIndex) -> None:
+        index.index_documents(
+            [
+                build_document(
+                    {"registration": "B-1", "images_downloaded": True, "attention_level": "高"}
+                ),
+                build_document({"registration": "B-2", "images_downloaded": False}),
+            ]
+        )
+
+        counts = index.summary_counts(("高", "极高"))
+
+        assert counts == {"total": 2, "with_images": 1, "special": 1}
+        assert len(index.client.searches) == 1
+
+    def test_no_special_levels_means_none_are_special(self, index: AircraftSearchIndex) -> None:
+        index.index_documents([build_document({"registration": "B-1", "attention_level": "高"})])
+
+        assert index.summary_counts()["special"] == 0
+
+    def test_a_failure_becomes_a_search_error(self) -> None:
+        broken = FakeOpenSearch(fail_with=ConnectionError("connection refused"))
+
+        with pytest.raises(SearchError, match="Summary aggregation"):
+            AircraftSearchIndex(broken).summary_counts()
+
+
+class TestSuggestRegistrations:
+    def test_a_prefix_match_is_boosted_above_a_substring_one(
+        self, index: AircraftSearchIndex
+    ) -> None:
+        """Typing `B-12` should offer `B-1234` before `N9B-12`."""
+        index.suggest_registrations("B-12")
+
+        clauses = index.client.last_search_body["query"]["bool"]["should"]
+        prefix = next(c["prefix"] for c in clauses if "prefix" in c)
+        assert prefix["registration.keyword"]["boost"] == 10
+        assert prefix["registration.keyword"]["case_insensitive"] is True
+
+    def test_relevance_leads_and_the_registration_breaks_ties(
+        self, index: AircraftSearchIndex
+    ) -> None:
+        """Which is the order the SQL `CASE WHEN … THEN 0` produced."""
+        index.suggest_registrations("B-12")
+
+        assert index.client.last_search_body["sort"] == [
+            "_score",
+            {"registration.keyword": {"order": "asc"}},
+        ]
+
+    def test_the_hex_code_is_searched_too(self, index: AircraftSearchIndex) -> None:
+        """An admin pasting a hex from an ADS-B feed gets the registration back."""
+        index.suggest_registrations("780abc")
+
+        should = index.client.last_search_body["query"]["bool"]["should"]
+        assert any("hex_code" in clause.get("match", {}) for clause in should)
+
+    def test_an_empty_fragment_asks_the_cluster_nothing(self, index: AircraftSearchIndex) -> None:
+        assert index.suggest_registrations("  ") == []
+        assert index.client.searches == []
+
+    def test_a_failure_becomes_a_search_error(self) -> None:
+        broken = FakeOpenSearch(fail_with=ConnectionError("connection refused"))
+
+        with pytest.raises(SearchError, match="Suggest on"):
+            AircraftSearchIndex(broken).suggest_registrations("B-12")
+
+
 class TestWatermark:
     def test_the_newest_indexed_timestamp_is_returned(self, index: AircraftSearchIndex) -> None:
         index.index_documents(

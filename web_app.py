@@ -14,8 +14,9 @@ import os
 import secrets
 import sys
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple  # noqa: UP035 - legacy
+from typing import Any, Dict, List, Optional, Tuple, TypeVar  # noqa: UP035 - legacy
 
 import pytz
 from flask import (
@@ -37,7 +38,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.core.exceptions import SearchError
 from src.data.dialect import beijing_date, day_of, latest_rows, minutes_ago, minutes_from_now
-from src.search.aircraft_index import AircraftSearchIndex
+from src.search.aircraft_index import MAX_WINDOW, AircraftPage, AircraftSearchIndex
 from src.search.opensearch_client import OpenSearchSettings, get_client
 from src.services.aircraft_service import AircraftService
 from src.services.airport_service import AirportService
@@ -66,6 +67,14 @@ if AUTH_ENABLED:
 
 # API cache for hot data (TTL ~1 hour).
 api_cache = TTLCache()
+
+# Result of one aircraft-index query; see `with_aircraft_index`.
+_T = TypeVar("_T")
+
+# `attention_level` values that make an aircraft "special" — the admin list's
+# `category=special` filter, its header count and the per-row flag all mean this
+# same set. Both the Chinese and English spellings occur in the data.
+SPECIAL_ATTENTION_LEVELS = ("高", "极高", "high", "very high")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("web_app")
@@ -286,29 +295,30 @@ def aircraft_search_index() -> AircraftSearchIndex | None:
     return AircraftSearchIndex(client, index=settings.index, max_results=settings.max_results)
 
 
-def search_aircraft_registrations(query: str) -> tuple[list[str], bool] | None:
-    """Resolve a free-text aircraft query to registrations via OpenSearch.
+def with_aircraft_index(operation: Callable[[AircraftSearchIndex], _T], what: str) -> _T | None:
+    """Run one query against the aircraft index, or report that SQL should answer.
+
+    Every index-backed endpoint goes through here so that the fallback rule lives
+    in one place: an admin page is never allowed to break because search is down.
 
     Args:
-        query: Whatever the client typed.
+        operation: Receives the index and returns whatever the caller needs.
+        what: Short description of the query, for the fallback log line.
 
     Returns:
-        A ``(registrations, truncated)`` pair, where `truncated` says the result
-        hit the configured cap and deeper pages are therefore incomplete. None
-        means the index is unusable and the caller should use its SQL filter —
-        search degrading to `LIKE` is better than an admin page 500-ing.
+        The operation's result, or None when OpenSearch is unconfigured,
+        unreachable or rejected the query — in which case the caller must use its
+        own SQL path.
     """
     index = aircraft_search_index()
     if index is None:
         return None
 
     try:
-        registrations = index.search_registrations(query)
+        return operation(index)
     except SearchError as e:
-        logger.warning(f"Aircraft search fell back to SQL: {e}")
+        logger.warning(f"{what} fell back to SQL: {e}")
         return None
-
-    return registrations, len(registrations) >= index.max_results
 
 
 def get_image_url(relative_path: str | None) -> str | None:
@@ -3250,17 +3260,21 @@ def api_admin_regenerate_api_key(user_id: int):
 def api_admin_list_aircraft():
     """List aircraft static info with pagination, filters and sorting.
 
+    OpenSearch answers the query whole — the text search, the type / livery /
+    category filters, the sort, the page window and the total — including the
+    first page load, where nothing is filtered at all. It contributes
+    registrations only; PostgreSQL still supplies every rendered field, for the
+    rows of this one page.
+
     Sorting is driven by `sort` (a whitelisted key) and `order` (`asc`/`desc`,
     defaulting per key). `sort=photographers` orders by how many distinct
     JetPhotos contributors have submitted a photo of the aircraft.
 
-    `search` goes through OpenSearch when it is configured, which widens the
-    match from registration/hex to operator, owner, manufacturer, livery, serial
-    and the AI analysis, and makes it substring- and typo-tolerant. The index
-    contributes registrations only; this query still reads every rendered field
-    from PostgreSQL. With no index reachable the previous `LIKE` filter is used,
-    so the endpoint never fails because search is down — `search_backend` in the
-    response says which one answered.
+    SQL answers instead whenever the index cannot: no cluster configured, a
+    failed query, or a page deeper than OpenSearch's `from + size` ceiling. Its
+    filters and order are the same, so the page looks the same; only the
+    collation of the registration tie-break differs, which can move a row across
+    a page boundary. `search_backend` in the response says which one answered.
     """
     from sqlalchemy import bindparam, text
 
@@ -3291,77 +3305,76 @@ def api_admin_list_aircraft():
             order = default_order
         direction = "ASC" if order == "asc" else "DESC"
 
+        # The index does the filtering, sorting and paging unless it cannot: an
+        # unreachable cluster, a failed query, or a window past its ceiling.
+        listing = (
+            with_aircraft_index(
+                lambda index: index.query_page(
+                    text=search,
+                    aircraft_type=aircraft_type,
+                    livery=livery,
+                    attention_levels=(SPECIAL_ATTENTION_LEVELS if category == "special" else ()),
+                    sort=sort,
+                    order=order,
+                    offset=offset,
+                    limit=limit,
+                ),
+                "Aircraft list",
+            )
+            if offset + limit <= MAX_WINDOW
+            else None
+        )
+        search_backend = "opensearch" if listing is not None else "sql"
+
         session = db_manager.get_session()
         try:
-            params: dict = {"limit": limit, "offset": offset}
+            params: dict = {}
             where_clauses: list[str] = []
+            page_sql = ""
 
             # Every clause is qualified with `asi.`: the photographer-count join
             # below also exposes a `registration` column, so a bare name would be
             # ambiguous.
-            # Search filter — OpenSearch when available, else registration/hex LIKE
-            search_backend = "sql"
-            search_truncated = False
-            matched: list[str] = []
-            if search:
-                found = search_aircraft_registrations(search)
-                if found is None:
+            if listing is not None:
+                # Hydration only. Expanded by SQLAlchemy into one placeholder per
+                # value, so the registrations never reach the SQL as text.
+                where_clauses.append("asi.registration IN :registrations")
+                params["registrations"] = listing.registrations
+            else:
+                if search:
                     where_clauses.append(
                         "(LOWER(asi.registration) LIKE LOWER(:search)"
                         " OR LOWER(asi.hex_code) LIKE LOWER(:search))"
                     )
                     params["search"] = f"%{search}%"
-                else:
-                    matched, search_truncated = found
-                    search_backend = "opensearch"
-                    if not matched:
-                        return jsonify(
-                            {
-                                "success": True,
-                                "aircraft": [],
-                                "total": 0,
-                                "page": page,
-                                "pages": 0,
-                                "sort": sort,
-                                "order": order,
-                                "search_backend": search_backend,
-                                "search_truncated": False,
-                            }
-                        )
-                    # Expanded by SQLAlchemy into one placeholder per value, so
-                    # the registrations never reach the SQL as text.
-                    where_clauses.append("asi.registration IN :registrations")
-                    params["registrations"] = matched
 
-            # Aircraft type filter
-            if aircraft_type:
-                where_clauses.append("asi.aircraft_type = :aircraft_type")
-                params["aircraft_type"] = aircraft_type
+                if aircraft_type:
+                    where_clauses.append("asi.aircraft_type = :aircraft_type")
+                    params["aircraft_type"] = aircraft_type
 
-            # Livery filter
-            if livery:
-                where_clauses.append("asi.livery_name = :livery")
-                params["livery"] = livery
+                if livery:
+                    where_clauses.append("asi.livery_name = :livery")
+                    params["livery"] = livery
 
-            # Category filter (only 'special' works with current data)
-            if category:
-                category_map = {
-                    "special": "asi.attention_level IN ('高', '极高', 'high', 'very high')",
-                }
-                if category in category_map:
-                    where_clauses.append(category_map[category])
+                # Category filter (only 'special' works with current data)
+                if category == "special":
+                    where_clauses.append("asi.attention_level IN :attention_levels")
+                    params["attention_levels"] = list(SPECIAL_ATTENTION_LEVELS)
+
+                # `asi.registration` breaks ties: a batch update leaves thousands
+                # of rows sharing one `last_updated` (and most aircraft share a
+                # photographer count of 0), and LIMIT/OFFSET over an ambiguous
+                # order lets a row appear on two pages or on none.
+                order_sql = f"{sort_expr} {direction} NULLS LAST"
+                if sort != "registration":
+                    order_sql += ", asi.registration"
+                page_sql = f"ORDER BY {order_sql} LIMIT :limit OFFSET :offset"
+                params["limit"] = limit
+                params["offset"] = offset
 
             where_sql = ""
             if where_clauses:
                 where_sql = "WHERE " + " AND ".join(where_clauses)
-
-            # `asi.registration` breaks ties: a batch update leaves thousands of
-            # rows sharing one `last_updated` (and most aircraft share a
-            # photographer count of 0), and LIMIT/OFFSET over an ambiguous order
-            # lets a row appear on two pages or on none.
-            order_sql = f"{sort_expr} {direction} NULLS LAST"
-            if sort != "registration":
-                order_sql += ", asi.registration"
 
             # The count is aggregated once over aircraft_images and hash-joined,
             # rather than a correlated subquery, because ORDER BY on it has to see
@@ -3394,22 +3407,24 @@ def api_admin_list_aircraft():
                     GROUP BY registration
                 ) pc ON pc.registration = asi.registration
                 {where_sql}
-                ORDER BY {order_sql}
-                LIMIT :limit OFFSET :offset
+                {page_sql}
             """
 
-            # The index ranked the matches by relevance; the list keeps the
-            # admin's own sort instead, so OpenSearch acts as a filter and the
-            # ORDER BY / LIMIT semantics of the page are unchanged.
             statement = text(query)
-            if matched:
-                statement = statement.bindparams(bindparam("registrations", expanding=True))
+            for name in ("registrations", "attention_levels"):
+                if name in params:
+                    statement = statement.bindparams(bindparam(name, expanding=True))
 
-            result = session.execute(statement, params).fetchall()
+            # An empty page needs no query, and `IN ()` is not valid SQL anyway.
+            result = (
+                []
+                if listing is not None and not listing.registrations
+                else session.execute(statement, params).fetchall()
+            )
 
             aircraft_list = []
             for row in result:
-                is_special = row[14] in ("高", "极高", "high", "very high") if row[14] else False
+                is_special = row[14] in SPECIAL_ATTENTION_LEVELS if row[14] else False
                 aircraft = {
                     "id": row[0],
                     "registration": row[1],
@@ -3436,27 +3451,35 @@ def api_admin_list_aircraft():
                 }
                 aircraft_list.append(aircraft)
 
-            # Get total count. No photographer-count join here: nothing filters on
-            # it, and the alias is what `where_sql` is written against.
-            count_query = f"""
-                SELECT COUNT(*)
-                FROM aircraft_static_info asi
-                {where_sql}
-            """
-            count_params = {k: v for k, v in params.items() if k not in ("limit", "offset")}
-            count_statement = text(count_query)
-            if matched:
-                count_statement = count_statement.bindparams(
-                    bindparam("registrations", expanding=True)
-                )
-            total = session.execute(count_statement, count_params).scalar()
-            pages = (total + limit - 1) // limit if total else 0
+            if listing is not None:
+                # `IN` returned the rows in whatever order the database found
+                # them; the index's order is the one the admin asked for. A
+                # registration the index still holds but the table no longer does
+                # is simply dropped — the index is only an accelerator.
+                hydrated = {aircraft["registration"]: aircraft for aircraft in aircraft_list}
+                aircraft_list = [
+                    hydrated[registration]
+                    for registration in listing.registrations
+                    if registration in hydrated
+                ]
+                total = listing.total
+            else:
+                # No photographer-count join here: nothing filters on it, and the
+                # alias is what `where_sql` is written against.
+                count_query = f"""
+                    SELECT COUNT(*)
+                    FROM aircraft_static_info asi
+                    {where_sql}
+                """
+                count_params = {k: v for k, v in params.items() if k not in ("limit", "offset")}
+                count_statement = text(count_query)
+                if "attention_levels" in count_params:
+                    count_statement = count_statement.bindparams(
+                        bindparam("attention_levels", expanding=True)
+                    )
+                total = session.execute(count_statement, count_params).scalar() or 0
 
-            if search_truncated:
-                logger.warning(
-                    f"Aircraft search for {search!r} hit the result cap; "
-                    f"reporting {total} of a possibly larger match set"
-                )
+            pages = (total + limit - 1) // limit if total else 0
 
             return jsonify(
                 {
@@ -3468,7 +3491,6 @@ def api_admin_list_aircraft():
                     "sort": sort,
                     "order": order,
                     "search_backend": search_backend,
-                    "search_truncated": search_truncated,
                 }
             )
 
@@ -3482,32 +3504,39 @@ def api_admin_list_aircraft():
 @app.route("/api/admin/aircraft/stats", methods=["GET"])
 @admin_required
 def api_admin_aircraft_stats():
-    """Get aircraft statistics."""
+    """Get the counts shown in the aircraft list header.
+
+    One OpenSearch request replaces three sequential `COUNT(*)` scans of
+    `aircraft_static_info`; the counts are of *indexed* aircraft, so they lag the
+    table by at most one sync interval. SQL answers when the index cannot.
+    """
     from sqlalchemy import text
 
     try:
+        # Category counts other than `special` are not derivable from the current
+        # data, by either backend.
+        empty_categories = {"widebody": 0, "cargo": 0, "military": 0}
+
+        counts = with_aircraft_index(
+            lambda index: index.summary_counts(SPECIAL_ATTENTION_LEVELS), "Aircraft stats"
+        )
+        if counts is not None:
+            return jsonify({"success": True, "stats": {**counts, **empty_categories}})
+
         session = db_manager.get_session()
         try:
-            stats = {}
+            stats = dict(empty_categories)
 
-            # Total aircraft
             stats["total"] = (
                 session.execute(text("SELECT COUNT(*) FROM aircraft_static_info")).scalar() or 0
             )
 
-            # With images
             stats["with_images"] = (
                 session.execute(
                     text("SELECT COUNT(*) FROM aircraft_static_info WHERE images_downloaded = true")
                 ).scalar()
                 or 0
             )
-
-            # Category counts from aircraft_static_info only
-            # (widebody/cargo/military not available in current data)
-            stats["widebody"] = 0
-            stats["cargo"] = 0
-            stats["military"] = 0
 
             # Special: based on attention_level
             stats["special"] = (
@@ -3532,11 +3561,33 @@ def api_admin_aircraft_stats():
 @app.route("/api/admin/aircraft/types", methods=["GET"])
 @admin_required
 def api_admin_aircraft_types():
-    """Get distinct aircraft types for filter dropdown with optional search."""
+    """Get distinct aircraft types for filter dropdown with optional search.
+
+    A terms aggregation on `aircraft_type.keyword` when the index is reachable,
+    the `GROUP BY` below when it is not. Both order by count, descending.
+    """
     from sqlalchemy import text
 
     try:
         search = request.args.get("search", "").strip()
+        narrowed = search if len(search) >= 2 else ""
+        values = with_aircraft_index(
+            lambda index: index.field_counts(
+                "aircraft_type", contains=narrowed, limit=20 if narrowed else 200
+            ),
+            "Aircraft type list",
+        )
+        if values is not None:
+            return jsonify(
+                {
+                    "success": True,
+                    "types": [
+                        {"code": value, "full_name": value, "count": count}
+                        for value, count in values
+                    ],
+                }
+            )
+
         session = db_manager.get_session()
         try:
             # Query aircraft types from aircraft_static_info
@@ -3579,11 +3630,30 @@ def api_admin_aircraft_types():
 @app.route("/api/admin/aircraft/liveries", methods=["GET"])
 @admin_required
 def api_admin_aircraft_liveries():
-    """Get distinct liveries for filter dropdown with optional search."""
+    """Get distinct liveries for filter dropdown with optional search.
+
+    A terms aggregation on `livery_name.keyword` when the index is reachable, the
+    `GROUP BY` below when it is not. Both order by count, descending.
+    """
     from sqlalchemy import text
 
     try:
         search = request.args.get("search", "").strip()
+        narrowed = search if len(search) >= 2 else ""
+        values = with_aircraft_index(
+            lambda index: index.field_counts(
+                "livery_name", contains=narrowed, limit=20 if narrowed else 200
+            ),
+            "Aircraft livery list",
+        )
+        if values is not None:
+            return jsonify(
+                {
+                    "success": True,
+                    "liveries": [{"name": value, "count": count} for value, count in values],
+                }
+            )
+
         session = db_manager.get_session()
         try:
             # Query liveries from aircraft_static_info
@@ -3626,16 +3696,49 @@ def api_admin_aircraft_liveries():
 @app.route("/api/admin/aircraft/registrations", methods=["GET"])
 @admin_required
 def api_admin_aircraft_registrations():
-    """Search aircraft registrations for autocomplete."""
-    from sqlalchemy import text
+    """Search aircraft registrations for autocomplete.
+
+    The index ranks prefix matches ahead of substring and hex-code ones; the
+    hex code and type shown beside each registration are read from PostgreSQL,
+    for those fifteen rows. The `LIKE` query below answers when the index cannot.
+    """
+    from sqlalchemy import bindparam, text
 
     try:
         search = request.args.get("search", "").strip()
         if len(search) < 2:
             return jsonify({"success": True, "registrations": []})
 
+        suggested = with_aircraft_index(
+            lambda index: index.suggest_registrations(search), "Registration autocomplete"
+        )
+
         session = db_manager.get_session()
         try:
+            if suggested is not None:
+                if not suggested:
+                    return jsonify({"success": True, "registrations": []})
+                statement = text("""
+                    SELECT registration, hex_code, aircraft_type
+                    FROM aircraft_static_info
+                    WHERE registration IN :registrations
+                """).bindparams(bindparam("registrations", expanding=True))
+                hydrated = {
+                    row[0]: {"registration": row[0], "hex_code": row[1], "aircraft_type": row[2]}
+                    for row in session.execute(statement, {"registrations": suggested}).fetchall()
+                }
+                # Ranked order, minus anything the table no longer has.
+                return jsonify(
+                    {
+                        "success": True,
+                        "registrations": [
+                            hydrated[registration]
+                            for registration in suggested
+                            if registration in hydrated
+                        ],
+                    }
+                )
+
             # Query registrations with hex_code and aircraft_type
             # Prioritize prefix matches first
             result = session.execute(
