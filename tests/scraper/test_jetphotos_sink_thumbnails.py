@@ -24,6 +24,7 @@ from PIL import Image
 from resilient_scraper.scrapers.aviation.jetphotos.models import ImageMetadata
 from sqlalchemy import create_engine, text
 
+from src.data.models import AircraftImage, AircraftStaticInfo
 from src.media.thumbnails import SOURCE_PREFIX, THUMB_PREFIX
 from src.scraper.sinks.jetphotos_sink import JetPhotosSink
 from src.storage.local import LocalStorage
@@ -49,52 +50,18 @@ def storage(tmp_path: Path) -> LocalStorage:
 def db_url(tmp_path: Path) -> str:
     """SQLite URL with the two tables the sink writes, and one aircraft row.
 
-    The sink does not create its tables — the app's migrations own them — so
-    the columns it writes are spelled out here.
+    Built from the ORM models, not from hand-written DDL. This used to spell the
+    columns out, and that hid a real defect for as long as the fixture existed:
+    the sink writes `camera`, `views`, `likes`, `badges` and `html_s3_path`, the
+    fixture created them, and `AircraftImage` declared none of the five — so
+    every database built by `create_all()` (which is what a fresh deploy does)
+    was missing them and every insert here would have failed there.
     """
     url = f"sqlite:///{tmp_path / 'jetphotos.db'}"
     engine = create_engine(url)
+    AircraftImage.__table__.create(engine)
+    AircraftStaticInfo.__table__.create(engine)
     with engine.connect() as conn:
-        conn.execute(
-            text("""
-                CREATE TABLE aircraft_static_info (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    registration VARCHAR(16),
-                    images_downloaded BOOLEAN,
-                    images_updated_at DATETIME
-                )
-            """)
-        )
-        conn.execute(
-            text("""
-                CREATE TABLE aircraft_images (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    registration VARCHAR(16),
-                    aircraft_id INTEGER,
-                    image_path TEXT,
-                    source_url TEXT,
-                    source VARCHAR(32),
-                    photographer TEXT,
-                    photo_date TEXT,
-                    upload_date TEXT,
-                    location TEXT,
-                    airport_icao TEXT,
-                    airport_name TEXT,
-                    file_size_bytes INTEGER,
-                    jetphotos_id VARCHAR(32),
-                    notes TEXT,
-                    camera TEXT,
-                    views INTEGER,
-                    likes INTEGER,
-                    badges TEXT,
-                    html_s3_path TEXT,
-                    display_order INTEGER,
-                    is_primary BOOLEAN,
-                    created_at DATETIME,
-                    updated_at DATETIME
-                )
-            """)
-        )
         conn.execute(
             text("INSERT INTO aircraft_static_info (registration) VALUES (:r)"),
             {"r": REGISTRATION},

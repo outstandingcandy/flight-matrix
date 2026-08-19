@@ -663,6 +663,12 @@ class AircraftImage(Base):
         airport_icao: Airport ICAO code
         airport_name: Airport name
         notes: Photo notes/remarks
+        camera: Camera model the photo was taken with
+        views: View count on the source site
+        likes: Like count on the source site
+        badges: Source-site badges (e.g. "Photo of the Day")
+        html_s3_path: Object-storage key of the saved source page HTML, kept so
+            `ReExtractor` can re-derive fields without re-scraping
         display_order: Order for displaying images (1 = first)
         is_primary: Whether this is the primary/main image
         width: Image width in pixels
@@ -675,7 +681,13 @@ class AircraftImage(Base):
 
     __tablename__ = "aircraft_images"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    # BIGINT on Postgres, INTEGER on SQLite. Only `INTEGER PRIMARY KEY` aliases
+    # SQLite's rowid, so a plain BigInteger PK is not auto-assigned there and any
+    # INSERT that omits `id` fails on a NOT NULL constraint. JetPhotosSink omits
+    # it, so without the variant the table `create_all()` builds is unusable.
+    id = Column(
+        BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True
+    )
     registration = Column(String(20), nullable=False, index=True)
     aircraft_id = Column(
         Integer, ForeignKey("aircraft_static_info.id", ondelete="SET NULL"), index=True
@@ -694,6 +706,15 @@ class AircraftImage(Base):
     airport_icao = Column(String(4))
     airport_name = Column(String(200))
     notes = Column(Text)
+    camera = Column(String(200))
+    views = Column(Integer)
+    likes = Column(Integer)
+    badges = Column(Text)
+
+    # Object-storage key of the saved page HTML. The scraper writes it so
+    # `src/scraper/reextractor.py` can re-run extraction over the stored pages
+    # when the extractor gains a field, instead of re-scraping JetPhotos.
+    html_s3_path = Column(String(500))
 
     # Display ordering
     display_order = Column(Integer, default=1)
@@ -740,6 +761,11 @@ class AircraftImage(Base):
             "airport_icao": self.airport_icao,
             "airport_name": self.airport_name,
             "notes": self.notes,
+            "camera": self.camera,
+            "views": self.views,
+            "likes": self.likes,
+            "badges": self.badges,
+            "html_s3_path": self.html_s3_path,
             "display_order": self.display_order,
             "is_primary": self.is_primary,
             "width": self.width,
