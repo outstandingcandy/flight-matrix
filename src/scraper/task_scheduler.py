@@ -114,6 +114,11 @@ class TaskScheduler:
         # Per-airport settings: {airport_code: {priority, min_cycle_gap}}
         self.airport_settings: dict[str, dict[str, int]] = {}
 
+        # Retention pruning is hourly, not per cycle: check_interval is measured
+        # in seconds and the horizons are measured in days, so running it on every
+        # cycle would issue thousands of DELETEs a day to expire the same rows.
+        self._last_prune: datetime | None = None
+
         # Build task type configurations
         self.task_types = self._build_task_configs()
 
@@ -280,25 +285,26 @@ class TaskScheduler:
                     config_entry["auto_create"] = True
                     task_types[task_type] = config_entry
 
-            # ADS-B Exchange Map: region-based military aircraft tracking
-            # (same GLOBAL_REGIONS grid as fr24_map, but each task also
-            # carries a dbFlags bit used by the scraper's URL filter)
+            # ADS-B Exchange Map: region-based aircraft tracking.
+            #
+            # Uses ADSBX_REGIONS, not fr24_map's GLOBAL_REGIONS — one ADSBx
+            # request has measured 11,998 aircraft over 85 degrees of latitude and
+            # 182 of longitude, so the 50 small FR24 windows re-scraped the same
+            # airspace up to eight times per cycle (see the adsbx_map_source
+            # module docstring). There is no
+            # ocean filter here: every ADSBx window spans ocean and land alike.
+            # Each task also carries a dbFlags bit for the scraper's URL filter.
             elif task_type == "adsbx_map":
                 global_coverage = type_config.get("global_coverage", False)
                 max_priority = type_config.get("max_priority", 5)
-                include_oceans = type_config.get("include_oceans", True)
                 db_flags = int(type_config.get("db_flags", 1))
 
                 if global_coverage:
-                    from src.scraper.sources.fr24_map_source import GLOBAL_REGIONS
+                    from src.scraper.sources.adsbx_map_source import ADSBX_REGIONS
 
                     regions = []
-                    for name, region_config in GLOBAL_REGIONS.items():
+                    for name, region_config in ADSBX_REGIONS.items():
                         if region_config.get("priority", 1) > max_priority:
-                            continue
-                        if not include_oceans and any(
-                            x in name.lower() for x in ("ocean", "pacific", "atlantic", "arctic")
-                        ):
                             continue
                         regions.append(
                             {
@@ -312,8 +318,7 @@ class TaskScheduler:
                     regions.sort(key=lambda x: x.get("priority", 1))
                     logger.info(
                         f"ADSBx Map global coverage enabled: {len(regions)} regions "
-                        f"(max_priority={max_priority}, include_oceans={include_oceans}, "
-                        f"dbFlags={db_flags})"
+                        f"(max_priority={max_priority}, dbFlags={db_flags})"
                     )
                 else:
                     regions = type_config.get("regions", [])
@@ -321,7 +326,9 @@ class TaskScheduler:
                 if regions:
                     config_entry["regions"] = regions
                     config_entry["db_flags"] = db_flags
-                    config_entry["min_cycle_gap"] = type_config.get("min_cycle_gap", 60)
+                    config_entry["min_cycle_gap"] = type_config.get("min_cycle_gap", 1800)
+                    config_entry["target"] = str(type_config.get("target", "military")).lower()
+                    config_entry["retention"] = type_config.get("retention", {})
                     config_entry["auto_create"] = True
                     task_types[task_type] = config_entry
 
@@ -912,6 +919,41 @@ class TaskScheduler:
 
         return created
 
+    def prune_adsbx_positions(self, target: str, retention: dict[str, Any]) -> int:
+        """Expire rows from ``adsbx_positions`` per the configured horizons.
+
+        Only the ``positions`` target is pruned. ``adsbx_military_positions`` and
+        ``aircraft_snapshots`` have accumulated without any retention policy since
+        they were created, so applying one to them here would silently delete
+        history nobody asked to lose; ``adsbx_positions`` is new and is the table
+        whose full-fleet volume made retention necessary in the first place.
+
+        Runs at most once an hour regardless of how often the cycle fires.
+
+        Args:
+            target: The configured ``scraper.scrapers.adsbx_map.target``.
+            retention: Mapping with optional ``civil_hours`` / ``military_hours``.
+
+        Returns:
+            Rows deleted this call, or 0 when skipped.
+        """
+        if target != "positions":
+            return 0
+
+        now = datetime.now(UTC)
+        if self._last_prune is not None and (now - self._last_prune) < timedelta(hours=1):
+            return 0
+        self._last_prune = now
+
+        from src.scraper.sinks.adsbx_map_sink import POSITIONS_TABLE, prune_positions
+
+        return prune_positions(
+            self.engine,
+            POSITIONS_TABLE,
+            civil_hours=int(retention.get("civil_hours", 168)),
+            military_hours=int(retention.get("military_hours", 720)),
+        )
+
     def create_image_download_tasks(
         self,
         batch_size: int = 100,
@@ -1220,7 +1262,7 @@ class TaskScheduler:
         Returns:
             Dictionary with cycle statistics.
         """
-        results = {
+        results: dict[str, Any] = {
             "cleanup": self.cleanup_orphan_tasks(),
             "stuck_tasks": self.cleanup_stuck_tasks(),
             "tasks_created": {},
@@ -1263,10 +1305,14 @@ class TaskScheduler:
                 created = self.create_adsbx_map_tasks(
                     regions=config["regions"],
                     priority=config.get("priority", 0),
-                    min_cycle_gap=config.get("min_cycle_gap", 60),
+                    min_cycle_gap=config.get("min_cycle_gap", 1800),
                     db_flags=config.get("db_flags", 1),
                 )
                 results["tasks_created"][task_type] = created
+                results["adsbx_pruned"] = self.prune_adsbx_positions(
+                    config.get("target", "military"),
+                    config.get("retention") or {},
+                )
 
             # FR24 Aircraft flight history tasks
             elif task_type == "fr24_aircraft":

@@ -165,37 +165,64 @@ scraper:
           lon: 82
           zoom: 3
 
-    # ADS-B Exchange Globe Scraper — military aircraft by default
+    # ADS-B Exchange Globe Scraper — full fleet, civil and military
     # Captures the tar1090 feed via an injected XHR hook. Requires a real
     # (non-headless) browser through Xvfb; globe.adsbexchange.com is behind
     # Cloudflare.
     adsbx_map:
-      enabled: true                   # local systemd: collecting ADSBx military
-      min_cycle_gap: 60               # minimum seconds between scrapes of the same region
+      enabled: true
       sync_to_database: true
       priority: 5
 
       # Where ADSBx data lands:
-      #   military  → adsbx_military_positions (military-only pipeline)
-      #   snapshots → aircraft_snapshots (same table as track_service / RapidAPI;
-      #               set target to this when you want ADSBx to replace or
-      #               supplement the RapidAPI feed). fr24_map is unaffected.
-      target: snapshots
-      # Keep the scraper filter on so we write only dbFlags & 1 hits —
-      # these land in aircraft_snapshots with is_military=true, alongside
-      # whatever RapidAPI also puts there.
-      military_only: true
+      #   military  → adsbx_military_positions (the original military-only table)
+      #   positions → adsbx_positions, the full fleet on its own retention clock.
+      #               Same columns as the military table, minus the `raw_data`
+      #               copy of every source row and the aircraft_static_info
+      #               bootstrap that `snapshots` performs — at full-fleet volume
+      #               those two are the expensive part, not the positions.
+      #   snapshots → aircraft_snapshots (same table as track_service / RapidAPI)
+      # fr24_map and aircraft_realtime_positions are unaffected by all three:
+      # the two feeds have no shared key (fr24_id vs hex) and are kept separate
+      # on purpose so each table is independently queryable.
+      target: positions
+      # Off, so civil traffic is stored too. With it on, ~97% of each region's
+      # rows were discarded in Python after already crossing the CDP bridge.
+      military_only: false
 
-      # Region selection — same knobs as fr24_map. GLOBAL_REGIONS is imported
-      # from fr24_map_source so tuning stays parallel.
+      # Write volume, measured over a full pass of the 6 regions below:
+      #   ~37,700 rows/pass. Per-window counts ranged 1,692..11,998 in the same
+      #   30-second collection window. A five-window run held 26,049 rows for
+      #   16,122 distinct aircraft — 1.62x duplication from the deliberate overlap.
+      # A pass is serial on the shared browser pool at ~170-200s per region, so
+      # roughly 18 minutes of wall clock. min_cycle_gap is the floor on how often
+      # one region comes round again; 1800s gives ~2 passes/hour ≈ 75,000 rows/h
+      # ≈ 1.8M rows/day. That is a coarse global sample, not a track — fine-grained
+      # position history is fr24_map's job on its much denser grid. Lowering this
+      # to 600 quadruples the daily row count; check the retention horizon below
+      # before doing that.
+      min_cycle_gap: 1800
+
+      # How long rows survive in adsbx_positions. Military is kept longer because
+      # it is ~3% of the volume and the interesting half of the data; civil is the
+      # bulk and its value decays fast. Applied by TaskScheduler each cycle.
+      retention:
+        civil_hours: 168              # 7 days
+        military_hours: 720           # 30 days
+
+      # Region selection. Grid is ADSBX_REGIONS in adsbx_map_source, sized from
+      # measured single-request captures and then verified by scraping all six —
+      # not fr24_map's 50 windows, which re-scraped the same airspace up to 8x per
+      # cycle. Every window contributed aircraft no other window saw, from 7,040
+      # down to 318. `include_oceans` has no meaning here: every window already
+      # spans ocean and land.
       global_coverage: true
       max_priority: 5
-      include_oceans: true
       db_flags: 1                     # tar1090 filter: 1=mil, 2=interesting, 4=PIA, 8=LADD
 
       # Scraper-side waits
       wait_for_load: 15               # seconds after navigation (Cloudflare + first paint)
-      collect_duration: 60            # seconds to buffer feed updates; military traffic is sparse
+      collect_duration: 60            # seconds to buffer feed updates
       save_debug_html: false
 
       # Optional custom regions (used only when global_coverage: false).

@@ -267,12 +267,15 @@ def _build_scraper_configs(
     )
 
     adsbx_cfg = scraper_config.get("adsbx_map", {})
-    # "target" routes sink output: "military" (default) → adsbx_military_positions,
-    # "snapshots" → aircraft_snapshots (same table the RapidAPI track service writes).
-    # Switching to "snapshots" also implies military_only=False so the sink sees
-    # the full fleet — otherwise the scraper would drop >99% of rows before DB.
+    # "target" routes sink output:
+    #   "military"  (default) → adsbx_military_positions
+    #   "positions"           → adsbx_positions (full fleet, own retention)
+    #   "snapshots"           → aircraft_snapshots (the table the RapidAPI track
+    #                           service writes)
+    # The latter two imply military_only=False so the sink sees the whole fleet;
+    # otherwise the scraper drops ~97% of rows before they reach the DB.
     adsbx_target = str(adsbx_cfg.get("target", "military")).lower()
-    default_military_only = adsbx_target != "snapshots"
+    default_military_only = adsbx_target not in ("snapshots", "positions")
     configs["adsbx_map"] = (
         ADSBxMapScraper,
         {
@@ -281,7 +284,10 @@ def _build_scraper_configs(
             "military_only": adsbx_cfg.get("military_only", default_military_only),
             "save_debug_html": adsbx_cfg.get("save_debug_html", False),
             "target": adsbx_target,
-            **{k: v for k, v in adsbx_cfg.items() if k != "military_only"},
+            # `military_only` and `target` are resolved above and must survive
+            # the spread of the raw YAML, which would otherwise put back the
+            # unnormalised casing and the un-defaulted filter.
+            **{k: v for k, v in adsbx_cfg.items() if k not in ("military_only", "target")},
         },
     )
 
@@ -435,14 +441,22 @@ def _build_sinks_and_augment_configs(
     if "adsbx_map" in configs:
         # Target chooses the downstream table:
         #   "military"  → adsbx_military_positions (default; original behavior)
+        #   "positions" → adsbx_positions, the full fleet. Same columns as the
+        #                 military table, but no `raw_data` copy of the source
+        #                 row and no aircraft_static_info bootstrap, because at
+        #                 full-fleet volume both of those are what hurt.
         #   "snapshots" → aircraft_snapshots (same table as the RapidAPI track
         #                 service, so the two producers are interchangeable)
+        from src.scraper.sinks.adsbx_map_sink import POSITIONS_TABLE
+
         _adsbx_cfg = configs["adsbx_map"][1]
         _target = str(_adsbx_cfg.get("target", "military")).lower()
         if _target == "snapshots":
             from src.scraper.sinks.adsbx_snapshots_sink import ADSBxSnapshotsSink
 
             sinks["adsbx_map"] = ADSBxSnapshotsSink(database_url)
+        elif _target == "positions":
+            sinks["adsbx_map"] = ADSBxMapSink(database_url, table=POSITIONS_TABLE)
         else:
             sinks["adsbx_map"] = ADSBxMapSink(database_url)
     if "fr24_aircraft" in configs:
