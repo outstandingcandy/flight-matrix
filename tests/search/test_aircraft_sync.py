@@ -10,6 +10,7 @@ SQLAlchemy, and getting that wrong is a crash rather than a wrong answer.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from datetime import datetime, timedelta
 from typing import Any
@@ -143,6 +144,81 @@ class TestIncremental:
         sync_aircraft_index(engine, index, since=incremental_start(index))
 
         assert index.document_count() == 1
+
+
+class TestSchemaDrift:
+    """The deployed schema is not the ORM model's schema.
+
+    Production `aircraft_static_info` has no `country`, `is_military`,
+    `is_government` or `is_vip` column, though `src/data/models.py` declares all
+    four. Selecting them fails the pass, which trades "search missing one field"
+    for "no search at all".
+    """
+
+    @pytest.fixture
+    def narrow_engine(self) -> Iterator[Engine]:
+        """A table with only the columns the sync cannot do without."""
+        engine = create_engine("sqlite://")
+        with engine.begin() as connection:
+            connection.execute(
+                text("""
+                CREATE TABLE aircraft_static_info (
+                    id INTEGER PRIMARY KEY,
+                    registration TEXT,
+                    operator TEXT,
+                    last_updated TIMESTAMP
+                )
+                """)
+            )
+        yield engine
+        engine.dispose()
+
+    def test_columns_the_database_lacks_are_not_selected(
+        self, narrow_engine: Engine, index: AircraftSearchIndex
+    ) -> None:
+        _insert(narrow_engine, registration="B-1234", operator="Air China")
+
+        stats = sync_aircraft_index(narrow_engine, index)
+
+        assert stats.indexed == 1
+        assert index.client.documents["B-1234"]["operator"] == "Air China"
+
+    def test_the_absent_fields_are_named_in_the_log(
+        self,
+        narrow_engine: Engine,
+        index: AircraftSearchIndex,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Silently narrowing what an admin can search on is worse than loud."""
+        _insert(narrow_engine, registration="B-1234")
+
+        with caplog.at_level(logging.WARNING):
+            sync_aircraft_index(narrow_engine, index)
+
+        assert "manufacturer" in caplog.text
+
+    def test_an_incremental_pass_survives_the_drift_too(
+        self, narrow_engine: Engine, index: AircraftSearchIndex
+    ) -> None:
+        """`last_updated` is the one non-identity column the sync depends on."""
+        _insert(narrow_engine, registration="B-1234")
+        sync_aircraft_index(narrow_engine, index)
+
+        stats = sync_aircraft_index(narrow_engine, index, since=incremental_start(index))
+
+        assert stats.indexed == 1
+
+    def test_a_table_without_registrations_is_refused(self, index: AircraftSearchIndex) -> None:
+        """Every document would be id-less, so a re-sync would append copies."""
+        engine = create_engine("sqlite://")
+        with engine.begin() as connection:
+            connection.execute(
+                text("CREATE TABLE aircraft_static_info (id INTEGER PRIMARY KEY, operator TEXT)")
+            )
+
+        with pytest.raises(ValueError, match="registration"):
+            sync_aircraft_index(engine, index)
+        engine.dispose()
 
 
 class TestRegistrationRepair:

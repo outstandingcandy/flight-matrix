@@ -19,6 +19,7 @@ from src.search.aircraft_index import (
     AIRCRAFT_INDEX,
     INDEX_SETTINGS,
     MAPPINGS,
+    PROSE_FIELD,
     AircraftSearchIndex,
     build_document,
 )
@@ -129,7 +130,39 @@ class TestEnsureIndex:
         assert properties["registration"]["analyzer"] == "identity_index"
         assert properties["registration"]["search_analyzer"] == "identity_search"
         assert properties["registration"]["fields"]["keyword"]["type"] == "keyword"
-        assert "identity_ngram" in INDEX_SETTINGS["analysis"]["tokenizer"]
+        assert "identity_ngram" in INDEX_SETTINGS["analysis"]["filter"]
+
+    def test_the_ngrams_are_cut_from_the_whole_registration(self) -> None:
+        """An n-gram *tokenizer* would split on the hyphen and then drop the
+        leading `B` for being shorter than min_gram, so `B-1234` would be
+        indexed as grams of `1234` only and `B-12` would match nothing at all.
+        A keyword tokenizer feeding an n-gram filter keeps `b1234` whole."""
+        analysis = INDEX_SETTINGS["analysis"]
+
+        assert analysis["analyzer"]["identity_index"]["tokenizer"] == "keyword"
+        assert analysis["analyzer"]["identity_index"]["filter"][-1] == "identity_ngram"
+        assert analysis["filter"]["identity_ngram"]["min_gram"] == 2
+
+    def test_the_separator_is_folded_away_on_both_sides(self) -> None:
+        """So `B1234` finds `B-1234`, and the query fragment is compared against
+        grams cut from a value whose hyphen is already gone."""
+        analysis = INDEX_SETTINGS["analysis"]
+
+        for analyzer in ("identity_index", "identity_search"):
+            assert analysis["analyzer"][analyzer]["char_filter"] == ["identity_strip"]
+        assert analysis["char_filter"]["identity_strip"]["pattern"] == "[^A-Za-z0-9]"
+
+    def test_a_hex_query_keeps_its_separators(self) -> None:
+        """Hex codes contain none, so a hyphen in the query says "registration".
+        Folding it away made `B-12` match the 261 aircraft whose hex contains
+        `b12` — none of which the SQL filter this replaces would have returned."""
+        properties = MAPPINGS["properties"]
+        analysis = INDEX_SETTINGS["analysis"]
+
+        assert properties["hex_code"]["search_analyzer"] == "hex_search"
+        assert "char_filter" not in analysis["analyzer"]["hex_search"]
+        # Still n-grammed on the way in, or a fragment could not match at all.
+        assert properties["hex_code"]["analyzer"] == "identity_index"
 
     def test_a_single_node_index_asks_for_no_replicas(self) -> None:
         """A replica that can never be assigned leaves the cluster yellow and
@@ -262,7 +295,29 @@ class TestSearch:
         clauses = index.client.last_search_body["query"]["bool"]["should"]
         multi_match = next(c["multi_match"] for c in clauses if "multi_match" in c)
         assert multi_match["operator"] == "and"
-        assert multi_match["fuzziness"] == "AUTO"
+
+    def test_the_free_text_clause_is_not_fuzzy(self, index: AircraftSearchIndex) -> None:
+        """The caller re-sorts these registrations by its own column, so a loose
+        match is not a low-ranked row, it is an equal one. On the real fleet
+        `fuzziness: AUTO` turned 40 matches for `B-12` into 241."""
+        index.search_registrations("b-12")
+
+        clauses = index.client.last_search_body["query"]["bool"]["should"]
+        multi_match = next(c["multi_match"] for c in clauses if "multi_match" in c)
+        assert "fuzziness" not in multi_match
+
+    def test_the_ai_report_is_searched_as_a_phrase(self, index: AircraftSearchIndex) -> None:
+        """Paragraphs of prose are where an AND-of-words clause goes wrong: on the
+        real fleet `B-12` matched 239 reports containing a `B` and a `12`
+        somewhere, against 1 containing the phrase — while the queries the field
+        exists to serve lose nothing ("special livery" 3 either way)."""
+        index.search_registrations("b-12")
+
+        clauses = index.client.last_search_body["query"]["bool"]["should"]
+        multi_match = next(c["multi_match"] for c in clauses if "multi_match" in c)
+        assert PROSE_FIELD not in multi_match["fields"]
+        phrase = next(c["match_phrase"] for c in clauses if "match_phrase" in c)
+        assert phrase[PROSE_FIELD]["query"] == "b-12"
 
     def test_a_cluster_failure_becomes_a_search_error(self) -> None:
         """`web_app` catches exactly this to fall back to the SQL filter."""

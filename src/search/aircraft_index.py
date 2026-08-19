@@ -11,8 +11,8 @@ Two shapes of match have to work at once:
 * substring on identity fields — ``B-12`` finding ``B-1234``, which is what the
   previous ``LIKE '%…%'`` filter promised. An n-gram analyser provides it;
   ``multi_match`` alone would not.
-* fuzzy word match on everything else — ``lufthanza`` finding the Lufthansa
-  fleet.
+* whole-word match on everything else — ``pan am`` finding an aircraft nothing
+  in its registration or hex code identifies as one.
 
 Index settings (the analysers below) are static in OpenSearch: they can only be
 set at creation time. :meth:`AircraftSearchIndex.ensure_index` therefore adds
@@ -37,6 +37,7 @@ __all__ = [
     "DOCUMENT_FIELDS",
     "INDEX_SETTINGS",
     "MAPPINGS",
+    "PROSE_FIELD",
     "SEARCH_FIELDS",
     "AircraftSearchIndex",
     "build_document",
@@ -45,7 +46,8 @@ __all__ = [
 AIRCRAFT_INDEX = DEFAULT_INDEX
 
 # Identity fields, matched by substring. Registrations and hex codes are short
-# and admins type fragments of them.
+# and admins type fragments of them. They are mapped individually below: a
+# registration's separator is optional, a hex code has none.
 IDENTITY_FIELDS = ("registration", "hex_code")
 
 # Free text: analysed, with a `.keyword` sub-field for exact filters.
@@ -113,8 +115,15 @@ SEARCH_FIELDS: tuple[str, ...] = (
     "country",
     "country_of_registration",
     "ad_location",
-    "ai_analysis",
 )
+
+# The AI report is searched as a *phrase*, not as a bag of words, so it gets its
+# own clause. Loose word matching over paragraphs of prose is where a short
+# identity query goes wrong: on the real fleet `B-12` matched 239 reports that
+# happened to contain a `B` and a `12`, against 1 that contained the phrase —
+# while the queries this field exists to serve lose nothing ("special livery"
+# 3 either way, "a350" 252 either way).
+PROSE_FIELD = "ai_analysis"
 
 _MIN_GRAM = 2
 _MAX_GRAM = 20
@@ -128,25 +137,45 @@ INDEX_SETTINGS: dict[str, Any] = {
         "max_ngram_diff": _MAX_GRAM - _MIN_GRAM,
     },
     "analysis": {
-        "tokenizer": {
-            "identity_ngram": {
-                "type": "ngram",
-                "min_gram": _MIN_GRAM,
-                "max_gram": _MAX_GRAM,
-                "token_chars": ["letter", "digit"],
+        "char_filter": {
+            # `B-1234` and `B1234` are the same aircraft, and an admin types
+            # either. Folding the separator away at both index and search time
+            # is also what lets the whole value be one token, which the n-gram
+            # filter below then slices — an n-gram *tokenizer* would treat the
+            # hyphen as a boundary and throw the leading `B` away for being
+            # shorter than min_gram.
+            "identity_strip": {
+                "type": "pattern_replace",
+                "pattern": "[^A-Za-z0-9]",
+                "replacement": "",
             }
         },
+        "filter": {
+            "identity_ngram": {"type": "ngram", "min_gram": _MIN_GRAM, "max_gram": _MAX_GRAM}
+        },
         "analyzer": {
-            # Indexing splits `B-1234` into every 2..20 character run so that a
-            # fragment matches.
+            # Indexing slices `B-1234` into every 2..20 character substring of
+            # `b1234`, so any fragment an admin types can match.
             "identity_index": {
                 "type": "custom",
-                "tokenizer": "identity_ngram",
+                "char_filter": ["identity_strip"],
+                "tokenizer": "keyword",
+                "filter": ["lowercase", "identity_ngram"],
+            },
+            # Searching does not slice: the query *is* the fragment. Re-gramming
+            # it would make `B-12` match on any two shared characters.
+            "identity_search": {
+                "type": "custom",
+                "char_filter": ["identity_strip"],
+                "tokenizer": "keyword",
                 "filter": ["lowercase"],
             },
-            # Searching does not: the query *is* the fragment, and re-gramming
-            # it would match on any two shared characters.
-            "identity_search": {
+            # Hex codes are the one identity field with no separators, so the
+            # hyphen in a query is information: `B-12` is a registration, and
+            # folding it away would match it against the 261 aircraft whose hex
+            # merely contains `b12`. The SQL filter this replaces matched none of
+            # them, for the same reason.
+            "hex_search": {
                 "type": "custom",
                 "tokenizer": "keyword",
                 "filter": ["lowercase"],
@@ -167,9 +196,13 @@ _IDENTITY: dict[str, Any] = {
     "fields": {"keyword": {"type": "keyword"}},
 }
 
+# Same n-grams, but a query is compared to them verbatim; see `hex_search`.
+_HEX: dict[str, Any] = {**_IDENTITY, "search_analyzer": "hex_search"}
+
 MAPPINGS: dict[str, Any] = {
     "properties": {
-        **dict.fromkeys(IDENTITY_FIELDS, _IDENTITY),
+        "registration": _IDENTITY,
+        "hex_code": _HEX,
         **dict.fromkeys(TEXT_FIELDS, _TEXT_WITH_KEYWORD),
         **{name: {"type": "keyword"} for name in KEYWORD_FIELDS},
         **{name: {"type": "boolean"} for name in BOOLEAN_FIELDS},
@@ -454,9 +487,16 @@ class AircraftSearchIndex:
                             # Every word has to appear somewhere; "air china
                             # cargo" should not return the whole of Air China.
                             "operator": "and",
-                            "fuzziness": "AUTO",
+                            # Deliberately *not* fuzzy. The caller re-sorts these
+                            # registrations by its own column and pages through
+                            # them in SQL, so relevance order is discarded and a
+                            # loose match is not a low-ranked row — it is an
+                            # equal one. Measured on the real fleet, `AUTO`
+                            # turned a 40-row answer for `B-12` into 241 rows of
+                            # aircraft whose AI report merely contained a `12`.
                         }
                     },
+                    {"match_phrase": {PROSE_FIELD: {"query": text}}},
                 ],
                 "minimum_should_match": 1,
             }

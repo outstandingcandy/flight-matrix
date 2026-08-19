@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import bindparam, text
+from sqlalchemy import bindparam, inspect, text
 
 from src.search.aircraft_index import DOCUMENT_FIELDS, AircraftSearchIndex, build_document
 
@@ -83,6 +83,44 @@ def incremental_start(
     return newest - overlap
 
 
+def _selectable_fields(engine: Engine) -> list[str]:
+    """Return the document fields that this database actually has columns for.
+
+    ``DOCUMENT_FIELDS`` is taken from the ORM model, and the deployed schema has
+    drifted from it — production is missing four of the columns the model
+    declares. Selecting a column that is not there fails the whole pass, which
+    would mean no search at all rather than search without one field. Since the
+    index is an accelerator, dropping the absent fields is the better trade.
+
+    Args:
+        engine: Database engine to introspect.
+
+    Returns:
+        The subset of ``DOCUMENT_FIELDS`` present in ``aircraft_static_info``,
+        in declaration order.
+
+    Raises:
+        ValueError: If the table has no ``registration`` column, which would
+            leave every document without an id.
+    """
+    available = {column["name"] for column in inspect(engine).get_columns(_TABLE)}
+    fields = [field for field in DOCUMENT_FIELDS if field in available]
+
+    if "registration" not in available:
+        raise ValueError(f"{_TABLE} has no registration column; nothing can be indexed")
+
+    absent = [field for field in DOCUMENT_FIELDS if field not in available]
+    if absent:
+        # Not an error, but it silently narrows what an admin can search on, so
+        # say it out loud on every pass rather than only on the first.
+        logger.warning(
+            "%s has no column for %s; those fields will not be searchable",
+            _TABLE,
+            ", ".join(absent),
+        )
+    return fields
+
+
 def sync_aircraft_index(
     engine: Engine,
     index: AircraftSearchIndex,
@@ -109,8 +147,9 @@ def sync_aircraft_index(
     Raises:
         SearchError: If a bulk request or the final refresh fails.
         SQLAlchemyError: If the read fails.
+        ValueError: If the table has no ``registration`` column.
     """
-    columns = ", ".join(DOCUMENT_FIELDS)
+    columns = ", ".join(_selectable_fields(engine))
     clauses: list[str] = []
     params: dict[str, Any] = {}
 
