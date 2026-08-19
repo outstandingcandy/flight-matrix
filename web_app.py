@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Aircraft Tracking System — Flask Web Interface.
 
-This file is the application entry point. The Flask `app` object is
-constructed here and `init_app()` is called on cold start by
-`lambda_handler.py`. Route handlers are being migrated into blueprints
-under `src/web/routes/` — see docs/web-blueprints.md.
+The Flask `app` object is constructed here, but importing this module is not
+enough to serve traffic: `db_manager` and `config` stay `None` until
+`init_app()` runs, and every route reads them. Whoever owns the process has to
+call it — `lambda_handler.py` on Lambda cold start, `wsgi.py` under gunicorn,
+the `__main__` block below for local dev. Route handlers are being migrated
+into blueprints under `src/web/routes/` — see docs/web-blueprints.md.
 """
 
 import logging

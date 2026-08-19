@@ -31,6 +31,12 @@ Environment=PYTHONUNBUFFERED=1
 # app (SQLAlchemy, plotly, the Google SDKs), so worker count is the dominant
 # term in resident memory. deploy-app.sh rewrites these numbers for the host it
 # is deploying to.
+#
+# wsgi:app, not web_app:app. web_app only builds the Flask object; `init_app()`
+# is what populates the db_manager and config globals every route reads, and
+# gunicorn calls no entry point that would run it. Serving web_app:app gives a
+# service that starts, redirects to login, passes a health check, and answers 500
+# on every route that touches the database. See wsgi.py.
 ExecStart=/home/ubuntu/flight-matrix/.venv/bin/gunicorn \
     --bind 127.0.0.1:8000 \
     --workers 2 \
@@ -40,7 +46,7 @@ ExecStart=/home/ubuntu/flight-matrix/.venv/bin/gunicorn \
     --keep-alive 5 \
     --access-logfile - \
     --error-logfile - \
-    web_app:app
+    wsgi:app
 ExecReload=/bin/kill -s HUP $MAINPID
 Restart=always
 RestartSec=10

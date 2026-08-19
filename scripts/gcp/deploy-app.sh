@@ -137,6 +137,9 @@ confirm() {
 log "Preflight"
 
 [[ -f "$REPO_ROOT/web_app.py" ]] || die "web_app.py not found under $REPO_ROOT"
+# The unit serves wsgi:app, not web_app:app -- wsgi.py is what calls init_app().
+# Without it gunicorn fails to import and the service never starts.
+[[ -f "$REPO_ROOT/wsgi.py" ]] || die "wsgi.py not found; the systemd unit serves wsgi:app"
 [[ -f "$REPO_ROOT/uv.lock" ]] || die "uv.lock not found; run 'uv lock' first"
 [[ -f "$REPO_ROOT/scripts/systemd/flight-matrix-web.service" ]] \
     || die "scripts/systemd/flight-matrix-web.service is missing"
@@ -219,7 +222,7 @@ log "  payload: $((payload_bytes / 1024)) KiB compressed, ${#tar_includes[@]} to
 # the only symptom is an ImportError on the host after the deploy has otherwise
 # succeeded. These are the two entry points the unit cannot start without.
 manifest=$(tar -tzf "$payload_file")
-for required in web_app.py src/data/db_manager.py config/config.yaml; do
+for required in web_app.py wsgi.py src/data/db_manager.py config/config.yaml; do
     # A here-string, not `printf ... | grep -q`. `grep -q` exits at the first
     # match, and with a manifest long enough that printf is still writing, printf
     # dies of SIGPIPE with status 141 -- which `pipefail` then reports as the
@@ -463,6 +466,29 @@ if [[ "$ok" != true ]]; then
     sudo tail -n 40 /var/log/flight-matrix/web.log 2>/dev/null >&2 || true
     exit 1
 fi
+
+# The check above is not sufficient on its own, and that is not hypothetical: a
+# unit serving web_app:app left db_manager as None in every worker, so / still
+# redirected to login and answered 302 while every page that reads a table
+# returned 500. The deploy reported success for a site that did not work.
+#
+# So probe a route that actually touches the database. /api/aircraft/search is
+# the only DB-backed route with no @login_required, which makes it the one thing
+# testable here without credentials. A 500 means the app imported but cannot
+# reach or query the database -- fatal, because nothing else on the site will
+# work either. Anything else (200, or a 4xx from a route contract change) is
+# proof the query ran.
+say "probing a database-backed route"
+probe=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+    "http://127.0.0.1:$CFG_APP_PORT/api/aircraft/search?registration=deployprobe&limit=1" \
+    2>/dev/null) || true
+if [[ "$probe" == 500 ]]; then
+    echo "ERROR: the app is serving, but a database-backed route returned 500." >&2
+    echo "       The site would look up and be broken on every page. Recent log:" >&2
+    sudo tail -n 40 /var/log/flight-matrix/web.log 2>/dev/null >&2 || true
+    exit 1
+fi
+say "database-backed route answered with HTTP $probe"
 
 say "deploy complete"
 REMOTE
