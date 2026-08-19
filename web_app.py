@@ -2545,7 +2545,14 @@ def admin_filters_page():
 @app.route("/admin/aircraft-query")
 @admin_required
 def admin_aircraft_query_page():
-    """Admin aircraft query page - comprehensive aircraft data lookup."""
+    """Admin aircraft page - paginated database list, then per-aircraft detail.
+
+    Opens on a paginated list of `aircraft_static_info` served by
+    `/api/admin/aircraft`; picking a row switches the same page to the
+    comprehensive per-registration view served by
+    `/api/admin/aircraft-query/<registration>`. Which view shows is carried in
+    the URL hash (`#aircraft=<registration>`), so a detail view can be linked to.
+    """
     return render_template("admin_aircraft_query.html")
 
 
@@ -3183,7 +3190,12 @@ def api_admin_regenerate_api_key(user_id: int):
 @app.route("/api/admin/aircraft", methods=["GET"])
 @admin_required
 def api_admin_list_aircraft():
-    """List aircraft static info with pagination and filters."""
+    """List aircraft static info with pagination, filters and sorting.
+
+    Sorting is driven by `sort` (a whitelisted key) and `order` (`asc`/`desc`,
+    defaulting per key). `sort=photographers` orders by how many distinct
+    JetPhotos contributors have submitted a photo of the aircraft.
+    """
     from sqlalchemy import text
 
     try:
@@ -3193,34 +3205,56 @@ def api_admin_list_aircraft():
         aircraft_type = request.args.get("aircraft_type", "").strip()
         livery = request.args.get("livery", "").strip()
         category = request.args.get("category", "").strip()
+        sort = request.args.get("sort", "").strip()
+        order = request.args.get("order", "").strip().lower()
         offset = (page - 1) * limit
+
+        # Sort key -> (SQL expression, default direction). The request value is
+        # only ever used to look up this table, never interpolated into SQL; an
+        # unknown key falls back to the default rather than 400-ing, so a stale
+        # bookmark still renders a list.
+        sort_expressions = {
+            "last_updated": ("asi.last_updated", "desc"),
+            "photographers": ("COALESCE(pc.photographer_count, 0)", "desc"),
+            "registration": ("asi.registration", "asc"),
+        }
+        if sort not in sort_expressions:
+            sort = "last_updated"
+        sort_expr, default_order = sort_expressions[sort]
+        if order not in ("asc", "desc"):
+            order = default_order
+        direction = "ASC" if order == "asc" else "DESC"
 
         session = db_manager.get_session()
         try:
             params: dict = {"limit": limit, "offset": offset}
             where_clauses: list[str] = []
 
+            # Every clause is qualified with `asi.`: the photographer-count join
+            # below also exposes a `registration` column, so a bare name would be
+            # ambiguous.
             # Search filter (registration or ICAO hex)
             if search:
                 where_clauses.append(
-                    "(LOWER(registration) LIKE LOWER(:search) OR LOWER(hex_code) LIKE LOWER(:search))"
+                    "(LOWER(asi.registration) LIKE LOWER(:search)"
+                    " OR LOWER(asi.hex_code) LIKE LOWER(:search))"
                 )
                 params["search"] = f"%{search}%"
 
             # Aircraft type filter
             if aircraft_type:
-                where_clauses.append("aircraft_type = :aircraft_type")
+                where_clauses.append("asi.aircraft_type = :aircraft_type")
                 params["aircraft_type"] = aircraft_type
 
             # Livery filter
             if livery:
-                where_clauses.append("livery_name = :livery")
+                where_clauses.append("asi.livery_name = :livery")
                 params["livery"] = livery
 
             # Category filter (only 'special' works with current data)
             if category:
                 category_map = {
-                    "special": "attention_level IN ('高', '极高', 'high', 'very high')",
+                    "special": "asi.attention_level IN ('高', '极高', 'high', 'very high')",
                 }
                 if category in category_map:
                     where_clauses.append(category_map[category])
@@ -3229,6 +3263,17 @@ def api_admin_list_aircraft():
             if where_clauses:
                 where_sql = "WHERE " + " AND ".join(where_clauses)
 
+            # `asi.registration` breaks ties: a batch update leaves thousands of
+            # rows sharing one `last_updated` (and most aircraft share a
+            # photographer count of 0), and LIMIT/OFFSET over an ambiguous order
+            # lets a row appear on two pages or on none.
+            order_sql = f"{sort_expr} {direction} NULLS LAST"
+            if sort != "registration":
+                order_sql += ", asi.registration"
+
+            # The count is aggregated once over aircraft_images and hash-joined,
+            # rather than a correlated subquery, because ORDER BY on it has to see
+            # every row before it can pick a page.
             query = f"""
                 SELECT
                     asi.id,
@@ -3245,10 +3290,19 @@ def api_admin_list_aircraft():
                     asi.images_downloaded,
                     asi.last_updated,
                     asi.livery_name,
-                    asi.attention_level
+                    asi.attention_level,
+                    COALESCE(pc.photographer_count, 0) as photographer_count
                 FROM aircraft_static_info asi
+                LEFT JOIN (
+                    SELECT registration, COUNT(DISTINCT photographer) as photographer_count
+                    FROM aircraft_images
+                    WHERE source = 'jetphotos'
+                      AND photographer IS NOT NULL
+                      AND photographer <> ''
+                    GROUP BY registration
+                ) pc ON pc.registration = asi.registration
                 {where_sql}
-                ORDER BY asi.last_updated DESC NULLS LAST
+                ORDER BY {order_sql}
                 LIMIT :limit OFFSET :offset
             """
 
@@ -3279,13 +3333,15 @@ def api_admin_list_aircraft():
                     "is_passenger": False,
                     "is_military": False,
                     "is_special": is_special,
+                    "photographer_count": row[15],
                 }
                 aircraft_list.append(aircraft)
 
-            # Get total count
+            # Get total count. No photographer-count join here: nothing filters on
+            # it, and the alias is what `where_sql` is written against.
             count_query = f"""
                 SELECT COUNT(*)
-                FROM aircraft_static_info
+                FROM aircraft_static_info asi
                 {where_sql}
             """
             count_params = {k: v for k, v in params.items() if k not in ("limit", "offset")}
@@ -3299,6 +3355,8 @@ def api_admin_list_aircraft():
                     "total": total,
                     "page": page,
                     "pages": pages,
+                    "sort": sort,
+                    "order": order,
                 }
             )
 

@@ -334,6 +334,135 @@
             color: #6c757d;
         }
 
+        /* List view: filters, autocomplete, table */
+        .stat-card.clickable {
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+
+        .stat-card.clickable:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.25);
+        }
+
+        .stat-card.clickable.active {
+            box-shadow: 0 0 0 2px #0d6efd;
+        }
+
+        .autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            z-index: 1050;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 0 0 0.25rem 0.25rem;
+            max-height: 250px;
+            overflow-y: auto;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+        }
+
+        .autocomplete-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+            font-size: 0.85rem;
+        }
+
+        .autocomplete-item:hover {
+            background-color: #f8f9fa;
+        }
+
+        .autocomplete-item .item-count {
+            float: right;
+            color: #6c757d;
+            font-size: 0.75rem;
+        }
+
+        .autocomplete-item .item-secondary {
+            color: #6c757d;
+            font-size: 0.75rem;
+            margin-left: 8px;
+        }
+
+        .aircraft-row {
+            cursor: pointer;
+        }
+
+        .aircraft-row .registration-cell {
+            font-weight: 600;
+            color: #0d6efd;
+        }
+
+        .list-image {
+            width: 60px;
+            height: 40px;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+
+        .list-image-placeholder {
+            width: 60px;
+            height: 40px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6c757d;
+        }
+
+        .hex-code {
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+
+        .clickable-filter {
+            color: #0d6efd;
+            cursor: pointer;
+        }
+
+        .clickable-filter:hover {
+            text-decoration: underline;
+        }
+
+        /* Sortable column headers */
+        th.sortable {
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+
+        th.sortable:hover {
+            color: #0d6efd;
+        }
+
+        /* The caret is always in the DOM so the column width does not jump when
+           the active sort moves. */
+        th.sortable .sort-caret {
+            margin-left: 0.35rem;
+            font-size: 0.75rem;
+            color: #adb5bd;
+        }
+
+        th.sortable.sorted {
+            color: #0d6efd;
+        }
+
+        th.sortable.sorted .sort-caret {
+            color: #0d6efd;
+        }
+
+        .photographer-count {
+            font-variant-numeric: tabular-nums;
+        }
+
+        .photographer-count.is-zero {
+            color: #adb5bd;
+        }
+
         /* Modal for image preview */
         .image-modal {
             display: none;
@@ -388,33 +517,133 @@
         <!-- Header -->
         <div class="page-header">
             <a href="/admin" class="back-link"><i class="fas fa-arrow-left"></i> Back to Admin</a>
-            <h2 class="mt-2"><i class="fas fa-search"></i> Aircraft Query</h2>
-            <p class="text-light opacity-75">Search for aircraft by registration number to view comprehensive data</p>
+            <h2 class="mt-2"><i class="fas fa-database"></i> Aircraft Query</h2>
+            <p class="text-light opacity-75">Browse the aircraft database, then pick a row to see everything known about that aircraft</p>
         </div>
 
-        <!-- Search Container -->
-        <div class="search-container">
-            <div class="row align-items-center">
-                <div class="col-md-8">
-                    <input type="text" id="registrationInput" class="form-control search-input"
-                           placeholder="Enter registration number (e.g., B-1234, N12345)">
+        <!-- ================= List view ================= -->
+        <div id="listView">
+            <!-- Stats -->
+            <div class="row g-3 mb-3">
+                <div class="col-md-4">
+                    <div class="stat-card">
+                        <div class="stat-value" id="statTotal">-</div>
+                        <div class="stat-label">Total Aircraft</div>
+                    </div>
                 </div>
-                <div class="col-md-4 mt-2 mt-md-0">
-                    <button class="btn btn-primary btn-lg w-100" onclick="searchAircraft()">
-                        <i class="fas fa-search"></i> Search
-                    </button>
+                <div class="col-md-4">
+                    <div class="stat-card">
+                        <div class="stat-value" id="statWithImages">-</div>
+                        <div class="stat-label">With Images</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="stat-card clickable special" data-category="special" title="Click to filter">
+                        <div class="stat-value" id="statSpecial">-</div>
+                        <div class="stat-label">Special (高关注)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="search-container">
+                <div class="row g-2 align-items-center">
+                    <div class="col-md-4">
+                        <div class="input-group position-relative">
+                            <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            <input type="text" id="searchInput" class="form-control"
+                                   placeholder="Registration or ICAO hex (e.g., B-1234, 780abc)" autocomplete="off">
+                            <div id="searchSuggestions" class="autocomplete-dropdown d-none"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="position-relative">
+                            <input type="text" id="typeInput" class="form-control" placeholder="Aircraft type…" autocomplete="off">
+                            <input type="hidden" id="typeFilter" value="">
+                            <div id="typeSuggestions" class="autocomplete-dropdown d-none"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="position-relative">
+                            <input type="text" id="liveryInput" class="form-control" placeholder="Livery…" autocomplete="off">
+                            <input type="hidden" id="liveryFilter" value="">
+                            <div id="liverySuggestions" class="autocomplete-dropdown d-none"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-1">
+                        <select class="form-select" id="categoryFilter">
+                            <option value="">All</option>
+                            <option value="special">Special</option>
+                        </select>
+                    </div>
+                    <div class="col-md-1">
+                        <button class="btn btn-outline-light w-100" id="resetFiltersBtn" title="Reset filters">
+                            <i class="fas fa-undo"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Aircraft table -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-plane"></i> Aircraft Database</span>
+                    <span class="badge bg-light text-dark" id="resultCount">Loading…</span>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm mb-0">
+                            <thead>
+                                <tr>
+                                    <th style="width: 70px;">Image</th>
+                                    <th class="sortable" data-sort="registration" title="Sort by registration">
+                                        Registration<i class="fas fa-sort sort-caret"></i>
+                                    </th>
+                                    <th>ICAO</th>
+                                    <th>Type</th>
+                                    <th>Livery</th>
+                                    <th class="sortable" data-sort="photographers"
+                                        title="Sort by how many different JetPhotos contributors have submitted a photo">
+                                        Photographers<i class="fas fa-sort sort-caret"></i>
+                                    </th>
+                                    <th class="sortable" data-sort="last_updated" title="Sort by last update">
+                                        Updated<i class="fas fa-sort sort-caret"></i>
+                                    </th>
+                                    <th style="width: 30px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="aircraftTableBody">
+                                <tr>
+                                    <td colspan="8" class="text-center py-4">
+                                        <div class="spinner-border text-primary" role="status">
+                                            <span class="visually-hidden">Loading…</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <nav aria-label="Aircraft pagination" class="mt-3">
+                        <ul class="pagination pagination-sm justify-content-center mb-0" id="pagination"></ul>
+                    </nav>
                 </div>
             </div>
         </div>
 
-        <!-- Loading State -->
-        <div id="loadingState" class="loading-spinner" style="display: none;">
-            <div class="spinner-border text-primary me-2" role="status"></div>
-            <span>Searching...</span>
-        </div>
+        <!-- ================= Detail view ================= -->
+        <div id="detailView" style="display: none;">
+            <button class="btn btn-outline-light btn-sm mb-3" id="backToListBtn">
+                <i class="fas fa-arrow-left"></i> Back to list
+            </button>
 
-        <!-- Results Container -->
-        <div id="resultsContainer" style="display: none;">
+            <!-- Loading State -->
+            <div id="loadingState" class="loading-spinner" style="display: none;">
+                <div class="spinner-border text-primary me-2" role="status"></div>
+                <span>Searching...</span>
+            </div>
+
+            <!-- Results Container -->
+            <div id="resultsContainer" style="display: none;">
             <!-- Aircraft Header Card -->
             <div id="aircraftHeader" class="aircraft-header">
                 <div class="row align-items-center">
@@ -540,12 +769,13 @@
             </div>
         </div>
 
-        <!-- No Results Message -->
-        <div id="noResultsMessage" class="card" style="display: none;">
-            <div class="card-body text-center py-5">
-                <i class="fas fa-search fa-3x text-muted mb-3"></i>
-                <h4 class="text-muted">No data found</h4>
-                <p class="text-muted">No records found for this registration number.</p>
+            <!-- No Results Message -->
+            <div id="noResultsMessage" class="card" style="display: none;">
+                <div class="card-body text-center py-5">
+                    <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                    <h4 class="text-muted">No data found</h4>
+                    <p class="text-muted">No records found for this registration number.</p>
+                </div>
             </div>
         </div>
     </div>
@@ -558,21 +788,102 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Search on Enter key
-        document.getElementById('registrationInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                searchAircraft();
+        // --------------------------------------------------------------------
+        // The page holds two views over the same data: a paginated list of the
+        // whole aircraft database, and the comprehensive detail for one of them.
+        // Which one shows is a function of the URL hash
+        // (`#aircraft=<registration>`), so the browser's back button walks back
+        // to the list and a detail view can be bookmarked or shared.
+        // --------------------------------------------------------------------
+        const PAGE_SIZE = 30;
+
+        // Default direction per sort key: newest-first for a timestamp, most-first
+        // for a count, A→Z for a name. Clicking the active column flips it.
+        const SORT_DEFAULT_ORDER = {
+            last_updated: 'desc',
+            photographers: 'desc',
+            registration: 'asc',
+        };
+
+        let currentPage = 1;
+        let currentSort = 'last_updated';
+        let currentOrder = SORT_DEFAULT_ORDER.last_updated;
+        let listLoaded = false;
+        let loadedRegistration = null;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            wireFilters();
+            wireSorting();
+            wireList();
+            document.getElementById('backToListBtn').addEventListener('click', goToList);
+            window.addEventListener('hashchange', applyRoute);
+
+            // `?registration=X` is normalised into the hash, so both spellings
+            // of a deep link go through one code path.
+            const deepLink = new URLSearchParams(window.location.search).get('registration');
+            if (deepLink && !registrationFromHash()) {
+                window.location.hash = 'aircraft=' + encodeURIComponent(deepLink);
             }
+
+            loadStats();
+            applyRoute();
         });
 
-        async function searchAircraft() {
-            const registration = document.getElementById('registrationInput').value.trim();
-            if (!registration) {
-                alert('Please enter a registration number');
+        // ----------------------------- routing ------------------------------
+
+        function registrationFromHash() {
+            const hash = window.location.hash.replace(/^#/, '');
+            if (!hash.startsWith('aircraft=')) {
+                return null;
+            }
+            return decodeURIComponent(hash.slice('aircraft='.length)).trim() || null;
+        }
+
+        function applyRoute() {
+            const registration = registrationFromHash();
+            if (registration) {
+                showDetail(registration);
+            } else {
+                showList();
+            }
+        }
+
+        function openAircraft(registration) {
+            // Only the hash is touched here; `hashchange` swaps the views. That
+            // keeps one path into the detail view and gives back/forward for free.
+            window.location.hash = 'aircraft=' + encodeURIComponent(registration);
+        }
+
+        function goToList() {
+            // replaceState rather than clearing the hash: leaving the detail view
+            // should not push a history entry that immediately returns to it.
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+            showList();
+        }
+
+        function showList() {
+            document.getElementById('detailView').style.display = 'none';
+            document.getElementById('listView').style.display = 'block';
+            if (!listLoaded) {
+                loadAircraft();
+            }
+        }
+
+        function showDetail(registration) {
+            document.getElementById('listView').style.display = 'none';
+            document.getElementById('detailView').style.display = 'block';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            // Already rendered — the common case when walking back and forward
+            // through the same few aircraft. Do not refetch.
+            if (loadedRegistration === registration) {
                 return;
             }
+            loadedRegistration = registration;
+            fetchAircraftDetail(registration);
+        }
 
-            // Show loading, hide results
+        async function fetchAircraftDetail(registration) {
             document.getElementById('loadingState').style.display = 'flex';
             document.getElementById('resultsContainer').style.display = 'none';
             document.getElementById('noResultsMessage').style.display = 'none';
@@ -584,6 +895,7 @@
                 document.getElementById('loadingState').style.display = 'none';
 
                 if (!data.success) {
+                    loadedRegistration = null;
                     alert('Error: ' + data.error);
                     return;
                 }
@@ -608,8 +920,501 @@
 
             } catch (error) {
                 document.getElementById('loadingState').style.display = 'none';
+                loadedRegistration = null;
                 alert('Error fetching data: ' + error.message);
             }
+        }
+
+        // ---------------------------- list view -----------------------------
+
+        function wireList() {
+            document.getElementById('aircraftTableBody').addEventListener('click', function(e) {
+                // Order matters: the cells that do something else on click are
+                // nested inside a row that would otherwise open the detail view.
+                const image = e.target.closest('.list-image');
+                if (image) {
+                    openImageModal(image.dataset.url);
+                    return;
+                }
+                const typeCell = e.target.closest('[data-type]');
+                if (typeCell) {
+                    filterByType(typeCell.dataset.type);
+                    return;
+                }
+                const liveryCell = e.target.closest('[data-livery]');
+                if (liveryCell) {
+                    filterByLivery(liveryCell.dataset.livery);
+                    return;
+                }
+                const row = e.target.closest('tr[data-registration]');
+                if (row) {
+                    openAircraft(row.dataset.registration);
+                }
+            });
+
+            // Thumbnails go stale (the source photo is deleted upstream, or the
+            // thumbnail was never generated), and a broken image icon in every
+            // row reads as a broken page. `error` does not bubble, hence capture.
+            document.getElementById('aircraftTableBody').addEventListener('error', function(e) {
+                const image = e.target;
+                if (image.classList && image.classList.contains('list-image')) {
+                    const placeholder = document.createElement('div');
+                    placeholder.className = 'list-image-placeholder';
+                    placeholder.innerHTML = '<i class="fas fa-plane"></i>';
+                    image.replaceWith(placeholder);
+                }
+            }, true);
+
+            document.getElementById('pagination').addEventListener('click', function(e) {
+                e.preventDefault();
+                const link = e.target.closest('a[data-page]');
+                if (link) {
+                    goToPage(parseInt(link.dataset.page, 10));
+                }
+            });
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/admin/aircraft/stats');
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('statTotal').textContent = data.stats.total.toLocaleString();
+                    document.getElementById('statWithImages').textContent = data.stats.with_images.toLocaleString();
+                    document.getElementById('statSpecial').textContent = data.stats.special.toLocaleString();
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        async function loadAircraft() {
+            const params = new URLSearchParams({
+                page: currentPage,
+                limit: PAGE_SIZE,
+                sort: currentSort,
+                order: currentOrder,
+            });
+            const search = document.getElementById('searchInput').value.trim();
+            const aircraftType = document.getElementById('typeFilter').value;
+            const livery = document.getElementById('liveryFilter').value;
+            const category = document.getElementById('categoryFilter').value;
+            if (search) params.append('search', search);
+            if (aircraftType) params.append('aircraft_type', aircraftType);
+            if (livery) params.append('livery', livery);
+            if (category) params.append('category', category);
+
+            try {
+                const response = await fetch(`/api/admin/aircraft?${params}`);
+                const data = await response.json();
+
+                if (!data.success) {
+                    showListError('Failed to load aircraft: ' + data.error);
+                    return null;
+                }
+
+                listLoaded = true;
+                // The server whitelists sort keys, so take its word for which
+                // order the rows are actually in.
+                if (data.sort) {
+                    currentSort = data.sort;
+                    currentOrder = data.order || SORT_DEFAULT_ORDER[data.sort] || 'desc';
+                    updateSortIndicators();
+                }
+                renderAircraft(data.aircraft);
+                renderPagination(data.page, data.pages);
+                document.getElementById('resultCount').textContent =
+                    `${(data.total || 0).toLocaleString()} aircraft`;
+                return data;
+            } catch (error) {
+                showListError('Failed to load aircraft: ' + error.message);
+                return null;
+            }
+        }
+
+        function renderAircraft(aircraftList) {
+            const tbody = document.getElementById('aircraftTableBody');
+
+            if (!aircraftList || aircraftList.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="text-center py-4 text-muted">
+                            <i class="fas fa-inbox"></i> No aircraft found
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = aircraftList.map(aircraft => {
+                const registration = escapeHtml(aircraft.registration);
+                const imageCell = aircraft.image_url
+                    ? `<img src="${escapeHtml(aircraft.image_url)}" class="list-image"
+                            alt="${registration}" data-url="${escapeHtml(aircraft.image_url)}">`
+                    : '<div class="list-image-placeholder"><i class="fas fa-plane"></i></div>';
+
+                const typeCode = aircraft.aircraft_type_code || aircraft.aircraft_type;
+                const typeCell = typeCode
+                    ? `<span class="clickable-filter" data-type="${escapeHtml(typeCode)}"
+                             title="Filter by ${escapeHtml(typeCode)}">${escapeHtml(typeCode)}</span>`
+                    : '-';
+
+                const liveryCell = aircraft.livery_name
+                    ? `<span class="clickable-filter" data-livery="${escapeHtml(aircraft.livery_name)}"
+                             title="Filter by ${escapeHtml(aircraft.livery_name)}">${escapeHtml(aircraft.livery_name)}</span>`
+                    : '-';
+
+                const special = aircraft.is_special
+                    ? ' <span class="badge bg-danger">高关注</span>'
+                    : '';
+
+                const photographers = aircraft.photographer_count || 0;
+                const photographerCell = `<span class="photographer-count${photographers ? '' : ' is-zero'}"
+                          title="${photographers} distinct JetPhotos contributor(s)">${photographers}</span>`;
+
+                return `
+                    <tr class="aircraft-row" data-registration="${registration}">
+                        <td>${imageCell}</td>
+                        <td class="registration-cell">${registration || '-'}${special}</td>
+                        <td><span class="hex-code">${escapeHtml(aircraft.hex_code) || '-'}</span></td>
+                        <td>${typeCell}</td>
+                        <td>${liveryCell}</td>
+                        <td>${photographerCell}</td>
+                        <td>${formatDate(aircraft.last_updated)}</td>
+                        <td class="text-muted"><i class="fas fa-chevron-right"></i></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderPagination(page, pages) {
+            const pagination = document.getElementById('pagination');
+            if (!pages || pages <= 1) {
+                pagination.innerHTML = '';
+                return;
+            }
+
+            const item = (targetPage, label, disabled, active) => `
+                <li class="page-item ${disabled ? 'disabled' : ''} ${active ? 'active' : ''}">
+                    ${disabled
+                        ? `<span class="page-link">${label}</span>`
+                        : `<a class="page-link" href="#" data-page="${targetPage}">${label}</a>`}
+                </li>
+            `;
+
+            let html = item(page - 1, '<i class="fas fa-chevron-left"></i>', page === 1, false);
+
+            // Window of pages around the current one, with ellipses for the rest.
+            const maxVisible = 7;
+            let startPage = Math.max(1, page - Math.floor(maxVisible / 2));
+            const endPage = Math.min(pages, startPage + maxVisible - 1);
+            if (endPage - startPage < maxVisible - 1) {
+                startPage = Math.max(1, endPage - maxVisible + 1);
+            }
+
+            if (startPage > 1) {
+                html += item(1, '1', false, false);
+                if (startPage > 2) {
+                    html += item(0, '…', true, false);
+                }
+            }
+            for (let i = startPage; i <= endPage; i++) {
+                html += item(i, String(i), false, i === page);
+            }
+            if (endPage < pages) {
+                if (endPage < pages - 1) {
+                    html += item(0, '…', true, false);
+                }
+                html += item(pages, String(pages), false, false);
+            }
+
+            html += item(page + 1, '<i class="fas fa-chevron-right"></i>', page === pages, false);
+            pagination.innerHTML = html;
+        }
+
+        function goToPage(page) {
+            currentPage = page;
+            loadAircraft();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function showListError(message) {
+            document.getElementById('aircraftTableBody').innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center py-4 text-danger">
+                        <i class="fas fa-exclamation-triangle"></i> ${escapeHtml(message)}
+                    </td>
+                </tr>
+            `;
+            document.getElementById('resultCount').textContent = 'error';
+        }
+
+        // ------------------------------ sorting ------------------------------
+
+        function wireSorting() {
+            document.querySelectorAll('th.sortable').forEach(header => {
+                header.addEventListener('click', () => sortBy(header.dataset.sort));
+            });
+            updateSortIndicators();
+        }
+
+        function sortBy(key) {
+            if (!key || !(key in SORT_DEFAULT_ORDER)) {
+                return;
+            }
+            if (key === currentSort) {
+                currentOrder = currentOrder === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort = key;
+                currentOrder = SORT_DEFAULT_ORDER[key];
+            }
+            // A different order means a different first page.
+            currentPage = 1;
+            updateSortIndicators();
+            loadAircraft();
+        }
+
+        function updateSortIndicators() {
+            document.querySelectorAll('th.sortable').forEach(header => {
+                const active = header.dataset.sort === currentSort;
+                header.classList.toggle('sorted', active);
+                const caret = header.querySelector('.sort-caret');
+                if (!caret) {
+                    return;
+                }
+                caret.className = 'fas sort-caret ' + (active
+                    ? (currentOrder === 'asc' ? 'fa-sort-up' : 'fa-sort-down')
+                    : 'fa-sort');
+            });
+        }
+
+        // ------------------------- filters / search -------------------------
+
+        function wireFilters() {
+            const searchInput = document.getElementById('searchInput');
+            searchInput.addEventListener('input', debounce(function() {
+                const value = this.value.trim();
+                currentPage = 1;
+                if (value.length >= 2) {
+                    suggestRegistrations(value);
+                } else {
+                    hideAutocomplete('searchSuggestions');
+                }
+                loadAircraft();
+            }, 300));
+            searchInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    submitSearch();
+                }
+            });
+
+            wireAutocompleteInput('typeInput', 'typeFilter', 'typeSuggestions', suggestTypes);
+            wireAutocompleteInput('liveryInput', 'liveryFilter', 'liverySuggestions', suggestLiveries);
+
+            document.getElementById('categoryFilter').addEventListener('change', function() {
+                currentPage = 1;
+                updateCardHighlights();
+                loadAircraft();
+            });
+
+            document.getElementById('resetFiltersBtn').addEventListener('click', resetFilters);
+
+            document.querySelectorAll('.stat-card.clickable').forEach(card => {
+                card.addEventListener('click', () => filterByCategory(card.dataset.category));
+            });
+
+            // Close any open suggestion list when clicking elsewhere.
+            document.addEventListener('click', function(e) {
+                for (const [input, dropdown] of [
+                    ['searchInput', 'searchSuggestions'],
+                    ['typeInput', 'typeSuggestions'],
+                    ['liveryInput', 'liverySuggestions'],
+                ]) {
+                    if (!e.target.closest(`#${input}`) && !e.target.closest(`#${dropdown}`)) {
+                        hideAutocomplete(dropdown);
+                    }
+                }
+            });
+        }
+
+        function wireAutocompleteInput(inputId, hiddenId, dropdownId, suggest) {
+            document.getElementById(inputId).addEventListener('input', debounce(function() {
+                const value = this.value.trim();
+                currentPage = 1;
+                if (value.length >= 2) {
+                    suggest(value);
+                } else {
+                    hideAutocomplete(dropdownId);
+                    // The filter applies the *picked* value, so clearing the box
+                    // has to clear the hidden field the query is built from.
+                    document.getElementById(hiddenId).value = '';
+                    loadAircraft();
+                }
+            }, 300));
+        }
+
+        async function submitSearch() {
+            const term = document.getElementById('searchInput').value.trim();
+            hideAutocomplete('searchSuggestions');
+            currentPage = 1;
+            const data = await loadAircraft();
+
+            // A full registration narrows the list to a single row, so Enter
+            // still means "open this aircraft" the way it did before the list
+            // existed. Anything broader just leaves the list filtered.
+            if (term && data && data.total === 1 && data.aircraft && data.aircraft.length === 1) {
+                openAircraft(data.aircraft[0].registration);
+            }
+        }
+
+        function renderSuggestions(dropdownId, items, onPick) {
+            const dropdown = document.getElementById(dropdownId);
+            if (!items || items.length === 0) {
+                hideAutocomplete(dropdownId);
+                return;
+            }
+
+            dropdown.innerHTML = items.map((item, index) => `
+                <div class="autocomplete-item" data-index="${index}">${item.html}</div>
+            `).join('');
+
+            dropdown.querySelectorAll('.autocomplete-item').forEach(element => {
+                element.addEventListener('click', function() {
+                    hideAutocomplete(dropdownId);
+                    onPick(items[parseInt(this.dataset.index, 10)]);
+                });
+            });
+
+            dropdown.classList.remove('d-none');
+        }
+
+        function hideAutocomplete(dropdownId) {
+            document.getElementById(dropdownId).classList.add('d-none');
+        }
+
+        async function suggestRegistrations(query) {
+            try {
+                const response = await fetch(`/api/admin/aircraft/registrations?search=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                if (!data.success) {
+                    return;
+                }
+                const items = (data.registrations || []).map(row => ({
+                    registration: row.registration,
+                    html: `<strong>${escapeHtml(row.registration)}</strong>
+                           <span class="item-secondary">${escapeHtml(row.hex_code)} | ${escapeHtml(row.aircraft_type)}</span>`,
+                }));
+                // Picking a suggestion names one aircraft, so go straight to it.
+                renderSuggestions('searchSuggestions', items, item => openAircraft(item.registration));
+            } catch (error) {
+                console.error('Error searching registrations:', error);
+            }
+        }
+
+        async function suggestTypes(query) {
+            try {
+                const response = await fetch(`/api/admin/aircraft/types?search=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                if (!data.success) {
+                    return;
+                }
+                const items = (data.types || []).map(row => ({
+                    code: row.code,
+                    html: `${escapeHtml(row.code)}<span class="item-count">${row.count}</span>`,
+                }));
+                renderSuggestions('typeSuggestions', items, item => filterByType(item.code));
+            } catch (error) {
+                console.error('Error searching aircraft types:', error);
+            }
+        }
+
+        async function suggestLiveries(query) {
+            try {
+                const response = await fetch(`/api/admin/aircraft/liveries?search=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                if (!data.success) {
+                    return;
+                }
+                const items = (data.liveries || []).map(row => ({
+                    name: row.name,
+                    html: `${escapeHtml(row.name)}<span class="item-count">${row.count}</span>`,
+                }));
+                renderSuggestions('liverySuggestions', items, item => filterByLivery(item.name));
+            } catch (error) {
+                console.error('Error searching liveries:', error);
+            }
+        }
+
+        function filterByType(typeCode) {
+            document.getElementById('typeInput').value = typeCode;
+            document.getElementById('typeFilter').value = typeCode;
+            currentPage = 1;
+            loadAircraft();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function filterByLivery(liveryName) {
+            document.getElementById('liveryInput').value = liveryName;
+            document.getElementById('liveryFilter').value = liveryName;
+            currentPage = 1;
+            loadAircraft();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function filterByCategory(category) {
+            const select = document.getElementById('categoryFilter');
+            // Clicking the active card again clears the filter.
+            select.value = select.value === category ? '' : category;
+            currentPage = 1;
+            updateCardHighlights();
+            loadAircraft();
+        }
+
+        function updateCardHighlights() {
+            const category = document.getElementById('categoryFilter').value;
+            document.querySelectorAll('.stat-card.clickable').forEach(card => {
+                card.classList.toggle('active', Boolean(category) && card.dataset.category === category);
+            });
+        }
+
+        function resetFilters() {
+            for (const id of ['searchInput', 'typeInput', 'typeFilter', 'liveryInput', 'liveryFilter', 'categoryFilter']) {
+                document.getElementById(id).value = '';
+            }
+            for (const id of ['searchSuggestions', 'typeSuggestions', 'liverySuggestions']) {
+                hideAutocomplete(id);
+            }
+            currentPage = 1;
+            updateCardHighlights();
+            loadAircraft();
+        }
+
+        function debounce(func, wait) {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+
+        function escapeHtml(value) {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            return String(value).replace(/[&<>"']/g, char => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+            })[char]);
+        }
+
+        function formatDate(value) {
+            if (!value) {
+                return '-';
+            }
+            const date = new Date(value);
+            if (isNaN(date.getTime())) {
+                return '-';
+            }
+            return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
         }
 
         function populateResults(data) {
@@ -1124,5 +1929,9 @@
             }
         });
     </script>
+
+    <!-- Token Refresh: browsing the list is a long session of authenticated
+         fetches, so the id token has to be able to roll over underneath it. -->
+    {% include '_token_refresh.html' %}
 </body>
 </html>

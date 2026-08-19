@@ -57,9 +57,9 @@ inline blocks and are tracked as follow-up work:
 | `home.html`                       |    0         | done       |
 | `search_track.html`               |    ~0        | done       |
 | `flight_schedules.html`           |  ~3 000      | to do      |
-| `admin_aircraft_query.html`       |    ~900      | to do      |
+| `admin_aircraft_query.html`       |  ~1 900      | to do      |
 | `admin_scraped_data.html`         |    ~600      | to do      |
-| `admin_aircraft.html`             |    ~500      | to do      |
+| `admin_aircraft.html`             |    ~600      | orphaned   |
 | `admin_reports.html`              |    ~500      | to do      |
 | `admin_users.html`                |    ~380      | to do      |
 | `admin_scraper_status.html`       |    ~310      | to do      |
@@ -70,6 +70,12 @@ inline blocks and are tracked as follow-up work:
 
 Contributions to knock these off are welcome — each one is a small,
 well-scoped PR.
+
+`admin_aircraft.html` is marked *orphaned* because no route renders it: its
+paginated list over `/api/admin/aircraft` now lives in
+`admin_aircraft_query.html`, which opens on the list and switches to the
+per-registration detail when a row is picked. Extract that one instead; this
+file is a leftover copy pending deletion.
 
 ## Extraction procedure (for contributors)
 
