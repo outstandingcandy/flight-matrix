@@ -186,12 +186,18 @@ done < <(find "$REPO_ROOT" -mindepth 1 -maxdepth 1 | sort)
 [[ ${#tar_includes[@]} -gt 0 ]] || die "nothing to ship from $REPO_ROOT"
 
 # These are safe unanchored: no directory that should be shipped is named after
-# a cache, and no shipped file ends in .pyc or .log.
+# a cache or a virtualenv, and no shipped file ends in .pyc or .log.
+#
+# .venv has to be here as well as in skip_toplevel. Skipping only the top-level
+# one still shipped lib/resilient-scraper/.venv once anybody ran uv inside the
+# submodule -- 68 MiB of macOS-built wheels landing on a Linux host, and a
+# 32 MiB payload instead of 1 MiB.
 tar_excludes=(
     --exclude=__pycache__
     --exclude=.mypy_cache
     --exclude=.pytest_cache
     --exclude=.ruff_cache
+    --exclude=.venv
     --exclude=node_modules
     --exclude=.DS_Store
     --exclude='*.pyc'
@@ -214,7 +220,13 @@ log "  payload: $((payload_bytes / 1024)) KiB compressed, ${#tar_includes[@]} to
 # succeeded. These are the two entry points the unit cannot start without.
 manifest=$(tar -tzf "$payload_file")
 for required in web_app.py src/data/db_manager.py config/config.yaml; do
-    printf '%s\n' "$manifest" | grep -qxF "$required" \
+    # A here-string, not `printf ... | grep -q`. `grep -q` exits at the first
+    # match, and with a manifest long enough that printf is still writing, printf
+    # dies of SIGPIPE with status 141 -- which `pipefail` then reports as the
+    # pipeline's status, failing the check for a file that IS in the archive. It
+    # only bites for entries near the start of the stream, so config/config.yaml
+    # "went missing" while web_app.py passed.
+    grep -qxF "$required" <<< "$manifest" \
         || die "the payload is missing $required -- check tar_excludes for an unanchored pattern"
 done
 log "  manifest: entry points present"
