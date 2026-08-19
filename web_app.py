@@ -565,19 +565,33 @@ def search_aircraft():
         )
         logger.info(f"All request args: {dict(request.args)}")
 
-        # 构建WHERE条件（直接嵌入值，避免参数绑定问题）
+        # 构建WHERE条件。
+        #
+        # Request-supplied *strings* must be bound, never interpolated: this
+        # route has no @login_required, so an f-string here is an unauthenticated
+        # SQL injection into the WHERE clause of `execute_filter_query`.
+        # The remaining literals below are derived values -- an int, and
+        # `strftime` output -- so they carry no caller text.
         conditions = []
+        params: dict[str, Any] = {}
 
         if registration:
-            conditions.append(f"registration LIKE '%{registration}%'")
+            conditions.append("registration LIKE :registration")
+            params["registration"] = f"%{registration}%"
 
         if hex_code:
-            conditions.append(f"hex = '{hex_code}'")
+            conditions.append("hex = :hex_code")
+            params["hex_code"] = hex_code
 
         if aircraft_type:
-            conditions.append(f"aircraft_type LIKE '%{aircraft_type}%'")
+            conditions.append("aircraft_type LIKE :aircraft_type")
+            params["aircraft_type"] = f"%{aircraft_type}%"
 
         if is_military is not None:
+            # Deliberately a literal, not a bind: SnapshotRepository rewrites
+            # `is_military = 1` to `= true` for Postgres, and it can only do that
+            # by seeing the digit in the clause text. Bound, Postgres would
+            # reject an integer for a boolean column.
             is_mil_value = 1 if is_military.lower() == "true" else 0
             conditions.append(f"is_military = {is_mil_value}")
 
@@ -620,7 +634,7 @@ def search_aircraft():
         logger.info(f"Where clause: {where_clause}")
 
         # 执行查询
-        results = db_manager.execute_filter_query(where_clause, limit)
+        results = db_manager.execute_filter_query(where_clause, limit, params)
         logger.info(f"Query returned {len(results)} results")
         logger.info(f"First few results: {[r.get('r') for r in results[:3]]}")
 

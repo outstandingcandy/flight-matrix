@@ -273,8 +273,21 @@ class SnapshotRepository:
     # Queries
     # ---------------------------------------------------------------------
 
-    def execute_filter_query(self, where_clause: str, limit: int = 1000) -> list[dict]:
+    def execute_filter_query(
+        self,
+        where_clause: str,
+        limit: int = 1000,
+        params: dict[str, Any] | None = None,
+    ) -> list[dict]:
         """Run a WHERE-clause filter and return the latest snapshot per hex.
+
+        Args:
+            where_clause: SQL boolean expression, interpolated into the query.
+                It is *code*, so it must never contain a caller's untrusted
+                input — put placeholders in it and the values in `params`.
+            limit: Maximum number of aircraft to return.
+            params: Values for the placeholders named in `where_clause`. The
+                reserved name `limit_count` is bound by this method.
 
         Returns dicts matching the historical JSON shape used by the reporting
         pipeline (keys: hex, flight, r, t, lat, lon, alt_baro, gs, …).
@@ -315,7 +328,8 @@ class SnapshotRepository:
                     ORDER BY s.snapshot_time DESC
                     LIMIT :limit_count
                 """)
-            result = session.execute(query, {"limit_count": limit})
+            # `limit_count` last so a caller cannot shadow it and change the row cap.
+            result = session.execute(query, {**(params or {}), "limit_count": limit})
 
             aircraft: list[dict] = []
             for row in result:

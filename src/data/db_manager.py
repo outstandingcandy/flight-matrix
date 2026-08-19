@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import create_engine, text
@@ -225,8 +226,13 @@ class DatabaseManager:
     def batch_insert_aircraft(self, aircraft_data_list: list[dict]) -> int:
         return self._snapshots.batch_insert(aircraft_data_list)
 
-    def execute_filter_query(self, where_clause: str, limit: int = 1000) -> list[dict]:
-        return self._snapshots.execute_filter_query(where_clause, limit)
+    def execute_filter_query(
+        self,
+        where_clause: str,
+        limit: int = 1000,
+        params: dict[str, Any] | None = None,
+    ) -> list[dict]:
+        return self._snapshots.execute_filter_query(where_clause, limit, params)
 
     def cleanup_old_data(self, hours_to_keep: int = 24) -> None:
         self._snapshots.cleanup_old_data(hours_to_keep)
