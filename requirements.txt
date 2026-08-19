@@ -49,6 +49,9 @@ numpy>=1.24.0
 # AI search (optional, lazy-loaded)
 tavily-python>=0.3.0
 
+# Full-text aircraft index; unconfigured or unreachable falls back to SQL
+opensearch-py>=2.4.0
+
 # Browser automation (scraper only)
 DrissionPage>=4.0.0
 

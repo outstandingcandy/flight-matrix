@@ -1,0 +1,73 @@
+# Single-node OpenSearch backing the aircraft full-text index.
+#
+# The rest of flight-matrix runs directly on the host under systemd (see
+# scripts/systemd/), so this is the only container the project owns. It is
+# deliberately self-contained: its own name and its own volume, because the
+# host it runs on may already have another project's OpenSearch on it, and
+# sharing either would put flight-matrix documents in a co-tenant's cluster.
+#
+# Usage (from the repo root):
+#   docker compose -f deploy/opensearch/docker-compose.yml up -d
+#   docker compose -f deploy/opensearch/docker-compose.yml logs -f
+#   docker compose -f deploy/opensearch/docker-compose.yml down       # keeps the volume
+#
+# The host needs one sysctl before OpenSearch will start. New hosts get it from
+# scripts/gcp/bootstrap-vm.sh; a host provisioned before that landed already has
+# /etc/sysctl.d/60-flight-matrix.conf, so append to it there:
+#   echo 'vm.max_map_count = 262144' | sudo tee -a /etc/sysctl.d/60-flight-matrix.conf
+#   sudo sysctl -q --load /etc/sysctl.d/60-flight-matrix.conf
+#
+# Then point the app at it, in /etc/flight-matrix/env:
+#   OPENSEARCH_URL=http://127.0.0.1:9201
+#
+# and populate the index:
+#   .venv/bin/python scripts/reindex_aircraft.py --full
+
+name: flight-matrix-search
+
+services:
+  opensearch:
+    image: opensearchproject/opensearch:2
+    container_name: flight-matrix-opensearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      # No TLS and no authentication. The port below is bound to loopback, so
+      # the only clients are processes on this host; adding the security plugin
+      # would buy certificate management and nothing else.
+      - plugins.security.disabled=true
+      # One document per aircraft, one shard: ~100k small documents plus ~10 MB
+      # of AI reports. 512 MB is generous for that; 256m is enough and is what a
+      # memory-constrained shared host should set. Check free memory before
+      # raising it — this host may already run another project's cluster.
+      - OPENSEARCH_JAVA_OPTS=-Xms${OPENSEARCH_HEAP:-512m} -Xmx${OPENSEARCH_HEAP:-512m}
+      # Required by the 2.12+ entrypoint even with the security plugin off.
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:?OPENSEARCH_ADMIN_PASSWORD is required}
+    # A ceiling on the whole container, not just the JVM heap: off-heap buffers
+    # and Lucene's mmapped segments live outside it. Without this, a search that
+    # allocates badly gets to compete with Postgres and gunicorn for the host's
+    # memory, and the kernel picks the victim. Keep it ~3x the heap.
+    mem_limit: ${OPENSEARCH_MEM_LIMIT:-1536m}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      # Loopback only: the web app, the scheduler and the reindex timer all run
+      # on this host. 9201 rather than 9200 so that another project's cluster on
+      # the default port keeps working.
+      - "127.0.0.1:${OPENSEARCH_HOST_PORT:-9201}:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  opensearch-data:
+    name: flight-matrix-opensearch-data

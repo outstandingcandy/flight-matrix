@@ -448,6 +448,10 @@ class AircraftCacheManager:
                         summary = COALESCE(:summary, summary),
                         tags = COALESCE(:tags, tags),
                         updated_at = CURRENT_TIMESTAMP,
+                        -- Also bumped because the OpenSearch aircraft index
+                        -- resyncs off `last_updated`; a write that leaves it
+                        -- alone is a write search never sees.
+                        last_updated = CURRENT_TIMESTAMP,
                         data_source = :data_source
                     WHERE registration = :registration
                 """),
@@ -475,10 +479,12 @@ class AircraftCacheManager:
                     text("""
                     INSERT INTO aircraft_static_info
                     (registration, hex, owner, operator, aircraft_model, manufacturer,
-                     country, is_military, is_government, is_vip, summary, tags, data_source)
+                     country, is_military, is_government, is_vip, summary, tags, data_source,
+                     last_updated)
                     VALUES
                     (:registration, :hex, :owner, :operator, :aircraft_model, :manufacturer,
-                     :country, :is_military, :is_government, :is_vip, :summary, :tags, :data_source)
+                     :country, :is_military, :is_government, :is_vip, :summary, :tags,
+                     :data_source, CURRENT_TIMESTAMP)
                 """),
                     {
                         "registration": registration,

@@ -15,6 +15,7 @@ includes:
   - aircraft_types.yaml
   - recall.yaml
   - reporting.yaml
+  - search.yaml
   - subscription.yaml
   - scraper/base.yaml
   - scraper/fr24.yaml

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the Flight-Matrix aircraft search reindex every 5 minutes
+
+[Timer]
+# Not at boot: OpenSearch is a container and needs a moment to become healthy.
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=flight-matrix-reindex.service
+
+[Install]
+WantedBy=timers.target

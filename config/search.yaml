@@ -1,0 +1,29 @@
+# =================================
+# Aircraft Full-Text Search (OpenSearch)
+# =================================
+# A single-node OpenSearch holds one document per `aircraft_static_info` row so
+# that the admin aircraft list can match operator / owner / manufacturer /
+# livery / serial text instead of only registration and hex code.
+#
+# The cluster is an accelerator, never a source of truth: a query returns
+# registrations only, PostgreSQL hydrates the rows, and an unreachable or
+# unconfigured cluster falls back to the previous `LIKE` filter. That is why
+# every setting below has a working default and nothing here is required.
+#
+#   url: ""   -> the feature is off; the list endpoint keeps using SQL.
+search:
+  opensearch:
+    url: "${OPENSEARCH_URL}"                  # e.g. http://127.0.0.1:9201
+    index: "aircraft"
+    timeout: 5                                # Seconds per request
+    verify_certs: true                        # Only relevant for https URLs
+    username: "${OPENSEARCH_USERNAME}"        # Empty when the security plugin is disabled
+    password: "${OPENSEARCH_PASSWORD}"
+
+    # Registrations one text query may return. The list endpoint filters and
+    # sorts those in SQL afterwards, so this caps how deep an admin can page
+    # through a text search — not how many rows a page holds.
+    max_results: 1000
+
+    # Documents per `_bulk` request during a reindex.
+    batch_size: 500

@@ -1,0 +1,24 @@
+[Unit]
+Description=Flight-Matrix aircraft search reindex (incremental)
+Documentation=file:///home/ubuntu/flight-matrix/deploy/opensearch/docker-compose.yml
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/flight-matrix
+EnvironmentFile=-/etc/flight-matrix/env
+Environment=PYTHONUNBUFFERED=1
+# Copies every aircraft_static_info row changed since the index's own watermark
+# into OpenSearch. Exits non-zero only if the cluster is unreachable — a failed
+# run costs freshness, not correctness, since the next run picks the same
+# watermark up again. Exits 0 without doing anything when OPENSEARCH_URL is
+# unset, so the timer can be enabled on a host that has no cluster.
+ExecStart=/home/ubuntu/flight-matrix/.venv/bin/python scripts/reindex_aircraft.py --incremental --config config/config.yaml
+StandardOutput=append:/var/log/flight-matrix/reindex.log
+StandardError=append:/var/log/flight-matrix/reindex.log
+
+[Install]
+WantedBy=multi-user.target

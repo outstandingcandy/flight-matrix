@@ -153,7 +153,10 @@ class JetPhotosSink:
                     text("""
                         UPDATE aircraft_static_info
                         SET images_downloaded = true,
-                            images_updated_at = :updated_at
+                            images_updated_at = :updated_at,
+                            -- Bumped so the OpenSearch aircraft index, which
+                            -- resyncs off `last_updated`, picks the row up.
+                            last_updated = :updated_at
                         WHERE registration = :registration
                     """),
                     {

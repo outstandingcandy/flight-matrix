@@ -35,7 +35,10 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 # Ensure the project root is on sys.path before importing anything under `src.`.
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+from src.core.exceptions import SearchError
 from src.data.dialect import beijing_date, day_of, latest_rows, minutes_ago, minutes_from_now
+from src.search.aircraft_index import AircraftSearchIndex
+from src.search.opensearch_client import OpenSearchSettings, get_client
 from src.services.aircraft_service import AircraftService
 from src.services.airport_service import AirportService
 from src.storage import (
@@ -267,6 +270,45 @@ def _table_exists(session, table_name: str) -> bool:
         return inspect(session.get_bind()).has_table(table_name)
     except Exception:
         return False
+
+
+def aircraft_search_index() -> AircraftSearchIndex | None:
+    """Return the aircraft full-text index, if one is configured and reachable.
+
+    Returns:
+        The index handle, or None when OpenSearch is unconfigured or its client
+        could not be built. Callers fall back to SQL.
+    """
+    settings = OpenSearchSettings.from_config(config) if config else OpenSearchSettings()
+    client = get_client(settings)
+    if client is None:
+        return None
+    return AircraftSearchIndex(client, index=settings.index, max_results=settings.max_results)
+
+
+def search_aircraft_registrations(query: str) -> tuple[list[str], bool] | None:
+    """Resolve a free-text aircraft query to registrations via OpenSearch.
+
+    Args:
+        query: Whatever the client typed.
+
+    Returns:
+        A ``(registrations, truncated)`` pair, where `truncated` says the result
+        hit the configured cap and deeper pages are therefore incomplete. None
+        means the index is unusable and the caller should use its SQL filter —
+        search degrading to `LIKE` is better than an admin page 500-ing.
+    """
+    index = aircraft_search_index()
+    if index is None:
+        return None
+
+    try:
+        registrations = index.search_registrations(query)
+    except SearchError as e:
+        logger.warning(f"Aircraft search fell back to SQL: {e}")
+        return None
+
+    return registrations, len(registrations) >= index.max_results
 
 
 def get_image_url(relative_path: str | None) -> str | None:
@@ -3211,8 +3253,16 @@ def api_admin_list_aircraft():
     Sorting is driven by `sort` (a whitelisted key) and `order` (`asc`/`desc`,
     defaulting per key). `sort=photographers` orders by how many distinct
     JetPhotos contributors have submitted a photo of the aircraft.
+
+    `search` goes through OpenSearch when it is configured, which widens the
+    match from registration/hex to operator, owner, manufacturer, livery, serial
+    and the AI analysis, and makes it substring- and typo-tolerant. The index
+    contributes registrations only; this query still reads every rendered field
+    from PostgreSQL. With no index reachable the previous `LIKE` filter is used,
+    so the endpoint never fails because search is down — `search_backend` in the
+    response says which one answered.
     """
-    from sqlalchemy import text
+    from sqlalchemy import bindparam, text
 
     try:
         page = int(request.args.get("page", 1))
@@ -3249,13 +3299,39 @@ def api_admin_list_aircraft():
             # Every clause is qualified with `asi.`: the photographer-count join
             # below also exposes a `registration` column, so a bare name would be
             # ambiguous.
-            # Search filter (registration or ICAO hex)
+            # Search filter — OpenSearch when available, else registration/hex LIKE
+            search_backend = "sql"
+            search_truncated = False
+            matched: list[str] = []
             if search:
-                where_clauses.append(
-                    "(LOWER(asi.registration) LIKE LOWER(:search)"
-                    " OR LOWER(asi.hex_code) LIKE LOWER(:search))"
-                )
-                params["search"] = f"%{search}%"
+                found = search_aircraft_registrations(search)
+                if found is None:
+                    where_clauses.append(
+                        "(LOWER(asi.registration) LIKE LOWER(:search)"
+                        " OR LOWER(asi.hex_code) LIKE LOWER(:search))"
+                    )
+                    params["search"] = f"%{search}%"
+                else:
+                    matched, search_truncated = found
+                    search_backend = "opensearch"
+                    if not matched:
+                        return jsonify(
+                            {
+                                "success": True,
+                                "aircraft": [],
+                                "total": 0,
+                                "page": page,
+                                "pages": 0,
+                                "sort": sort,
+                                "order": order,
+                                "search_backend": search_backend,
+                                "search_truncated": False,
+                            }
+                        )
+                    # Expanded by SQLAlchemy into one placeholder per value, so
+                    # the registrations never reach the SQL as text.
+                    where_clauses.append("asi.registration IN :registrations")
+                    params["registrations"] = matched
 
             # Aircraft type filter
             if aircraft_type:
@@ -3322,7 +3398,14 @@ def api_admin_list_aircraft():
                 LIMIT :limit OFFSET :offset
             """
 
-            result = session.execute(text(query), params).fetchall()
+            # The index ranked the matches by relevance; the list keeps the
+            # admin's own sort instead, so OpenSearch acts as a filter and the
+            # ORDER BY / LIMIT semantics of the page are unchanged.
+            statement = text(query)
+            if matched:
+                statement = statement.bindparams(bindparam("registrations", expanding=True))
+
+            result = session.execute(statement, params).fetchall()
 
             aircraft_list = []
             for row in result:
@@ -3361,8 +3444,19 @@ def api_admin_list_aircraft():
                 {where_sql}
             """
             count_params = {k: v for k, v in params.items() if k not in ("limit", "offset")}
-            total = session.execute(text(count_query), count_params).scalar()
+            count_statement = text(count_query)
+            if matched:
+                count_statement = count_statement.bindparams(
+                    bindparam("registrations", expanding=True)
+                )
+            total = session.execute(count_statement, count_params).scalar()
             pages = (total + limit - 1) // limit if total else 0
+
+            if search_truncated:
+                logger.warning(
+                    f"Aircraft search for {search!r} hit the result cap; "
+                    f"reporting {total} of a possibly larger match set"
+                )
 
             return jsonify(
                 {
@@ -3373,6 +3467,8 @@ def api_admin_list_aircraft():
                     "pages": pages,
                     "sort": sort,
                     "order": order,
+                    "search_backend": search_backend,
+                    "search_truncated": search_truncated,
                 }
             )
 

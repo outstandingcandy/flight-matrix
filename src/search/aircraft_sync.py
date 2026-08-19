@@ -1,0 +1,161 @@
+"""Keeping the aircraft index in step with ``aircraft_static_info``.
+
+There is no single choke point through which aircraft rows are written: nine
+raw-SQL statements across ``src/`` touch the table, one of them on the hot
+ADS-B tracking path. Dual-writing from each of them would put a network call
+into that path and leave nine places to forget.
+
+So the index is synchronised instead of dual-written, from the one thing every
+writer already maintains: ``last_updated``, which is indexed
+(``idx_static_updated``). An incremental pass asks the index for its newest
+document, subtracts a safety overlap, and re-indexes everything the database
+has touched since. Re-indexing is idempotent — same ``_id``, same body — so an
+overlap costs a little work and no correctness.
+
+The overlap matters because the two clocks are not the same one and rows are
+written inside transactions that commit after their timestamp is taken; without
+it, a row committed moments after a sync read the table would never be picked up.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Any, cast
+
+from sqlalchemy import bindparam, text
+
+from src.search.aircraft_index import DOCUMENT_FIELDS, AircraftSearchIndex, build_document
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Engine
+
+logger = logging.getLogger("search.aircraft_sync")
+
+__all__ = [
+    "DEFAULT_OVERLAP",
+    "SyncStats",
+    "incremental_start",
+    "sync_aircraft_index",
+]
+
+# How far back an incremental pass reaches before its watermark. Generous on
+# purpose: the cost is re-indexing a few minutes of rows, the cost of being
+# wrong is a row that never gets indexed at all.
+DEFAULT_OVERLAP = timedelta(minutes=15)
+
+_TABLE = "aircraft_static_info"
+
+
+@dataclass(frozen=True)
+class SyncStats:
+    """Outcome of one sync pass.
+
+    Attributes:
+        indexed: Documents sent to OpenSearch.
+        batches: ``_bulk`` requests issued.
+        since: Watermark the pass started from, or ``None`` for a full pass.
+    """
+
+    indexed: int
+    batches: int
+    since: datetime | None
+
+
+def incremental_start(
+    index: AircraftSearchIndex, overlap: timedelta = DEFAULT_OVERLAP
+) -> datetime | None:
+    """Return the timestamp an incremental sync should start from.
+
+    Args:
+        index: The index to read the watermark from.
+        overlap: Safety margin subtracted from the watermark.
+
+    Returns:
+        The start timestamp, or ``None`` when the index is empty — in which case
+        the caller should run a full pass.
+    """
+    newest = index.max_last_updated()
+    if newest is None:
+        return None
+    return newest - overlap
+
+
+def sync_aircraft_index(
+    engine: Engine,
+    index: AircraftSearchIndex,
+    *,
+    since: datetime | None = None,
+    registrations: Sequence[str] | None = None,
+    batch_size: int = 500,
+) -> SyncStats:
+    """Copy rows from ``aircraft_static_info`` into the index.
+
+    Args:
+        engine: Database engine to read from.
+        index: Destination index. Must already exist; call
+            :meth:`AircraftSearchIndex.ensure_index` first.
+        since: Only index rows whose ``last_updated`` is at or after this.
+            ``None`` indexes every row.
+        registrations: Only index these registrations. Combines with ``since``
+            as an ``AND``; normally used on its own to repair a few rows.
+        batch_size: Rows per ``_bulk`` request.
+
+    Returns:
+        Counts for the pass.
+
+    Raises:
+        SearchError: If a bulk request or the final refresh fails.
+        SQLAlchemyError: If the read fails.
+    """
+    columns = ", ".join(DOCUMENT_FIELDS)
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+
+    if since is not None:
+        clauses.append("last_updated >= :since")
+        params["since"] = since
+    if registrations is not None:
+        if not registrations:
+            return SyncStats(indexed=0, batches=0, since=since)
+        clauses.append("registration IN :registrations")
+        params["registrations"] = list(registrations)
+
+    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    # Ordered by primary key so that a pass which fails part-way through is
+    # resumable by eye, and so tests see a deterministic batch split.
+    statement = text(f"SELECT {columns} FROM {_TABLE} {where_sql} ORDER BY id")
+    if registrations is not None:
+        statement = statement.bindparams(bindparam("registrations", expanding=True))
+
+    indexed = 0
+    batches = 0
+    with engine.connect() as connection:
+        # Streamed so that a full pass over a large fleet does not materialise
+        # every row — including every AI report — in memory at once.
+        result = connection.execution_options(stream_results=True).execute(statement, params)
+        rows = result.mappings()
+        while True:
+            batch = rows.fetchmany(batch_size)
+            if not batch:
+                break
+            # RowMapping is keyed by column name at runtime, but its declared
+            # key type also admits Column objects, which Mapping's invariant
+            # key parameter will not accept.
+            documents = [build_document(cast("Mapping[str, Any]", row)) for row in batch]
+            indexed += index.index_documents(documents)
+            batches += 1
+            logger.debug("Indexed batch %d (%d documents so far)", batches, indexed)
+
+    if indexed:
+        index.refresh()
+
+    logger.info(
+        "Aircraft index sync complete: %d documents in %d batches (since=%s)",
+        indexed,
+        batches,
+        since.isoformat() if since else "beginning",
+    )
+    return SyncStats(indexed=indexed, batches=batches, since=since)

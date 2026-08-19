@@ -58,6 +58,9 @@ dependencies = [
     "numpy>=1.24.0",
     # AI search
     "tavily-python>=0.3.0",
+    # Full-text aircraft index (src/search/aircraft_index.py). Optional at
+    # runtime: an unreachable or unconfigured cluster falls back to SQL.
+    "opensearch-py>=2.4.0",
     # Browser automation
     "DrissionPage>=4.0.0",
     # Unified scraper framework (local submodule)
@@ -208,6 +211,9 @@ module = [
     "src.llm.*",
     "src.media.image_loader",
     "src.media.thumbnails",
+    "src.search.aircraft_index",
+    "src.search.aircraft_sync",
+    "src.search.opensearch_client",
     "src.storage.*",
     "src.web.errors",
 ]

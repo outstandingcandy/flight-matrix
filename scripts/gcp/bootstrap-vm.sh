@@ -77,12 +77,15 @@ grep -qF "$SWAP_FILE" /etc/fstab || printf '%s none swap sw 0 0\n' "$SWAP_FILE" 
 
 # Prefer reclaiming page cache over swapping out a live Postgres backend, but
 # still allow swap under real pressure. 10 is the usual database compromise.
+# max_map_count is OpenSearch's bootstrap requirement (deploy/opensearch/); the
+# default 65530 makes the container exit before it finishes starting.
 sysctl_conf=/etc/sysctl.d/60-flight-matrix.conf
 if [[ ! -f "$sysctl_conf" ]]; then
     log "sysctl: writing $sysctl_conf"
     cat >"$sysctl_conf" <<'SYSCTL'
 vm.swappiness = 10
 vm.overcommit_memory = 0
+vm.max_map_count = 262144
 SYSCTL
     sysctl -q --load "$sysctl_conf"
 fi
