@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Generate thumbnails for aircraft images held in object storage.
+Backfill thumbnails for aircraft images held in object storage.
+
+New images get their thumbnail at ingestion time, in `JetPhotosSink`. This
+script is the catch-up pass for images stored before that existed, or whose
+thumbnail failed to write. The generation itself lives in `src.media.thumbnails`
+so that both paths agree on naming, size, quality and cache-control.
 
 The storage backend follows `DEPLOY_TARGET` (S3 on aws, GCS on gcp, the local
 filesystem otherwise).
@@ -13,18 +18,21 @@ Usage:
 """
 
 import argparse
-import io
 import logging
 import os
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-from PIL import Image
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.core.exceptions import StorageError
+from src.media.thumbnails import (
+    SOURCE_EXTENSIONS,
+    SOURCE_PREFIX,
+    THUMB_PREFIX,
+    ThumbnailService,
+    source_name_from_thumbnail_key,
+)
 from src.storage import ObjectStorage, StorageFactory
 from src.utils.yaml_config import YAMLConfig
 
@@ -33,24 +41,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger("thumbnail_generator")
 
-SOURCE_PREFIX = "data/jetphotos_images/"
-THUMB_PREFIX = "data/jetphotos_thumbnails/"
-THUMB_SIZE = (400, 300)  # width, height
-THUMB_QUALITY = 85
-THUMB_CACHE_CONTROL = "public, max-age=31536000"  # 1 year cache
-SOURCE_EXTENSIONS = (".jpg", ".jpeg", ".png")
 
-
-class ThumbnailGenerator:
-    """Resizes stored aircraft images into CDN-cacheable thumbnails."""
+class ThumbnailBackfill:
+    """Finds stored aircraft images with no thumbnail and generates them."""
 
     def __init__(self, storage: ObjectStorage) -> None:
-        """Initialize the generator.
+        """Initialize the backfill.
 
         Args:
             storage: Object storage holding both source images and thumbnails.
         """
         self.storage = storage
+        self.thumbnails = ThumbnailService(storage)
 
     def list_source_images(self) -> list[str]:
         """List all source image keys.
@@ -68,62 +70,7 @@ class ThumbnailGenerator:
         Returns:
             Source filenames (thumbnail names mapped back to `_full`).
         """
-        return {
-            key.replace(THUMB_PREFIX, "").replace("_thumb", "_full")
-            for key in self.storage.list_keys(THUMB_PREFIX)
-        }
-
-    def get_thumbnail_key(self, source_key: str) -> str:
-        """Convert a source image key to its thumbnail key.
-
-        Args:
-            source_key: Key of the full-size image.
-
-        Returns:
-            Key the thumbnail is stored under.
-        """
-        filename = source_key.replace(SOURCE_PREFIX, "")
-        # Replace _full with _thumb in filename
-        thumb_filename = filename.replace("_full_", "_thumb_")
-        return THUMB_PREFIX + thumb_filename
-
-    def generate_thumbnail(self, source_key: str) -> bool:
-        """Generate and upload the thumbnail for a single image.
-
-        Args:
-            source_key: Key of the full-size image.
-
-        Returns:
-            True when the thumbnail was written.
-        """
-        try:
-            thumb_key = self.get_thumbnail_key(source_key)
-            image_data = self.storage.download_bytes(source_key)
-
-            img = Image.open(io.BytesIO(image_data))
-
-            # Convert to RGB if necessary (for PNG with alpha)
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
-
-            # Create thumbnail maintaining aspect ratio
-            img.thumbnail(THUMB_SIZE, Image.Resampling.LANCZOS)
-
-            buffer = io.BytesIO()
-            img.save(buffer, format="JPEG", quality=THUMB_QUALITY, optimize=True)
-
-            self.storage.upload_bytes(
-                thumb_key,
-                buffer.getvalue(),
-                content_type="image/jpeg",
-                cache_control=THUMB_CACHE_CONTROL,
-            )
-
-            return True
-
-        except (StorageError, OSError, ValueError) as e:
-            logger.error(f"Failed to generate thumbnail for {source_key}: {e}")
-            return False
+        return {source_name_from_thumbnail_key(key) for key in self.storage.list_keys(THUMB_PREFIX)}
 
     def get_pending_images(self) -> list[str]:
         """Find images that have no thumbnail yet.
@@ -158,28 +105,9 @@ class ThumbnailGenerator:
         Returns:
             Tuple of (success_count, failed_count).
         """
-        success = 0
-        failed = 0
-        total = len(images)
-
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(self.generate_thumbnail, img): img for img in images}
-
-            for i, future in enumerate(as_completed(futures), 1):
-                source_key = futures[future]
-                try:
-                    if future.result():
-                        success += 1
-                    else:
-                        failed += 1
-                except Exception as e:
-                    logger.error(f"Exception processing {source_key}: {e}")
-                    failed += 1
-
-                if i % 100 == 0 or i == total:
-                    logger.info(f"Progress: {i}/{total} ({success} success, {failed} failed)")
-
-        return success, failed
+        # skip_existing is off: `get_pending_images` has already diffed the two
+        # prefixes, so a per-image existence check would only add a request each.
+        return self.thumbnails.ensure_thumbnails(images, skip_existing=False, workers=workers)
 
 
 def main() -> None:
@@ -200,10 +128,10 @@ def main() -> None:
     except StorageError as e:
         raise SystemExit(f"Object storage unavailable: {e}") from e
 
-    generator = ThumbnailGenerator(storage)
+    backfill = ThumbnailBackfill(storage)
 
     if args.count:
-        pending = generator.get_pending_images()
+        pending = backfill.get_pending_images()
         print(f"\nImages pending thumbnail generation: {len(pending)}")
         return
 
@@ -212,7 +140,7 @@ def main() -> None:
         return
 
     # Get pending images
-    pending = generator.get_pending_images()
+    pending = backfill.get_pending_images()
 
     if not pending:
         print("No images need thumbnail generation!")
@@ -224,7 +152,7 @@ def main() -> None:
 
     print(f"\nProcessing {len(pending)} images with {args.workers} workers...")
 
-    success, failed = generator.process_batch(pending, workers=args.workers)
+    success, failed = backfill.process_batch(pending, workers=args.workers)
 
     print(f"\n{'=' * 50}")
     print("Thumbnail Generation Complete:")

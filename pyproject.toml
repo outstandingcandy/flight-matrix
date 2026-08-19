@@ -49,6 +49,9 @@ dependencies = [
     "reverse-geocoder>=1.5.1",
     # Timezone
     "pytz>=2023.3",
+    # Image processing: thumbnails (src/media/thumbnails.py) and the downscale
+    # that keeps aircraft photos under Bedrock's payload limit.
+    "pillow>=10.0.0",
     # Map generation
     "plotly>=5.14.0",
     "kaleido>=0.2.1",
@@ -204,6 +207,7 @@ module = [
     "src.data.dialect",
     "src.llm.*",
     "src.media.image_loader",
+    "src.media.thumbnails",
     "src.storage.*",
     "src.web.errors",
 ]

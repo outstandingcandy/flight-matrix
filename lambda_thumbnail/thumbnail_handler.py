@@ -10,9 +10,14 @@ Trigger: S3 PUT events on data/jetphotos_images/*
 This handler deliberately talks to boto3 directly rather than going through
 `src.storage`: `scripts/deploy_thumbnail_lambda.sh` zips this single file, so
 the deployment package has no `src/` tree, and the function only ever runs on
-the aws deployment target behind an S3 event notification. The gcp and local
-targets get the same thumbnails from `scripts/generate_thumbnails.py`, which
-does use the storage abstraction. Keep the two in sync: THUMB_SIZE,
+the aws deployment target behind an S3 event notification.
+
+It is now a redundant second producer rather than the only one. `src.media.
+thumbnails` holds the vendor-neutral definition, and every target generates the
+thumbnail at ingestion time in `JetPhotosSink`, so this function normally finds
+its work already done, and skips it on the head_object check below. Keeping it costs
+nothing and still covers objects that reach the bucket by some other route.
+Because it is a copy, keep it in sync with `src/media/thumbnails.py`: THUMB_SIZE,
 THUMB_QUALITY, the `_full_` -> `_thumb_` key mapping, and the Cache-Control
 header must match.
 """
@@ -89,8 +94,9 @@ def generate_thumbnail(bucket: str, source_key: str) -> bool:
         # Open and resize image
         img = Image.open(io.BytesIO(image_data))
 
-        # Convert to RGB if necessary (for PNG with alpha)
-        if img.mode in ('RGBA', 'P'):
+        # JPEG has no alpha channel and no palette; "L" stays as a smaller
+        # greyscale JPEG. Same condition as src/media/thumbnails.py.
+        if img.mode not in ('RGB', 'L'):
             img = img.convert('RGB')
 
         # Create thumbnail maintaining aspect ratio

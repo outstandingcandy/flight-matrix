@@ -29,6 +29,7 @@ def load_image_bytes(
     image_path: str,
     storage: ObjectStorage | None = None,
     local_dirs: Sequence[str] = (),
+    prefer_local: bool = False,
 ) -> bytes | None:
     """Read a stored image, trying object storage before the local filesystem.
 
@@ -43,6 +44,10 @@ def load_image_bytes(
             only (the ``local`` target, or a misconfigured provider).
         local_dirs: Extra directories to look for the file's basename in, for
             paths stored before the ``data/``-prefixed key convention.
+        prefer_local: Reverse the order and read the local file first. For the
+            ingestion path, where the scraper has just written the file and the
+            stored copy is a copy of it, so downloading it back is a wasted
+            round trip rather than the only way to get the bytes.
 
     Returns:
         The raw image bytes, or ``None`` when the image is in neither place.
@@ -51,6 +56,11 @@ def load_image_bytes(
     """
     if not image_path:
         return None
+
+    if prefer_local:
+        local = _load_local(image_path, local_dirs, warn_if_missing=storage is None)
+        if local is not None:
+            return local
 
     if storage is not None:
         key = storage.strip_public_prefix(image_path)
@@ -62,16 +72,26 @@ def load_image_bytes(
             # would be.
             logger.debug("Image %s not readable from object storage: %s", key, e)
 
+    if prefer_local:
+        # Already tried, and storage did not have it either.
+        logger.warning("Image not found in object storage or locally: %s", image_path)
+        return None
+
     return _load_local(image_path, local_dirs)
 
 
-def _load_local(image_path: str, local_dirs: Sequence[str]) -> bytes | None:
+def _load_local(
+    image_path: str, local_dirs: Sequence[str], warn_if_missing: bool = True
+) -> bytes | None:
     """Read the first of several candidate local paths that exists.
 
     Args:
         image_path: Stored path, used as-is and relative to the working
             directory.
         local_dirs: Directories to try the basename in.
+        warn_if_missing: Log at warning level when no candidate exists. Off when
+            the caller still has object storage to fall back to, so a routine
+            miss is not reported as a problem.
 
     Returns:
         The file's bytes, or ``None`` if no candidate could be read.
@@ -92,5 +112,6 @@ def _load_local(image_path: str, local_dirs: Sequence[str]) -> bytes | None:
         except OSError as e:
             logger.error("Failed to read local image (%s): %s", candidate, e)
 
-    logger.warning("Image not found in object storage or locally: %s", image_path)
+    if warn_if_missing:
+        logger.warning("Image not found in object storage or locally: %s", image_path)
     return None

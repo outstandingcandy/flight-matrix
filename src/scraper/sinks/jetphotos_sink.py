@@ -1,10 +1,19 @@
-"""Sink for JetPhotos scraper — updates ``aircraft_static_info`` + ``aircraft_images``."""
+"""Sink for JetPhotos scraper — updates ``aircraft_static_info`` + ``aircraft_images``.
+
+Also the place a freshly downloaded image gets its thumbnail. That belongs here
+rather than in the scraper because the sink is the layer that knows about this
+deployment's storage, and it runs on every target — unlike the AWS-only
+``lambda_thumbnail`` function, which was the only on-demand producer and left
+``gcp`` and ``local`` deployments serving broken thumbnail URLs until somebody
+ran ``scripts/generate_thumbnails.py`` by hand.
+"""
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from resilient_scraper.models import ScraperTask
 from resilient_scraper.scrapers.aviation.jetphotos.models import (
@@ -14,19 +23,54 @@ from resilient_scraper.scrapers.aviation.jetphotos.models import (
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
+from src.storage.base import ObjectStorage
+
+if TYPE_CHECKING:
+    from src.media.thumbnails import ThumbnailService
+
 logger = logging.getLogger("scraper.sinks.jetphotos")
 
 
 class JetPhotosSink:
-    """Persist JetPhotos downloads into flight-matrix tables."""
+    """Persist JetPhotos downloads into flight-matrix tables.
 
-    def __init__(self, database_url: str) -> None:
+    Args:
+        database_url: SQLAlchemy URL. An empty value disables the DB writes.
+        storage: Object storage for this deployment target, used to write
+            thumbnails. ``None`` disables thumbnail generation, leaving the
+            backfill script as the only producer.
+        images_dir: Directory the scraper downloads into, searched for a source
+            image whose stored key is not resolvable as-is.
+    """
+
+    def __init__(
+        self,
+        database_url: str,
+        storage: ObjectStorage | None = None,
+        images_dir: str = "",
+    ) -> None:
         self.db_engine: Any | None = None
         if database_url:
             try:
                 self.db_engine = create_engine(database_url, echo=False, pool_pre_ping=True)
             except Exception as e:
                 logger.error(f"Failed to initialize DB engine: {e}")
+
+        self.thumbnails: ThumbnailService | None = None
+        if storage is not None:
+            try:
+                from src.media.thumbnails import ThumbnailService as _ThumbnailService
+            except ImportError as e:
+                # Pillow. Imported here rather than at module scope so a runtime
+                # image built before it was declared loses thumbnails instead of
+                # failing to load the sink and taking every scraper with it.
+                logger.warning(f"Thumbnails disabled ({e}); install pillow to enable them")
+            else:
+                local_dirs: Sequence[str] = (images_dir,) if images_dir else ()
+                # prefer_local: the scraper has just written the file to
+                # images_dir, so reading it back out of the bucket would be a
+                # wasted round trip.
+                self.thumbnails = _ThumbnailService(storage, local_dirs, prefer_local=True)
 
     # Callback wired into scraper config as ``persist_images_callback``
     def persist_images(
@@ -35,12 +79,34 @@ class JetPhotosSink:
         image_paths: list[str],
         images_metadata: list[ImageMetadata],
     ) -> None:
-        if not self.db_engine:
-            return
-        if image_paths:
-            self._sync_to_aircraft_static_info(registration, image_paths)
-        if images_metadata:
-            self._save_images_metadata(registration, images_metadata)
+        if self.db_engine:
+            if image_paths:
+                self._sync_to_aircraft_static_info(registration, image_paths)
+            if images_metadata:
+                self._save_images_metadata(registration, images_metadata)
+
+        # Last, and never conditional on the writes above succeeding: a
+        # thumbnail is derived data, so it is worth having even if the metadata
+        # write failed, and its absence must not hold up the row.
+        if image_paths and self.thumbnails is not None:
+            self._generate_thumbnails(registration, image_paths)
+
+    def _generate_thumbnails(self, registration: str, image_paths: list[str]) -> None:
+        """Write a thumbnail for each image this scrape stored.
+
+        Args:
+            registration: Aircraft registration, for logging.
+            image_paths: Object keys of the images just downloaded.
+        """
+        assert self.thumbnails is not None
+        written = sum(1 for path in image_paths if self.thumbnails.ensure_thumbnail(path))
+        if written < len(image_paths):
+            logger.warning(
+                f"[{registration}] Wrote {written}/{len(image_paths)} thumbnail(s); "
+                "the rest will be picked up by scripts/generate_thumbnails.py"
+            )
+        else:
+            logger.info(f"[{registration}] Wrote {written} thumbnail(s)")
 
     def _sync_to_aircraft_static_info(self, registration: str, image_paths: list[str]) -> None:
         assert self.db_engine is not None

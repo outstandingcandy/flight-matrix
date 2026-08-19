@@ -12,7 +12,11 @@ This package owns the flight-matrix-specific parts:
   async adapters satisfying `resilient_scraper.queue.TaskQueue`; these are
   what the submodule Worker actually consumes.
 - `sinks/` — flight-matrix DB writes. Bound onto each aviation scraper at
-  registration time so the scraper stays persistence-agnostic.
+  registration time so the scraper stays persistence-agnostic. `JetPhotosSink`
+  also writes each downloaded image's thumbnail, through
+  `src.media.thumbnails` and therefore through `ObjectStorage`, so it works the
+  same on `aws`, `gcp` and `local`. The scraper's own image upload still uses
+  boto3 directly and only works on `aws`.
 - `sources/` — domain-table pollers (aircraft_static_info etc.) used by
   `LocalTaskQueue` for local-mode scraping.
 - `task_scheduler.py` / `xiaohongshu_cycle_scheduler.py` — standalone

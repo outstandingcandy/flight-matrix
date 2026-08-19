@@ -414,11 +414,51 @@ def _build_scraper_configs(
     return configs
 
 
+def _build_storage(config: dict[str, Any] | None) -> Any:
+    """Build object storage for the active deployment target.
+
+    Args:
+        config: Loaded YAML configuration, or ``None`` when the caller has none.
+
+    Returns:
+        An :class:`~src.storage.base.ObjectStorage`, or ``None`` if no provider
+        could be configured. ``None`` is a supported outcome: it disables the
+        features that need storage (thumbnails) rather than failing the scrape.
+    """
+    if config is None:
+        return None
+
+    from src.core.exceptions import StorageError
+    from src.storage import StorageFactory
+    from src.utils.yaml_config import YAMLConfig
+
+    # Wrap the already-loaded dict rather than re-reading the file: `__init__`
+    # reloads .env and re-resolves the include tree. Only `config` is needed —
+    # `StorageFactory` reads it through `get()`, which is also what interpolates
+    # `${S3_BUCKET_NAME}` and friends.
+    yaml_config = YAMLConfig.__new__(YAMLConfig)
+    yaml_config.config = config
+    try:
+        return StorageFactory.create(yaml_config)
+    except StorageError as e:
+        logger.warning(f"Object storage unavailable; thumbnails disabled: {e}")
+        return None
+
+
 def _build_sinks_and_augment_configs(
     configs: dict[str, tuple[type, dict[str, Any]]],
     database_url: str,
+    config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Instantiate the sink for each aviation scraper and wire callbacks into its config.
+
+    Args:
+        configs: Scraper ``task_type → (class, config)`` map, augmented in place
+            with the callbacks each sink provides.
+        database_url: SQLAlchemy URL; an empty value builds no sinks at all.
+        config: Loaded YAML configuration, for sinks that need more than the
+            database — currently only JetPhotos, which writes thumbnails to
+            object storage.
 
     Returns a mapping ``task_type → sink`` so callers can bind the sink's
     on_success/on_failure onto the scraper after instantiation.
@@ -475,8 +515,14 @@ def _build_sinks_and_augment_configs(
         sinks["airport_data"] = sink
 
     if "jetphotos" in configs:
-        sink = JetPhotosSink(database_url)
         cls, cfg = configs["jetphotos"]
+        # The thumbnail step goes through ObjectStorage, so it works the same on
+        # every deployment target. The scraper's own upload path is boto3-only.
+        sink = JetPhotosSink(
+            database_url,
+            storage=_build_storage(config),
+            images_dir=str(cfg.get("images_dir", "")),
+        )
         cfg.setdefault("persist_images_callback", sink.persist_images)
         sinks["jetphotos"] = sink
 
@@ -678,7 +724,9 @@ async def run_worker(
 
     # Sinks: write to flight-matrix tables from on_success and provide
     # persist_*_callback / add_task_callback hooks to scrapers that need them.
-    sinks = _build_sinks_and_augment_configs(scraper_configs, database_url) if not no_db else {}
+    sinks = (
+        _build_sinks_and_augment_configs(scraper_configs, database_url, config) if not no_db else {}
+    )
 
     # Which scraper types should this process serve?
     active_types = scrapers if scrapers else _default_active_types(config)
