@@ -1,0 +1,85 @@
+# Dockerfile for the flight-matrix Flask/gunicorn web app.
+#
+# Mirrors the tuning already proven in production under systemd
+# (scripts/systemd/flight-matrix-web.service) rather than inventing new
+# defaults: same gunicorn flags, same wsgi:app target, same install mechanism
+# (uv sync --frozen) that scripts/gcp/deploy-app.sh uses on a bare host.
+#
+# Multi-stage so the final image doesn't carry build-essential or the uv
+# cache. Structure follows Dockerfile.scraper's builder/runtime split.
+
+FROM python:3.12-slim AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+
+# pyproject.toml declares resilient-scraper as an editable path dependency
+# (lib/resilient-scraper), so its source has to be present before `uv sync`
+# runs, not copied in afterward.
+COPY pyproject.toml uv.lock ./
+COPY lib/resilient-scraper lib/resilient-scraper
+
+# --frozen: install exactly what uv.lock says, fail rather than re-resolve.
+# --no-dev: pytest/mypy/ruff have no place in a server image.
+RUN uv sync --frozen --no-dev
+
+FROM python:3.12-slim
+
+RUN useradd -m -u 1000 webapp
+
+WORKDIR /app
+
+COPY --from=builder /app/.venv /app/.venv
+# resilient-scraper is installed editable (pyproject.toml: `{ path =
+# "lib/resilient-scraper", editable = true }`), so .venv holds a reference back
+# to this source tree, not a copy of the package — without it here too, that
+# reference dangles and anything importing resilient_scraper 404s at runtime.
+# The web app itself never noticed: no request-serving code path imports it.
+COPY --chown=webapp:webapp lib/resilient-scraper lib/resilient-scraper
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+COPY --chown=webapp:webapp web_app.py wsgi.py ./
+COPY --chown=webapp:webapp src/ ./src/
+COPY --chown=webapp:webapp web_templates/ ./web_templates/
+COPY --chown=webapp:webapp web_static/ ./web_static/
+COPY --chown=webapp:webapp config/ ./config/
+# One-off admin/migration scripts (e.g. migrate_backfill_image_airport_icao.py)
+# run via `docker compose exec web python scripts/<name>.py` — the reason this
+# container exists rather than a plain systemd process is being able to run
+# these without a shell that has read access to /etc/flight-matrix/env.
+COPY --chown=webapp:webapp scripts/ ./scripts/
+
+USER webapp
+
+EXPOSE 8000
+
+# Same flags as scripts/systemd/flight-matrix-web.service's ExecStart, with one
+# deliberate difference: --bind 0.0.0.0:8000, not 127.0.0.1:8000. The unit binds
+# loopback because nginx runs on the same host; here the caddy container reaches
+# this one over the compose bridge network, where 127.0.0.1 would mean "inside
+# this container" and caddy would get connection-refused.
+#   - wsgi:app, not web_app:app — wsgi.py calls init_app(), which populates
+#     db_manager/config; web_app:app alone starts but 500s on every DB route.
+#   - --timeout 300 — aircraft analysis calls an LLM inline and can run for
+#     minutes; gunicorn's 30s default would kill the worker mid-request.
+#   - 2 workers x 4 threads rather than (2*CPU)+1 — the workload is IO-bound
+#     on the database and the LLM, and each worker is a full copy of the app
+#     (SQLAlchemy, plotly, the Google SDKs), so worker count dominates
+#     resident memory more than it would for a CPU-bound service.
+CMD ["gunicorn", \
+     "--bind", "0.0.0.0:8000", \
+     "--workers", "2", \
+     "--threads", "4", \
+     "--timeout", "300", \
+     "--graceful-timeout", "30", \
+     "--keep-alive", "5", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-", \
+     "wsgi:app"]

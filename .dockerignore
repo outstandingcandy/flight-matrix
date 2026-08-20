@@ -1,0 +1,20 @@
+# Keeps Docker build contexts small. lib/resilient-scraper is NOT excluded —
+# pyproject.toml declares it as an editable path dependency, so `uv sync`
+# needs its source present in every image build.
+.venv/
+__pycache__/
+*.pyc
+.git/
+.github/
+tests/
+docs/
+data/
+*.db
+lambda_code/
+cdk.out/
+node_modules/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+*.egg-info/

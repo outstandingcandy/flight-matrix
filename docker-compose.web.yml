@@ -1,0 +1,112 @@
+# Self-contained stack for flight-matrix on redpanda: caddy terminates TLS and
+# proxies to the app container; postgres is adopted from the pre-existing
+# `flight-matrix-db` container (same image, same named volume
+# `flight-matrix-pgdata` — see backups/ for a pg_dumpall taken immediately
+# before this file first replaced the standalone `docker run` container).
+# None of the three services uses network_mode: host — every cross-service
+# call goes over the compose-managed bridge network, which is the actual
+# content of "each project owns its own port publishing": only caddy
+# publishes a host port at all.
+#
+# Two host-specific, non-secret values are read from a `.env` file living
+# beside this compose file (not committed — see docs/deployment.md):
+#   CERT_DOMAIN     — matches the existing certbot certificate's directory
+#                      name under /etc/letsencrypt/live/, e.g. the nip.io host.
+#   CADDY_HOST_PORT — defaults to 8443 (the production port). Overridden to a
+#                      bypass port (e.g. 8444) while verifying a deploy before
+#                      cutting real traffic over.
+#
+# DATABASE_URL for the `web` service comes from /etc/flight-matrix/env.docker,
+# a derived copy of /etc/flight-matrix/env with the host:port rewritten to
+# `db:5432` (the postgres service's name on this compose network) — a
+# bridge-networked container cannot reach another container via the host's
+# 127.0.0.1, and now that postgres is a service in this same file, it doesn't
+# need to: they share a network and can address each other by service name.
+# POSTGRES_USER/DB below match the existing volume's actual database
+# (aircraft_admin/aircraft_data); POSTGRES_PASSWORD is a placeholder, not the
+# real credential — postgres only consults it on first-ever init of an empty
+# data directory, and this volume already has one.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: flight-matrix-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=aircraft_admin
+      - POSTGRES_DB=aircraft_data
+      # Not the real password. Ignored by postgres on a volume that already
+      # has an initialized cluster — only consulted on first-ever init.
+      - POSTGRES_PASSWORD=unused-existing-volume-has-real-auth
+    volumes:
+      - flight-matrix-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "aircraft_admin", "-d", "aircraft_data"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "3" }
+    ports:
+      # TEMPORARY, until the systemd flight-matrix-web.service is fully cut
+      # over to the web+caddy services below: that unit's DATABASE_URL still
+      # points at 127.0.0.1:5433 and cannot be changed without restarting it,
+      # which is itself a live-traffic interruption. Remove this once systemd
+      # is stopped for good (step 4 of the plan) — nothing outside this
+      # compose network should need to reach postgres directly after that.
+      - "127.0.0.1:5433:5432"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: flight-matrix-web
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - /etc/flight-matrix/env.docker
+    environment:
+      - PYTHONUNBUFFERED=1
+      # env.docker's CONFIG_PATH is an absolute host path
+      # (/home/.../flight-matrix/config/config.yaml, written by
+      # deploy-app.sh for the systemd deployment) that does not exist inside
+      # this image's filesystem. `environment:` wins over `env_file:` for the
+      # same key, so this override is what actually takes effect — without
+      # it, YAMLConfig logs "not found, using defaults" and every config/*.yaml
+      # setting (api tokens, scraper config, etc.) silently goes unloaded.
+      - CONFIG_PATH=/app/config/config.yaml
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "3" }
+    # No `ports:` — web is reachable only from caddy, over this network.
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: flight-matrix-caddy
+    restart: unless-stopped
+    depends_on:
+      - web
+    ports:
+      - "${CADDY_HOST_PORT:-8443}:8443"
+    environment:
+      - CERT_DOMAIN=${CERT_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Mounted at the SAME absolute path inside the container as outside:
+      # certbot's live/<domain>/*.pem are symlinks to ../../archive/<domain>/,
+      # and a relative symlink only resolves if that sibling path exists too.
+      # Both mounts are scoped to this one domain, not all of /etc/letsencrypt
+      # (which holds every tenant's certificates on this shared host).
+      - /etc/letsencrypt/live/${CERT_DOMAIN}:/etc/letsencrypt/live/${CERT_DOMAIN}:ro
+      - /etc/letsencrypt/archive/${CERT_DOMAIN}:/etc/letsencrypt/archive/${CERT_DOMAIN}:ro
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
+
+volumes:
+  flight-matrix-pgdata:
+    external: true

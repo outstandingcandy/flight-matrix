@@ -1,0 +1,20 @@
+# Reverse proxy + TLS termination for flight-matrix-web, replacing the nginx
+# site that used to do this on the host (scripts/gcp/provision-existing-host.sh).
+#
+# `tls` below points at an already-issued certificate rather than letting Caddy
+# manage its own via ACME. Reason: Let's Encrypt's HTTP-01/TLS-ALPN-01 challenges
+# are hardcoded to ports 80/443, and this host's domain is a public nip.io name
+# with no DNS-01 option — asking Caddy to obtain its own certificate would mean
+# contending for port 80 with whatever else already holds it on this shared
+# host. Renewal stays with the host's existing certbot installation; a
+# certbot deploy-hook reloads this Caddy instance after a successful renewal
+# (see /etc/letsencrypt/renewal-hooks/deploy/reload-caddy.sh on the host —
+# not part of this repo, since it references a host path).
+{
+	auto_https off
+}
+
+:8443 {
+	tls /etc/letsencrypt/live/{env.CERT_DOMAIN}/fullchain.pem /etc/letsencrypt/live/{env.CERT_DOMAIN}/privkey.pem
+	reverse_proxy web:8000
+}
