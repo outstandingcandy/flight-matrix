@@ -445,6 +445,43 @@ def _build_storage(config: dict[str, Any] | None) -> Any:
         return None
 
 
+def _build_ingest_target(config: dict[str, Any] | None) -> tuple[str, str] | None:
+    """Resolve the ingest API to post airport boards to, if one is configured.
+
+    Args:
+        config: Loaded YAML configuration, or ``None`` when the caller has none.
+
+    Returns:
+        A ``(base_url, token)`` pair, or ``None`` to write straight to the
+        database instead. Both halves are required: a base URL without a token
+        would be refused by the endpoint on every request, and silently scraping
+        into nowhere is worse than not starting.
+    """
+    if config is None:
+        return None
+
+    from src.utils.yaml_config import YAMLConfig
+
+    # Same wrapping trick as `_build_storage`: `get()` is what interpolates
+    # `${INGEST_BASE_URL}`, and re-reading the file would reload .env.
+    yaml_config = YAMLConfig.__new__(YAMLConfig)
+    yaml_config.config = config
+    base_url = str(yaml_config.get("scraper.ingest.base_url", "") or "").strip()
+    token = str(yaml_config.get("scraper.ingest.token", "") or "").strip()
+
+    if not base_url:
+        return None
+    if not token:
+        logger.error(
+            "scraper.ingest.base_url is set but scraper.ingest.token is empty; "
+            "the ingest API would refuse every request. Set INGEST_API_TOKEN."
+        )
+        return None
+
+    logger.info(f"Airport boards will be posted to {base_url}/api/ingest/flight-schedules")
+    return base_url, token
+
+
 def _build_sinks_and_augment_configs(
     configs: dict[str, tuple[type, dict[str, Any]]],
     database_url: str,
@@ -455,10 +492,11 @@ def _build_sinks_and_augment_configs(
     Args:
         configs: Scraper ``task_type → (class, config)`` map, augmented in place
             with the callbacks each sink provides.
-        database_url: SQLAlchemy URL; an empty value builds no sinks at all.
+        database_url: SQLAlchemy URL; an empty value builds only the sinks that
+            do not need a database — currently just the airport-board API sink.
         config: Loaded YAML configuration, for sinks that need more than the
-            database — currently only JetPhotos, which writes thumbnails to
-            object storage.
+            database — JetPhotos, which writes thumbnails to object storage, and
+            the airport boards, which can be shipped to the ingest API.
 
     Returns a mapping ``task_type → sink`` so callers can bind the sink's
     on_success/on_failure onto the scraper after instantiation.
@@ -471,10 +509,28 @@ def _build_sinks_and_augment_configs(
     from src.scraper.sinks.jetphotos_sink import JetPhotosSink
     from src.scraper.task_queue import TaskQueue
 
-    if not database_url:
-        return {}
-
     sinks: dict[str, Any] = {}
+
+    # Airport boards first, because this is the one scraper whose rows can reach
+    # the database without this process being able to: `fr24_airport` needs a real
+    # Chromium and so runs where Aurora is unreachable. With `scraper.ingest`
+    # configured the rows go over HTTPS instead, which is also the only sink that
+    # works under --no-db.
+    ingest = _build_ingest_target(config)
+    for t in ("fr24_airport", "fr24_arrivals", "fr24_departures"):
+        if t not in configs:
+            continue
+        hint = {"fr24_arrivals": "arrival", "fr24_departures": "departure"}.get(t, "")
+        if ingest is not None:
+            from src.scraper.sinks.fr24_airport_api_sink import FR24AirportApiSink
+
+            base_url, token = ingest
+            sinks[t] = FR24AirportApiSink(base_url, token, flight_type_hint=hint)
+        elif database_url:
+            sinks[t] = FR24AirportSink(database_url, flight_type_hint=hint)
+
+    if not database_url:
+        return sinks
 
     if "fr24_map" in configs:
         sinks["fr24_map"] = FR24MapSink(database_url)
@@ -501,10 +557,6 @@ def _build_sinks_and_augment_configs(
             sinks["adsbx_map"] = ADSBxMapSink(database_url)
     if "fr24_aircraft" in configs:
         sinks["fr24_aircraft"] = FR24AircraftSink(database_url)
-    for t in ("fr24_airport", "fr24_arrivals", "fr24_departures"):
-        if t in configs:
-            hint = {"fr24_arrivals": "arrival", "fr24_departures": "departure"}.get(t, "")
-            sinks[t] = FR24AirportSink(database_url, flight_type_hint=hint)
 
     if "airport_data" in configs:
         task_queue = TaskQueue(database_url)
@@ -732,9 +784,10 @@ async def run_worker(
 
     # Sinks: write to flight-matrix tables from on_success and provide
     # persist_*_callback / add_task_callback hooks to scrapers that need them.
-    sinks = (
-        _build_sinks_and_augment_configs(scraper_configs, database_url, config) if not no_db else {}
-    )
+    # Called even under --no-db, because the airport-board API sink is how a
+    # scraper with no database reaches one; every DB-backed sink is gated on the
+    # empty URL inside.
+    sinks = _build_sinks_and_augment_configs(scraper_configs, "" if no_db else database_url, config)
 
     # Which scraper types should this process serve?
     active_types = scrapers if scrapers else _default_active_types(config)

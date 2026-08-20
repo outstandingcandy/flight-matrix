@@ -208,14 +208,17 @@ exclude = [
 module = [
     "src.core.*",
     "src.data.dialect",
+    "src.data.flight_schedule_repo",
     "src.llm.*",
     "src.media.image_loader",
     "src.media.thumbnails",
+    "src.scraper.sinks.fr24_airport_api_sink",
     "src.search.aircraft_index",
     "src.search.aircraft_sync",
     "src.search.opensearch_client",
     "src.storage.*",
     "src.web.errors",
+    "src.web.routes.ingest",
 ]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true

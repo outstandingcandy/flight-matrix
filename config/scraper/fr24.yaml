@@ -15,6 +15,13 @@ scraper:
       default_priority: 0             # Default priority for airports not in any group
       default_min_cycle_gap: 1800     # Default cycle gap: 30 minutes
 
+      # Airports for `--local` runs, read only by FR24AirportTaskSource, which
+      # cycles this list instead of reading scraper_tasks. The DB scheduler reads
+      # `airport_groups` below and ignores this key, so the two do not interact.
+      # Kept to PEK: a local run means one browser on one workstation.
+      airports:
+        - PEK     # Beijing Capital
+
       # Airport groups with different priorities and scraping intervals
       # Higher priority = processed first; lower min_cycle_gap = more frequent scraping
       airport_groups:

@@ -24,6 +24,16 @@ scraper:
     auto_start: true                    # Auto-start Xvfb if DISPLAY not set
     display_base: 55                    # Display number (:55)
 
+  # Ingest API — the write path for a scraper that cannot reach the database.
+  # `fr24_airport` needs a real Chromium (Cloudflare), so it runs on a
+  # workstation while Postgres listens on the web host's loopback only. Set both
+  # env vars there and its rows are POSTed to /api/ingest/flight-schedules
+  # instead of being written directly; leave base_url empty and the direct
+  # database sink is used, which is what the co-located deployment does.
+  ingest:
+    base_url: "${INGEST_BASE_URL}"      # e.g. https://example.org:8443
+    token: "${INGEST_API_TOKEN}"        # must match the web app's api.ingest_token
+
   # Task queue configuration
   task_queue:
     poll_interval: 5                    # Queue poll interval (seconds)
