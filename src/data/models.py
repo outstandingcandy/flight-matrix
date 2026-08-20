@@ -744,6 +744,10 @@ class AircraftImage(Base):
         Index("idx_image_photographer", "photographer"),
         Index("idx_image_photo_date", "photo_date"),
         Index("idx_image_airport", "airport_icao"),
+        # "which types were photographed at this airport" joins straight from
+        # airport to registration; without the second column that query drops to
+        # a heap lookup per photo, and ZBAA alone has 70k of them.
+        Index("idx_image_airport_reg", "airport_icao", "registration"),
     )
 
     def to_dict(self) -> dict:
