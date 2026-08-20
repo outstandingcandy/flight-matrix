@@ -187,6 +187,126 @@ class TestFlightSchedules:
         assert [s["flight_number"] for s in body["schedules"]] == ["AA100"]
 
 
+def _seed_photo_priority(client: Any) -> None:
+    """Two airports, one aircraft with photos at each, one with none."""
+    db_manager = client.application_module.db_manager
+    now = datetime.now(UTC).replace(tzinfo=None)
+
+    session = db_manager.get_session()
+    try:
+        session.execute(
+            text("""
+            INSERT INTO airports (iata_code, icao_code, name, latitude, longitude)
+            VALUES ('PEK', 'ZBAA', 'Beijing Capital', 40.08, 116.58)
+            """)
+        )
+        session.execute(
+            text("""
+            INSERT INTO airports (iata_code, icao_code, name, latitude, longitude)
+            VALUES ('PVG', 'ZSPD', 'Shanghai Pudong', 31.14, 121.80)
+            """)
+        )
+
+        aircraft = [
+            ("B-1111", "CA100"),  # photo at both PEK and PVG
+            ("B-2222", "CA200"),  # photo at PVG only
+            ("B-3333", "CA300"),  # no photo at all
+        ]
+        for row_id, (registration, flight_number) in enumerate(aircraft, start=1):
+            session.execute(
+                text("""
+                INSERT INTO aircraft_static_info (id, registration, aircraft_type)
+                VALUES (:id, :registration, 'B738')
+                """),
+                {"id": row_id, "registration": registration},
+            )
+            session.execute(
+                text("""
+                INSERT INTO flight_schedules
+                    (id, fr24_flight_id, airport_iata, flight_type, flight_number,
+                     aircraft_type, aircraft_registration, scheduled_time, status)
+                VALUES (:row_id, :fr24_id, 'PEK', 'arrival', :flight_number,
+                        'B738', :registration, :scheduled_time, 'scheduled')
+                """),
+                {
+                    "row_id": row_id,
+                    "fr24_id": f"priority-{row_id}",
+                    "flight_number": flight_number,
+                    "registration": registration,
+                    "scheduled_time": now + timedelta(minutes=row_id),
+                },
+            )
+
+        images = [
+            ("B-1111", "own_at_pvg.jpg", "ZSPD", 1),
+            ("B-1111", "own_at_pek.jpg", "ZBAA", 2),
+            ("B-2222", "own_elsewhere.jpg", "ZSPD", 1),
+        ]
+        for registration, image_path, airport_icao, display_order in images:
+            session.execute(
+                text("""
+                INSERT INTO aircraft_images (registration, image_path, airport_icao, display_order)
+                VALUES (:registration, :image_path, :airport_icao, :display_order)
+                """),
+                {
+                    "registration": registration,
+                    "image_path": image_path,
+                    "airport_icao": airport_icao,
+                    "display_order": display_order,
+                },
+            )
+        session.commit()
+    finally:
+        session.close()
+
+
+@pytest.fixture
+def photo_priority_client(app_client: Any) -> Any:
+    _seed_photo_priority(app_client)
+    return app_client
+
+
+class TestOwnPhotoPriority:
+    """image_url/image_source on /api/flight-schedules: this airframe at this
+    airport beats this airframe anywhere, which beats having nothing at all."""
+
+    def test_a_photo_at_this_airport_wins_over_one_taken_elsewhere(
+        self, photo_priority_client: Any
+    ) -> None:
+        path = "/api/flight-schedules?airport=PEK"
+        body = _payload(photo_priority_client.get(path), path)
+
+        flight = next(s for s in body["schedules"] if s["flight_number"] == "CA100")
+        assert flight["image_url"].endswith("own_at_pek.jpg")
+        assert flight["image_source"] == "own_here"
+
+    def test_a_photo_from_elsewhere_is_used_when_none_exists_here(
+        self, photo_priority_client: Any
+    ) -> None:
+        path = "/api/flight-schedules?airport=PEK"
+        body = _payload(photo_priority_client.get(path), path)
+
+        flight = next(s for s in body["schedules"] if s["flight_number"] == "CA200")
+        assert flight["image_url"].endswith("own_elsewhere.jpg")
+        assert flight["image_source"] == "own_elsewhere"
+
+    def test_no_own_photo_leaves_both_fields_empty(self, photo_priority_client: Any) -> None:
+        """The frontend's same-type fallback only kicks in when both are empty."""
+        path = "/api/flight-schedules?airport=PEK"
+        body = _payload(photo_priority_client.get(path), path)
+
+        flight = next(s for s in body["schedules"] if s["flight_number"] == "CA300")
+        assert flight["image_url"] is None
+        assert flight["image_source"] is None
+
+    def test_the_icao_code_resolves_the_same_way(self, photo_priority_client: Any) -> None:
+        path = "/api/flight-schedules?airport=ZBAA"
+        body = _payload(photo_priority_client.get(path), path)
+
+        flight = next(s for s in body["schedules"] if s["flight_number"] == "CA100")
+        assert flight["image_source"] == "own_here"
+
+
 class TestFilterOptions:
     """`/api/flight-schedules/filter-options` — `::text`, `TO_CHAR`, `AT TIME ZONE`."""
 

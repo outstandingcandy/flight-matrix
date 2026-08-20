@@ -5245,6 +5245,7 @@ def get_flight_schedules():
         try:
             # Normalize airport code: convert ICAO to IATA for efficient index usage
             airport_iata = airport
+            airport_icao = airport if len(airport) == 4 else None
             if len(airport) == 4:  # ICAO code
                 icao_result = session.execute(
                     text("SELECT iata_code FROM airports WHERE icao_code = :icao"),
@@ -5252,6 +5253,16 @@ def get_flight_schedules():
                 ).fetchone()
                 if icao_result and icao_result[0]:
                     airport_iata = icao_result[0]
+            else:
+                # aircraft_images.airport_icao is ICAO-only; resolve it once here
+                # rather than per-row, so the "own photo, at this airport" tier
+                # below can match it directly.
+                iata_result = session.execute(
+                    text("SELECT icao_code FROM airports WHERE iata_code = :iata"),
+                    {"iata": airport_iata},
+                ).fetchone()
+                if iata_result and iata_result[0]:
+                    airport_icao = iata_result[0]
 
             # Build WHERE conditions - use only airport_iata for efficient index usage
             # NOTE: livery filtering is done in outer query for better performance
@@ -5261,6 +5272,9 @@ def get_flight_schedules():
                 "end_time": utc_end,
                 "limit": limit,
                 "offset": offset,
+                # "" rather than None: an unresolved airport must match nothing in
+                # the "photo taken here" subquery below, not every NULL row.
+                "airport_icao": airport_icao or "",
             }
 
             where_conditions = [
@@ -5366,7 +5380,19 @@ def get_flight_schedules():
                     CASE WHEN asi.registration IS NOT NULL THEN true ELSE false END as has_static_info,
                     CASE WHEN asi.images_downloaded = true THEN true ELSE false END as has_images,
                     asi.livery_type,
-                    (SELECT ai.image_path FROM aircraft_images ai WHERE ai.registration = cd.aircraft_registration ORDER BY ai.display_order LIMIT 1) as image_path,
+                    -- Two tiers of "this aircraft's own photo", picked apart in
+                    -- Python: at this airport beats anywhere, but both beat the
+                    -- same-type-at-this-airport fallback the frontend fetches
+                    -- separately (GET /api/airports/<code>/type-photos).
+                    (SELECT ai.image_path FROM aircraft_images ai
+                     WHERE ai.registration = cd.aircraft_registration
+                       AND ai.airport_icao = :airport_icao
+                       AND ai.image_path IS NOT NULL AND ai.image_path <> ''
+                     ORDER BY ai.display_order LIMIT 1) as image_path_here,
+                    (SELECT ai.image_path FROM aircraft_images ai
+                     WHERE ai.registration = cd.aircraft_registration
+                       AND ai.image_path IS NOT NULL AND ai.image_path <> ''
+                     ORDER BY ai.display_order LIMIT 1) as image_path_any,
                     cd.total_count,
                     cd.arrival_count,
                     cd.departure_count
@@ -5380,9 +5406,9 @@ def get_flight_schedules():
 
             # Extract counts from first row (all rows have same counts due to window function)
             if result:
-                total_count = result[0][20]
-                arrival_count = result[0][21]
-                departure_count = result[0][22]
+                total_count = result[0][21]
+                arrival_count = result[0][22]
+                departure_count = result[0][23]
             else:
                 total_count = 0
                 arrival_count = 0
@@ -5486,8 +5512,21 @@ def get_flight_schedules():
                     "has_images": row[17],
                     "livery_indicator": extract_livery_indicator(row[4]),
                     "livery_type": row[18],
-                    "image_url": get_image_url(row[19]) if row[19] else None,
                 }
+                # Priority: this airframe at this airport, then this airframe
+                # anywhere. A same-type-at-this-airport photo is never picked
+                # here — the frontend fetches that fallback separately, only for
+                # flights where both of these come back empty.
+                image_path_here, image_path_any = row[19], row[20]
+                if image_path_here:
+                    schedule["image_url"] = get_image_url(image_path_here)
+                    schedule["image_source"] = "own_here"
+                elif image_path_any:
+                    schedule["image_url"] = get_image_url(image_path_any)
+                    schedule["image_source"] = "own_elsewhere"
+                else:
+                    schedule["image_url"] = None
+                    schedule["image_source"] = None
                 schedules.append(schedule)
 
             return jsonify(
