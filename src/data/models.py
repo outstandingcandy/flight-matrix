@@ -20,6 +20,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    text,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
@@ -875,7 +876,11 @@ class FlightSchedule(Base):
 
     __tablename__ = "flight_schedules"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    # Same reason as `AircraftImage.id`: only `INTEGER PRIMARY KEY` aliases
+    # SQLite's rowid, and the scraper upsert omits `id`.
+    id = Column(
+        BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True
+    )
     flight_type = Column(String(20), nullable=False, index=True)  # arrival, departure
     airport_icao = Column(String(4), index=True)
     airport_iata = Column(String(3), index=True)
@@ -900,7 +905,18 @@ class FlightSchedule(Base):
         Index("idx_flight_schedule_airport", "airport_iata", "scheduled_time"),
         Index("idx_flight_schedule_airport_icao", "airport_icao", "scheduled_time"),
         Index("idx_flight_schedule_registration", "aircraft_registration", "scheduled_time"),
-        Index("idx_flight_schedule_fr24", "fr24_flight_id", "scheduled_time", unique=True),
+        # Mirrors the index production actually has. The upsert in
+        # `src.data.flight_schedule_repo` names these three expressions as its
+        # ON CONFLICT target, so a database built from this model — every SQLite
+        # dev database and the whole test suite — needs the same index or the
+        # statement fails. `date(x)` is a function call on both dialects.
+        Index(
+            "idx_flight_schedule_unique",
+            "fr24_flight_id",
+            text("date(scheduled_time)"),
+            "flight_type",
+            unique=True,
+        ),
     )
 
     def to_dict(self) -> dict:
