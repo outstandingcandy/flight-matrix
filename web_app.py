@@ -2056,6 +2056,131 @@ def get_realtime_aircraft_near_airport(airport_code: str):
         return api_error(e, f"Error getting realtime aircraft near airport {airport_code}")
 
 
+MAX_TYPE_PHOTO_TYPES = 40
+MAX_TYPE_PHOTOS_PER_TYPE = 12
+DEFAULT_TYPE_PHOTOS_PER_TYPE = 8
+TYPE_PHOTOS_CACHE_TTL = 1800
+
+
+@app.route("/api/airports/<airport_code>/type-photos")
+def get_airport_type_photos(airport_code: str):
+    """本场拍摄的同机型照片：按机型分组，每个机型最多 limit 张。
+
+    航班列表页用它给没有本机照片的航班兜底——同一个机场拍到的同机型照片。前端
+    必须标明那不是这架飞机。
+
+    Query args:
+        types: 逗号分隔的机型码（ICAO，如 `B738,A359`），最多 40 个，必填。
+        limit: 每个机型返回几张，默认 8，上限 12。
+
+    Returns:
+        `{success, airport_icao, types: {"B738": [{image_url, registration,
+        photographer, photo_date, likes}, …]}}`。没有照片的机型不出现在 types 里。
+    """
+    try:
+        from sqlalchemy import bindparam, text
+
+        types_param = request.args.get("types", "")
+        requested_types = sorted({t.strip().upper() for t in types_param.split(",") if t.strip()})[
+            :MAX_TYPE_PHOTO_TYPES
+        ]
+        if not requested_types:
+            return jsonify({"success": False, "error": "types parameter is required"}), 400
+
+        try:
+            requested_limit = int(request.args.get("limit", DEFAULT_TYPE_PHOTOS_PER_TYPE))
+        except ValueError:
+            return jsonify({"success": False, "error": "limit must be an integer"}), 400
+        limit = max(1, min(MAX_TYPE_PHOTOS_PER_TYPE, requested_limit))
+
+        db_session = db_manager.get_session()
+        try:
+            airport_service = AirportService(db_session, config.config if config else {})
+            airport = airport_service.get_airport_by_code(airport_code)
+            if not airport:
+                return jsonify(
+                    {"success": False, "error": f"Airport not found: {airport_code}"}
+                ), 404
+
+            # Photos record the ICAO only; the flight list works in IATA.
+            airport_icao = (airport.get("icao_code") or "").upper()
+            if not airport_icao:
+                return jsonify(
+                    {"success": False, "error": f"Airport {airport_code} has no ICAO code"}
+                ), 404
+
+            cache_key = f"type_photos:{airport_icao}:{','.join(requested_types)}:{limit}"
+            cached_data, hit = api_cache.get(cache_key)
+            if hit:
+                return jsonify(cached_data)
+
+            # One statement for every requested type. `image_path <> ''` is not
+            # belt-and-braces: two thirds of the rows are metadata scraped without
+            # the file, and they would render as broken thumbnails.
+            statement = text("""
+                SELECT aircraft_type, image_path, registration, photographer, photo_date, likes
+                FROM (
+                    SELECT
+                        asi.aircraft_type AS aircraft_type,
+                        ai.image_path AS image_path,
+                        ai.registration AS registration,
+                        ai.photographer AS photographer,
+                        ai.photo_date AS photo_date,
+                        ai.likes AS likes,
+                        -- Best-liked first, newest as the tie-break. Nulls are
+                        -- pushed down explicitly: `DESC` puts them first on
+                        -- PostgreSQL and last on SQLite, and `NULLS LAST` is not
+                        -- available on every SQLite build we run against.
+                        ROW_NUMBER() OVER (
+                            PARTITION BY asi.aircraft_type
+                            ORDER BY COALESCE(ai.likes, 0) DESC,
+                                     (ai.photo_date IS NULL), ai.photo_date DESC,
+                                     ai.id DESC
+                        ) AS rn
+                    FROM aircraft_images ai
+                    JOIN aircraft_static_info asi ON asi.registration = ai.registration
+                    WHERE ai.airport_icao = :airport_icao
+                      AND ai.image_path IS NOT NULL
+                      AND ai.image_path <> ''
+                      AND asi.aircraft_type IN :types
+                ) ranked
+                WHERE rn <= :limit
+                ORDER BY aircraft_type, rn
+            """).bindparams(bindparam("types", expanding=True))
+
+            rows = db_session.execute(
+                statement,
+                {"airport_icao": airport_icao, "types": requested_types, "limit": limit},
+            )
+
+            photos_by_type: dict[str, list[dict]] = {}
+            for row in rows:
+                photos_by_type.setdefault(row.aircraft_type, []).append(
+                    {
+                        "image_url": get_image_url(row.image_path),
+                        "registration": row.registration,
+                        "photographer": row.photographer,
+                        "photo_date": _to_iso(row.photo_date),
+                        "likes": row.likes,
+                    }
+                )
+
+            result_data = {
+                "success": True,
+                "airport_icao": airport_icao,
+                "types": photos_by_type,
+            }
+            # Only changes when JetPhotos is scraped again, so half an hour is
+            # conservative.
+            api_cache.set(cache_key, result_data, ttl_seconds=TYPE_PHOTOS_CACHE_TTL)
+            return jsonify(result_data)
+        finally:
+            db_session.close()
+
+    except Exception as e:
+        return api_error(e, f"Error getting type photos for airport {airport_code}")
+
+
 @app.route("/api/airports/popular")
 def get_popular_airports():
     """获取热门机场列表"""
