@@ -6,3 +6,8 @@ api:
   adsb_api_url: "https://adsbexchange-com1.p.rapidapi.com/v2"             # API base URL
   update_interval: 300                                                    # Update interval (seconds)
   timeout: 30                                                             # Request timeout (seconds)
+
+  # Shared secret for POST /api/ingest/*, the write path used by scrapers that
+  # cannot reach the database (see src/web/routes/ingest.py). Unset means the
+  # ingest endpoints answer 503 — they are never open.
+  ingest_token: "${INGEST_API_TOKEN}"

@@ -61,6 +61,7 @@ from src.web.auth_shim import (
 from src.web.errors import api_error
 from src.web.middleware import CustomDomainMiddleware, TTLCache
 from src.web.routes.auth import bp as auth_bp
+from src.web.routes.ingest import bp as ingest_bp
 
 if AUTH_ENABLED:
     from src.auth.factory import get_auth_provider
@@ -102,6 +103,7 @@ app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
 # Register blueprints.
 app.register_blueprint(auth_bp)
+app.register_blueprint(ingest_bp)
 
 # 全局变量
 db_manager = None
@@ -555,6 +557,13 @@ def init_app():
 
         # 初始化数据库 (支持PostgreSQL和SQLite)
         db_manager = DatabaseManager(db_url)
+
+        # Blueprints under src/web/routes/ read these off the Flask app rather
+        # than importing this module: `python web_app.py` runs it as `__main__`,
+        # so `import web_app` there would load a *second* copy whose globals
+        # init_app() never touched, and every request would see db_manager=None.
+        app.config["DB_MANAGER"] = db_manager
+        app.config["APP_CONFIG"] = config
 
         logger.info("Web application initialized successfully")
     except Exception as e:
