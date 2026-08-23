@@ -1,17 +1,18 @@
-# Reverse proxy + TLS termination for flight-matrix-web, replacing the nginx
-# site that used to do this on the host (scripts/gcp/provision-existing-host.sh).
+# Reverse proxy + TLS termination for flight-matrix-web. Uses a certificate
+# already issued by the host's certbot (see scripts/gcp/provision-existing-host.sh
+# / docs/deployment.md); Caddy does not manage the ACME lifecycle itself, since
+# port 80 on this shared host belongs to a co-tenant Caddy (collecdex).
 #
-# `tls` below points at an already-issued certificate rather than letting Caddy
-# manage its own via ACME. Reason: Let's Encrypt's HTTP-01/TLS-ALPN-01 challenges
-# are hardcoded to ports 80/443, and this host's domain is a public nip.io name
-# with no DNS-01 option — asking Caddy to obtain its own certificate would mean
-# contending for port 80 with whatever else already holds it on this shared
-# host. Renewal stays with the host's existing certbot installation; a
-# certbot deploy-hook reloads this Caddy instance after a successful renewal
-# (see /etc/letsencrypt/renewal-hooks/deploy/reload-caddy.sh on the host —
-# not part of this repo, since it references a host path).
+# `protocols h1 h2` disables HTTP/3 advertisement. Otherwise Caddy adds
+# `alt-svc: h3=":8443"` on every response — but the host does not publish UDP
+# :8443 to this container (host :8443 is held by xray). Chrome then caches the
+# bogus h3 endpoint and stalls the next same-origin navigation for ~50s trying
+# it before falling back to h2, which was breaking the first OAuth callback.
 {
 	auto_https off
+	servers {
+		protocols h1 h2
+	}
 }
 
 :8443 {
