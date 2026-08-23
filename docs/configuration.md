@@ -15,11 +15,14 @@ environment variable.
 
 ### Core
 
-| Variable       | Purpose                                   | Default       |
-|----------------|-------------------------------------------|---------------|
-| `ENVIRONMENT`  | Deployment stage: `local` / `dev` / `prod`| `local`       |
-| `AWS_REGION`   | AWS region for all AWS SDK calls          | `us-east-1`   |
-| `STAGE`        | Parallel to `ENVIRONMENT`, used by auth   | `local`       |
+| Variable        | Purpose                                              | Default     |
+|-----------------|------------------------------------------------------|-------------|
+| `ENVIRONMENT`   | Deployment stage: `local` / `dev` / `prod`           | `local`     |
+| `STAGE`         | Parallel to `ENVIRONMENT`, used by auth              | `local`     |
+| `DEPLOY_TARGET` | Cloud target: `aws` / `gcp` / `local`. Selects the   | `local`     |
+|                 | default auth / storage / LLM providers (see          |             |
+|                 | `config/deploy.yaml`, `src/core/deploy_target.py`).  |             |
+| `AWS_REGION`    | AWS region for all AWS SDK calls                     | `us-east-1` |
 
 ### Local development
 
@@ -57,7 +60,12 @@ environment variable.
 | `CLOUDFRONT_DISTRIBUTION_ID`  | CDN distribution for static assets           |
 | `CLOUDFRONT_DOMAIN`           | CDN domain for image URL generation          |
 
-### Cognito authentication (production)
+### Authentication
+
+`auth.provider` in `config/auth.yaml` resolves from `DEPLOY_TARGET` unless
+overridden: `aws` → Cognito, `gcp` → Google, `local` → none (`SKIP_AUTH=true`).
+
+#### Cognito (AWS target)
 
 | Variable                 | Purpose                                         |
 |--------------------------|-------------------------------------------------|
@@ -69,6 +77,45 @@ environment variable.
 | `COGNITO_LOGOUT_URL`     | Logout redirect URL                             |
 | `COGNITO_JWKS`           | JWKS JSON string; fetched at startup if unset   |
 | `FLASK_SECRET_KEY`       | Flask session secret; auto-generated if unset   |
+
+#### Google OAuth (GCP target)
+
+| Variable                     | Purpose                                    |
+|------------------------------|--------------------------------------------|
+| `GOOGLE_OAUTH_CLIENT_ID`     | OAuth 2.0 client ID                        |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | OAuth 2.0 client secret                    |
+
+### Object storage
+
+`storage.provider` in `config/deploy.yaml` resolves from `DEPLOY_TARGET`.
+
+| Variable              | Purpose                                          |
+|-----------------------|--------------------------------------------------|
+| `STATIC_BASE_URL`     | Public URL prefix for static/media assets (CDN,  |
+|                       | GCS URL, or empty for local `/static` serving)   |
+| `GCS_ASSETS_BUCKET`   | GCS bucket name (gcp target)                     |
+| `GOOGLE_CLOUD_PROJECT`| GCP project ID                                   |
+
+### Search (OpenSearch — optional accelerator)
+
+| Variable               | Purpose                                          |
+|------------------------|--------------------------------------------------|
+| `OPENSEARCH_URL`       | Cluster URL; empty disables full-text and falls back to SQL LIKE |
+| `OPENSEARCH_USERNAME`  | Empty when the security plugin is off            |
+| `OPENSEARCH_PASSWORD`  | Empty when the security plugin is off            |
+
+### Scraper ingest (workstation → web)
+
+| Variable            | Purpose                                             |
+|---------------------|-----------------------------------------------------|
+| `INGEST_API_TOKEN`  | Shared secret for `POST /api/ingest/*`. If unset, the endpoint returns 503. |
+
+### GCP shared-host deployment (Docker Compose)
+
+| Variable          | Purpose                                                       |
+|-------------------|---------------------------------------------------------------|
+| `CERT_DOMAIN`     | Domain name whose certbot cert Caddy reads from `/etc/letsencrypt/live/<domain>/` |
+| `CADDY_HOST_PORT` | Host port Caddy publishes (default `8443`; use e.g. `8444` for a bypass verify) |
 
 ### Third-party APIs
 
@@ -88,10 +135,9 @@ environment variable.
 
 ### Web app
 
-| Variable       | Purpose                                                    |
-|----------------|------------------------------------------------------------|
-| `APP_DOMAIN`   | Custom domain; required because API Gateway does not      |
-|                | forward a custom `Host` header.                            |
+| Variable     | Purpose                                                                     |
+|--------------|-----------------------------------------------------------------------------|
+| `APP_DOMAIN` | Custom domain — required on the AWS target because API Gateway does not forward a custom `Host` header. |
 
 ## YAML configuration
 
@@ -102,19 +148,22 @@ owned by a domain module:
 config/
 ├── config.yaml            # entry (includes)
 ├── aws.yaml               # AWS region / account overrides
+├── deploy.yaml            # DEPLOY_TARGET + storage provider (s3/gcs/local)
+├── auth.yaml              # auth.provider (cognito/google/none), Cognito + Google OAuth
 ├── database.yaml          # DATABASE_URL + pool settings
 ├── email.yaml             # SMTP / SES sender + recipients
-├── api.yaml               # ADS-B API tuning
-├── llm.yaml               # Claude / Bedrock model config
+├── api.yaml               # ADS-B API tuning + ingest_token
+├── llm.yaml               # LLM providers (Bedrock / Gemini) and model config
 ├── recall.yaml            # Aircraft recall / watch lists
 ├── reporting.yaml         # Filter engine + report body settings
+├── search.yaml            # OpenSearch accelerator (optional; SQL fallback)
 ├── subscription.yaml      # Multi-user subscription tiers
 ├── templates.yaml         # Email templates
 ├── aircraft_types.yaml    # ICAO type enrichment
 └── scraper/
     ├── base.yaml          # Scraper framework defaults
     ├── fr24.yaml          # FR24 scraper settings
-    ├── jetphotos.yaml     # JetPhotos + S3 image upload
+    ├── jetphotos.yaml     # JetPhotos + object storage upload
     ├── xiaohongshu.yaml   # Xiaohongshu source
     └── other.yaml         # Remaining sources
 ```
@@ -129,9 +178,14 @@ lazily at read time. Anything else is a literal.
 ## Secrets management
 
 - **Local development:** use `.env`. Git-ignored.
-- **Production:** store secrets in **AWS Systems Manager Parameter Store** or
+- **AWS target:** store secrets in **AWS Systems Manager Parameter Store** or
   **AWS Secrets Manager**. `deploy.sh` reads from your shell environment when
   running CDK; the Lambda / scraper ASG read from SSM at start-up.
+- **GCP shared-host target:** secrets live in `/etc/flight-matrix/env` on the
+  host (read by the systemd deployment) and `/etc/flight-matrix/env.docker`
+  (a derived copy with `DATABASE_URL` rewritten to the compose `db:5432`
+  service — loaded by the `web` container via `env_file:`). Both files are
+  root-owned; see `scripts/gcp/deploy-app.sh`.
 - Never commit secrets. The pre-commit hook runs
   [`detect-secrets`](https://github.com/Yelp/detect-secrets); CI runs
   [`gitleaks`](https://github.com/gitleaks/gitleaks).

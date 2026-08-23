@@ -93,11 +93,14 @@ FR24 地图实时位置数据 (由 `fr24_map` 抓取器填充)。
 | hex_code | VARCHAR(10) | ICAO 地址 |
 | source | VARCHAR(50) | 来源 (jetphotos/planespotters) |
 | image_url | VARCHAR(500) | 原始 URL |
-| s3_key | VARCHAR(255) | S3 存储路径 |
+| s3_key | VARCHAR(255) | 对象存储路径 (S3/GCS/本地) |
 | photographer | VARCHAR(200) | 摄影师 |
 | location | VARCHAR(200) | 拍摄地点 |
+| airport_icao | VARCHAR(4) | 从 `location` 解析出的机场 ICAO(用于"同机场同机型"回退) |
 | photo_date | DATE | 拍摄日期 |
 | created_at | TIMESTAMP | 创建时间 |
+
+**索引**: `idx_image_airport`, `idx_image_airport_reg`
 
 ---
 
@@ -464,7 +467,7 @@ aircraft_static_info ───< aircraft_images
 | users, subscriptions, user_* | `src/data/models.py` (SQLAlchemy) |
 | aircraft_* | `src/data/models.py` + `src/utils/database.py` |
 | scraper_* | `src/scraper/task_queue.py` |
-| xiaohongshu_* | `src/scraper/scrapers/xiaohongshu.py` |
+| xiaohongshu_* | `lib/resilient-scraper/` submodule (原 `src/scraper/scrapers/xiaohongshu.py` 已下沉) |
 
 ### 索引优化建议
 

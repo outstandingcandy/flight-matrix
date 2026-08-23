@@ -22,8 +22,12 @@ config/scraper/
 ├── fr24.yaml          # fr24_airport, fr24_map, fr24_aircraft
 ├── jetphotos.yaml     # jetphotos + image download
 ├── other.yaml         # airport_data, planespotters
-└── xiaohongshu.yaml   # Xiaohongshu (needs resilient-scraper submodule)
+└── xiaohongshu.yaml   # Xiaohongshu source (login + QR flow)
 ```
+
+All concrete scrapers now live in the `resilient_scraper` submodule
+(`lib/resilient-scraper/`); this repo owns configuration, sinks, scheduler,
+and task queues only.
 
 Enable / disable a source with `scraper.scrapers.<name>.enabled`. Commonly
 edited keys:

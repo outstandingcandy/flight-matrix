@@ -1,10 +1,28 @@
 # Type checking
 
 Flight Matrix uses `mypy` for static type checking. The long-term goal is
-full `mypy --strict` compliance across `src/`. As of **v0.1.0** the codebase
-is partially typed: ~91 source files with ~265 type issues concentrated in
-the "god files" scheduled for refactor (`web_app.py`, `database.py`,
-`flight_agent.py`, `report_service.py`, `models.py`).
+full `mypy --strict` compliance across `src/`. As of **2026-08-23** the
+codebase is partially typed: `uv run mypy src/` reports **236 errors in 34
+files (checked 123 source files)** in non-strict mode, concentrated in the
+"god files" scheduled for refactor:
+
+| File                                    | Errors |
+|-----------------------------------------|-------:|
+| `src/data/models.py`                    |     36 |
+| `src/analysis/flight_agent.py`          |     25 |
+| `src/services/aircraft_service.py`      |     21 |
+| `src/services/report_service.py`        |     17 |
+| `src/aircraft/cache.py`                 |     11 |
+| `src/utils/jetphotos_simple.py`         |     10 |
+| `src/services/filter_service.py`        |     10 |
+
+Top error categories: `assignment` (76), `str` (49), `no-any-return` (38),
+`return-value` (20), `arg-type` (19). `web_app.py` sits at the repo root
+and is not included in `mypy src/`.
+
+_Baseline for comparison — v0.1.0: ~91 source files with ~265 errors.
+Between then and this refresh, coverage grew from 91 to 123 files while
+total errors dropped by ~29._
 
 ## How to run it
 

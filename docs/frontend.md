@@ -38,9 +38,19 @@ template — they're load-order-sensitive and it's clearer to keep them there.
 
 ## Context processor
 
-`{{ static_url }}` is injected by `inject_static_url()` in `web_app.py`. In
-local dev it resolves to `/static`; in production it resolves to the
-CloudFront domain. Do not hardcode `/static/...` paths.
+`{{ static_url }}` is injected by `inject_static_url()` in `web_app.py`. It
+resolves against the `STATIC_BASE_URL` env var / `storage.public_base_url`
+config key:
+
+- **local dev** — empty, so it resolves to `/static` and Flask serves the
+  files directly.
+- **AWS target** — the CloudFront domain in front of the `web_static/` S3
+  sync (`aws s3 sync ... $S3_BUCKET_NAME/static/`).
+- **GCP target** — either empty (the compose `web` container serves
+  `/static` itself, since `web_static/` is copied into the image) or the
+  public GCS bucket URL if assets were uploaded there.
+
+Do not hardcode `/static/...` paths.
 
 ## Existing state (v0.1.0)
 

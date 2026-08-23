@@ -3,8 +3,9 @@
 Flight Matrix is composed of three independent services that share a single
 PostgreSQL database, plus a Flask web application that reads and writes the
 same database. The services can run as separate processes locally or as
-separate workloads (Lambda for the web app, EC2 ASG for the scrapers) in
-production.
+separate workloads in production — the current target is Docker Compose on a
+GCP shared host; the AWS Lambda + ASG path (kept in the repo) is described in
+[deployment.md](deployment.md).
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
@@ -52,24 +53,37 @@ one report per mode.
 ### Scraper service (`src/scraper_main.py`)
 
 A distributed task-queue scraper built on DrissionPage + Chromium with a
-browser pool.
+browser pool. The reusable framework — `ResilientScraper` base class,
+`BrowserPool`, `Worker`, Cloudflare / login / alert handling — lives in the
+`resilient_scraper` submodule under `lib/resilient-scraper/`. This repo owns
+the flight-matrix-specific glue: task queues, scheduler, and the per-scraper
+sinks that write results to the database or object storage.
 
 ```
-TaskScheduler ──► TaskQueue (Postgres) ──► ScraperWorker ──► BaseScraper
-                         ▲                                       │
-                         └──────────── BrowserPool ◄─────────────┘
+TaskScheduler ─► scraper_tasks (Postgres) ─► AsyncTaskQueue ─► Worker ─► ResilientScraper[T]
+                                                                │              │
+                                                                ▼              ▼
+                                                          BrowserPool     Sink.on_success
+                                                                          (src/scraper/sinks/*)
 ```
 
-- `TaskScheduler` generates periodic tasks based on airport priorities.
+- `TaskScheduler` (`src/scraper/task_scheduler.py`) generates periodic tasks
+  based on airport priorities.
 - `TaskQueue` uses `SELECT ... FOR UPDATE SKIP LOCKED` for distributed
-  locking.
-- `ScraperWorker` pulls tasks, dispatches to the right `BaseScraper[T]`
-  subclass, and manages lifecycle (`setup`, `teardown`, `on_success`,
-  `on_failure`, `should_retry`).
+  locking. `AsyncTaskQueue` / `CliTaskQueue` / `LocalTaskQueue` adapt it to
+  the submodule Worker's async contract.
+- The submodule `Worker` pulls tasks, dispatches to the right
+  `ResilientScraper[T]` subclass, and manages lifecycle (`setup`,
+  `teardown`, retry policy).
 - `BrowserPool` recycles browsers after N tasks and runs health checks.
 - Heartbeat every 30 s; stale tasks re-queued after 60 min.
+- Sinks (`src/scraper/sinks/`) are bound onto each scraper at registration
+  time so scrapers stay persistence-agnostic. `fr24_airport_api_sink` posts
+  to the web app's `/api/ingest/*` route when the scraper runs off-host
+  (workstation Chromium, no direct database access).
 
-Local mode uses `LocalTaskProvider` instead of the Postgres queue.
+Local mode uses `LocalTaskQueue` (backed by `src/scraper/sources/*`) instead
+of the Postgres queue.
 
 ## Service-layer pattern
 
@@ -80,11 +94,18 @@ All business logic lives under `src/services/`. Every service inherits from
   rolls back on error.
 - `self.readonly_session()` — context manager for read-only operations.
 
-Key services today: `AircraftService`, `ReportService`, `SubscriptionService`,
-`UserService`, `FilterService`, `NoteAnalysisService`.
+Services today (`src/services/`): `AircraftService`,
+`AircraftAnalysisService`, `AirportService`, `FilterService`,
+`NoteAnalysisService`, `ReportService`, `SubscriptionService`,
+`TrackService`, `UserService`. Only `FilterService`, `SubscriptionService`,
+and `UserService` currently extend `BaseService`; the rest manage sessions
+themselves and should migrate.
 
-Blueprints (`src/web/routes/*`) call services; services call repositories;
-repositories own the SQL. Services do not emit SQL directly.
+Blueprints (`src/web/routes/*`) call services; services call repositories
+(`src/data/*_repo.py`); repositories own the SQL. Services do not emit SQL
+directly. Blueprints in use: `auth` (login/logout) and `ingest` (scraper
+write path for FR24 airport boards); other routes still live in
+`web_app.py` — see [web-blueprints.md](web-blueprints.md).
 
 ## Data model
 
@@ -136,16 +157,28 @@ schema.
 
 ## Deployment targets
 
-- **Lambda web app.** `lambda_handler.py` uses the Mangum ASGI adapter
-  wrapping Flask WSGI via `asgiref.wsgi.WsgiToAsgi`. `init_app()` runs on
-  cold start. Static assets served from CloudFront (URL injected via
-  `inject_static_url()` context processor). Code must be synced to
-  `lambda_code/` before building; `deploy.sh` handles this.
-- **Scraper ASG.** EC2 instances built from `Dockerfile.scraper` (Chromium +
-  Xvfb). The ASG is sized via `SCRAPER_MIN_CAPACITY` / `SCRAPER_MAX_CAPACITY`.
+Two targets are supported. Which one an image talks to (Bedrock vs. Gemini,
+S3 vs. GCS, etc.) is switched by the `STAGE` / storage-target config, not
+by separate code paths — see `src/llm/` and `src/storage/`.
+
+- **GCP shared-host (Docker Compose).** Current production. Three
+  containers on a single VM: `db` (postgres:16 on the existing
+  `flight-matrix-pgdata` volume), `web` (`Dockerfile.web`: gunicorn serving
+  `wsgi:app`, 2 workers × 4 threads), and `caddy` (`Caddyfile`: TLS
+  termination + reverse proxy to `web:8000` using host-managed certbot
+  certs). See `docker-compose.web.yml`; provisioning and cutover scripts
+  live in `scripts/gcp/`. A separate `docker-compose.scraper.yml` runs the
+  scraper on the same or a different host; workstation-run Cloudflare-heavy
+  scrapers post rows back via `/api/ingest/*`.
+- **AWS Lambda + ASG.** Historical path, still fully in the repo.
+  `lambda_handler.py` uses the Mangum ASGI adapter wrapping Flask via
+  `asgiref.wsgi.WsgiToAsgi`; static assets served from CloudFront (URL
+  injected via `inject_static_url()`). Scraper runs on an EC2 Auto Scaling
+  Group built from `Dockerfile.scraper` (Chromium + Xvfb), sized via
+  `SCRAPER_MIN_CAPACITY` / `SCRAPER_MAX_CAPACITY`.
 - **CDK.** `cdk_app.py` → `infra/unified_stack.py` supports **import mode**
   (default: reuses existing VPC, Aurora, S3, CloudFront; creates Lambda +
-  API Gateway + scraper ASG) and **fresh mode** (`FRESH_DEPLOY=true`: creates
-  everything from scratch).
+  API Gateway + scraper ASG) and **fresh mode** (`FRESH_DEPLOY=true`:
+  creates everything from scratch). Only relevant to the AWS path.
 
 See [deployment.md](deployment.md) for the step-by-step deploy procedure.

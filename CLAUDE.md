@@ -60,13 +60,16 @@ app. See [docs/architecture.md](docs/architecture.md) for the full picture.
                    └───────────┘
 ```
 
-Four of the eleven services in `src/services/` extend `BaseService` and use its
+Three of the nine services in `src/services/` (`FilterService`,
+`SubscriptionService`, `UserService`) extend `BaseService` and use its
 `session_scope()` / `readonly_session()` for transactional DB access; the rest
 manage sessions themselves. Prefer `BaseService` in new code. Repositories live
-alongside the models in `src/data/` (`snapshot_repo.py`, `cooldown_repo.py`).
+alongside the models in `src/data/` (`snapshot_repo.py`, `cooldown_repo.py`,
+`flight_schedule_repo.py`).
 
-Most routes are still defined directly in `web_app.py`; only auth has been
-extracted to a blueprint under `src/web/routes/`.
+Most routes are still defined directly in `web_app.py`; auth and the scraper
+ingest endpoint have been extracted to blueprints under `src/web/routes/`
+(`auth.py`, `ingest.py`).
 
 ## Configuration
 

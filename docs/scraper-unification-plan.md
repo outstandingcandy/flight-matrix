@@ -167,12 +167,14 @@ flight-matrix 的 `sinks/`。
 | # | 阶段 | 仓 | 产物 | 风险 / 注意 |
 |---|---|---|---|---|
 | 1 | **框架对齐** ✅ | submodule | 差异矩阵,决定 "保留 submodule 版,主仓仅向 submodule 加 WorkerStatus/WorkerInfo/ScraperConfig" | 已完成 |
-| 2 | **errors 合并** | flight-matrix | 主仓 `from resilient_scraper.errors import ...` 替换 | 零风险预热 |
-| 3 | **models 合并** | submodule + flight-matrix | `TaskStatus` 采 submodule 全量版,`WorkerStatus/WorkerInfo/ScraperConfig` 下沉到 submodule;主仓改 import | 生产数据库已有 `status` 字符串枚举,新增 2 个状态是加法,不影响存量行 |
-| 4 | **迁 5 个航空 scraper** | submodule | `airport_data` / `jetphotos` / `fr24_{map,airport,aircraft}` 搬入 `scrapers/aviation/`;基类换 `ResilientScraper`;剥 DB 建表/写表逻辑;领域结果类挪到对应 `models.py`;jetphotos 的 `_download_image` 可继续用同步 `requests`(worker 里 to_thread) | 每个要 Xvfb 实机验证,满足 `CLAUDE.md` 的非 headless 要求 |
-| 5 | **flight-matrix 写 5 个 sink** | flight-matrix | 吸收现有 `on_success` / `_save_positions_to_db` / `_ensure_table_exists` / `images_downloaded` 更新逻辑 | `fr24_map._ensure_table_exists` 迁到 flight 启动流程,或改为应用层 Alembic migration |
-| 6 | **框架删除 + 入口重写** | flight-matrix | `scraper_main.py` 切到 submodule `Worker` + sinks 注入;删除 `base/queue/browser_pool/worker/models/scrapers/extractors`;`sources/` + `task_scheduler.py` + `xiaohongshu_cycle_scheduler.py` 改 async 调用 | 影响 systemd / `deploy.sh`,需要一次停机切换 |
-| 7 | **tests + scripts + docs + 生产 migration** | 两仓 | 测试文件重写 import;`scripts/seed-tasks.py` + `scripts/reextract_fields.py` + `scripts/demo.sh` 对齐;两仓 `CLAUDE.md` / `docs/scraping.md` / `docs/architecture.md` 更新;生产执行 DB migration;12 个 task_type 冒烟 | — |
+| 2 | **errors 合并** ✅ | flight-matrix | 主仓 `from resilient_scraper.errors import ...` 替换 | 已完成:主仓 `src/scraper/` 内不再直接 import 这些错误类 |
+| 3 | **models 合并** ✅ | submodule + flight-matrix | `TaskStatus` 采 submodule 全量版,`WorkerStatus/WorkerInfo/ScraperConfig` 下沉到 submodule;主仓改 import | 已完成:`src/scraper/models.py` 精简为纯重导出;9 个领域结果类删除,所有 sink/tests 已从 `resilient_scraper.scrapers.aviation.*.models` 拉。 |
+| 4 | **迁 5 个航空 scraper** ✅ | submodule | `airport_data` / `jetphotos` / `fr24_{map,airport,aircraft}` 搬入 `scrapers/aviation/`;基类换 `ResilientScraper`;剥 DB 建表/写表逻辑;领域结果类挪到对应 `models.py`;jetphotos 的 `_download_image` 可继续用同步 `requests`(worker 里 to_thread) | 已完成:主仓 `scrapers/` 目录已删除;所有 sink 从 `resilient_scraper.scrapers.aviation.*` 拉领域 model。额外落地了 `adsbx_map`(计划外)。 |
+| 5 | **flight-matrix 写 5 个 sink** ✅ | flight-matrix | 吸收现有 `on_success` / `_save_positions_to_db` / `_ensure_table_exists` / `images_downloaded` 更新逻辑 | 已完成,且超出计划:`src/scraper/sinks/` 有 8 个 sink(计划 5 个 + `fr24_airport_api_sink`、`adsbx_map_sink`、`adsbx_snapshots_sink`)。 |
+| 6 | **框架删除 + 入口重写** ⚠️ 半完成 | flight-matrix | `scraper_main.py` 切到 submodule `Worker` + sinks 注入;删除 `base/queue/browser_pool/worker/models/scrapers/extractors`;`sources/` + `task_scheduler.py` + `xiaohongshu_cycle_scheduler.py` 改 async 调用 | 已删除:`base.py`、`browser_pool.py`、`worker.py`、`scrapers/`、`extractors/`、`local_task_provider.py`。**待办**:`local_task_source.py`(计划要求删除,仍在);`models.py` 依赖步骤 3 的清理。 |
+| 7 | **tests + scripts + docs + 生产 migration** 🚧 进行中 | 两仓 | 测试文件重写 import;`scripts/seed-tasks.py` + `scripts/reextract_fields.py` + `scripts/demo.sh` 对齐;两仓 `CLAUDE.md` / `docs/scraping.md` / `docs/architecture.md` 更新;生产执行 DB migration;12 个 task_type 冒烟 | 主仓 docs 已更新(`docs/architecture.md`、`docs/scraping.md`、`src/scraper/CLAUDE.md`)。scripts 已核对:`seed-tasks.py` 走 `src.scraper.task_queue.TaskQueue`(未动)、`reextract_fields.py` 走 `src.scraper.reextractor` 且后者从 `resilient_scraper.scrapers.aviation.*.extractor` 拉 extractor(已对齐)、`demo.sh` 只调用 db_manager/sqlite/`start-all.sh`(已对齐)。tests 已改从 `resilient_scraper.scrapers.aviation.*` import 领域 model。**未核实**:生产 DB migration(2 张登录/SMS 交互表 + `idx_scraper_tasks_type_key_active` 唯一索引)是否已在生产库执行。 |
+
+_(状态审计时间:2026-08-23。步骤 2/3/4/5 已完成;6 尚有 `local_task_source.py` 未删,依赖将 `sources/` 一并搬到 submodule;7 进行中,scripts/tests 已对齐,生产 DB migration 待核实。)_
 
 ## 关键约束
 

@@ -1,10 +1,22 @@
 # Deployment
 
-Flight Matrix deploys to AWS via the CDK. Two modes are supported:
+Flight Matrix supports two deployment targets. Pick whichever matches your
+infrastructure; the application code is target-agnostic and switches
+providers (Bedrock ↔ Gemini, S3 ↔ GCS) through config rather than code.
+
+- **GCP shared-host (Docker Compose).** Current production. See
+  [GCP shared-host deployment](#gcp-shared-host-deployment) below.
+- **AWS Lambda + ASG (via CDK).** Historical path, still supported. Covered
+  by the rest of this document.
+
+For a diagram-level overview of both targets see
+[architecture.md § Deployment targets](architecture.md#deployment-targets).
+
+## AWS (CDK) — two modes
 
 - **Import mode (default).** Reuses an existing VPC, Aurora cluster, S3
   bucket, and CloudFront distribution. Creates Lambda (web app) + API
-  Gateway + scraper Auto Scaling Group. This is what production uses.
+  Gateway + scraper Auto Scaling Group.
 - **Fresh mode** (`FRESH_DEPLOY=true`). Creates every resource from scratch.
   Good for a personal sandbox.
 
@@ -104,3 +116,80 @@ Smoke-test the web app:
 ```bash
 curl -fsSI https://<your-domain>/healthz || echo "health check failed"
 ```
+
+## GCP shared-host deployment
+
+The current production model. Three containers on a single VM, managed by
+Docker Compose, sharing the compose bridge network. No cloud provider
+resources beyond the VM and its persistent volume are required.
+
+### Layout
+
+```
+docker-compose.web.yml
+├── db      postgres:16-alpine   →  volume flight-matrix-pgdata (external)
+├── web     Dockerfile.web       →  gunicorn wsgi:app, 2 workers × 4 threads
+└── caddy   caddy:2-alpine       →  Caddyfile, host-managed certbot certs
+```
+
+Only `caddy` publishes a host port (`${CADDY_HOST_PORT:-8443}`); `web`
+reaches `db` and `caddy` reaches `web` over the compose network by service
+name.
+
+### Prerequisites (once per host)
+
+- Docker + Docker Compose plugin.
+- An existing certbot certificate for the host's domain at
+  `/etc/letsencrypt/live/<domain>/` (Caddy reads it read-only; renewal
+  stays with certbot — a deploy-hook reloads Caddy after renewal).
+- The `flight-matrix-pgdata` named volume with the existing cluster
+  (`aircraft_admin` / `aircraft_data`). Restore from a `pg_dumpall` if
+  bootstrapping fresh.
+- `/etc/flight-matrix/env.docker` — a copy of the systemd `env` file with
+  `DATABASE_URL` rewritten to point at the `db` service (`db:5432`, not
+  `127.0.0.1`).
+- A `.env` next to the compose file with two non-secret values:
+  - `CERT_DOMAIN` — matches the certbot live directory.
+  - `CADDY_HOST_PORT` — defaults to `8443`; override to a bypass port
+    (e.g. `8444`) when verifying a deploy before cutting traffic.
+
+Provisioning helpers live in `scripts/gcp/`
+(`provision-existing-host.sh`, `deploy-app.sh`,
+`migrate-db-to-gcp.sh`, `migrate-objects-to-gcp.sh`).
+
+### Deploy / update
+
+```bash
+# From the repo root on the host
+docker compose -f docker-compose.web.yml build web
+docker compose -f docker-compose.web.yml up -d
+docker compose -f docker-compose.web.yml ps
+docker compose -f docker-compose.web.yml logs --tail=100 web caddy
+```
+
+Run one-off admin or migration scripts inside the web container so they
+inherit the same config and credentials:
+
+```bash
+docker compose -f docker-compose.web.yml exec web \
+    python scripts/migrate_backfill_image_airport_icao.py
+```
+
+### Cutover from the systemd deployment
+
+The pre-container production ran the web app via
+`scripts/systemd/flight-matrix-web.service` on the host, with nginx
+terminating TLS and a bare `postgres` on `127.0.0.1:5433`. The compose file
+keeps `db` published on `127.0.0.1:5433` **temporarily** so that unit can
+keep serving while the compose stack is verified on a bypass port. Once the
+systemd unit is stopped for good, remove the `ports:` block from the `db`
+service — nothing outside the compose network should need it.
+
+### Scraper
+
+A separate `docker-compose.scraper.yml` runs the scraper worker with its
+Chromium + Xvfb image (`Dockerfile.scraper`). It can run on the same host
+as the web stack or on a workstation; Cloudflare-heavy scrapers
+(`fr24_airport`) typically run on a workstation and post rows back to the
+web app via `/api/ingest/flight-schedules` (auth: `api.ingest_token`
+shared secret).

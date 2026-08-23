@@ -1,15 +1,16 @@
 # Web blueprint migration
 
 Flight Matrix's Flask app was originally a single `web_app.py` file with
-~5 600 lines and 92 `@app.route` decorators. Phase 5.3 splits it into
-blueprints under `src/web/routes/` so each slice of the URL tree lives in
-its own module.
+~6 000 lines and ~90 `@app.route` decorators (5 971 lines / 88 routes as of
+2026-08-23). Phase 5.3 splits it into blueprints under `src/web/routes/` so
+each slice of the URL tree lives in its own module.
 
 ## Status (v0.1.0)
 
 | Blueprint (target file)                   | Prefix / routes                       | Status      |
 |-------------------------------------------|---------------------------------------|-------------|
 | `src/web/routes/auth.py`                  | `/login`, `/logout`, `/auth/*`        | done        |
+| `src/web/routes/ingest.py`                | `/api/ingest/*` (scraper write path)  | done        |
 | `src/web/routes/pages.py`                 | `/`, `/dashboard`, `/aircraft/…`, `/admin/…` HTML pages | to do |
 | `src/web/routes/api_aircraft.py`          | `/api/aircraft/*`                     | to do       |
 | `src/web/routes/api_airports.py`          | `/api/airports/*`                     | to do       |
