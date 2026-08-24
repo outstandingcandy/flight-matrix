@@ -36,6 +36,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from src.data.db_manager import DatabaseManager
 from src.utils.yaml_config import YAMLConfig
+from src.web.routes.auth_fastapi import router as auth_router
 from src.web.routes.ingest_fastapi import router as ingest_router
 
 logger = logging.getLogger("app")
@@ -127,6 +128,7 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory="web_static"), name="static")
 
     # Routers ---
+    app.include_router(auth_router)
     app.include_router(ingest_router)
 
     @app.get("/healthz", tags=["ops"])
