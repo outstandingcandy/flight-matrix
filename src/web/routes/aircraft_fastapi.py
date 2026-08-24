@@ -821,3 +821,368 @@ async def get_static_info(registration: str) -> dict[str, Any]:
         return {"success": True, "data": data}
     finally:
         session.close()
+
+
+# ---------------------------------------------------------------------------
+# Batch 3 — {identifier} series + HTML detail shells
+#
+# Route ordering matters: these all come *after* the concrete
+# ``/api/aircraft/static``, ``/api/aircraft/types``, ``/api/aircraft/unique``,
+# ``/api/aircraft/recent``, ``/api/aircraft/search`` handlers above, so
+# ``{identifier}`` doesn't swallow them. FastAPI resolves routes by
+# registration order, so appending here is enough.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/aircraft/{identifier}/live", name="aircraft_live")
+async def get_aircraft_live(identifier: str) -> dict[str, Any]:
+    """Latest snapshot for one aircraft. Same as ``web_app.py:2263``.
+
+    ``identifier`` matches on either registration or hex-code, delegated
+    to :meth:`AircraftService.get_aircraft_live_position`.
+    """
+    from src.services.aircraft_service import AircraftService
+    from web_app import config, convert_utc_to_beijing, db_manager, transform_image_paths
+
+    session = db_manager.get_session()
+    try:
+        aircraft_service = AircraftService(session, config.config if config else {})
+        result = aircraft_service.get_aircraft_live_position(identifier)
+        if not result:
+            raise HTTPException(
+                status_code=404,
+                detail={"success": False, "error": f"Aircraft not found: {identifier}"},
+            )
+        if result.get("snapshot_time"):
+            result["snapshot_time"] = convert_utc_to_beijing(result["snapshot_time"])
+        result["timezone"] = "Asia/Shanghai"
+        transform_image_paths(result)
+        return {"success": True, "aircraft": result}
+    finally:
+        session.close()
+
+
+@router.get("/api/aircraft/{identifier}/details", name="aircraft_details_api")
+async def get_aircraft_details_api(identifier: str) -> dict[str, Any]:
+    """Full detail row for one aircraft. Same as ``web_app.py:2292``."""
+    from src.services.aircraft_service import AircraftService
+    from web_app import config, convert_utc_to_beijing, db_manager, transform_image_paths
+
+    session = db_manager.get_session()
+    try:
+        aircraft_service = AircraftService(session, config.config if config else {})
+        result = aircraft_service.get_aircraft_details(identifier)
+        if not result:
+            raise HTTPException(
+                status_code=404,
+                detail={"success": False, "error": f"Aircraft not found: {identifier}"},
+            )
+        if result.get("last_updated"):
+            result["last_updated"] = convert_utc_to_beijing(result["last_updated"])
+        transform_image_paths(result)
+        return {"success": True, "aircraft": result}
+    finally:
+        session.close()
+
+
+@router.get("/api/aircraft/{identifier}/history", name="aircraft_history_api")
+async def get_aircraft_history_api(
+    identifier: str,
+    date: str | None = Query(None, description="Beijing-date YYYY-MM-DD"),
+    start_time: str | None = Query(None, description="Beijing-time inclusive lower bound"),
+    end_time: str | None = Query(None, description="Beijing-time inclusive upper bound"),
+    limit: int = Query(1000, ge=1, le=10000),
+) -> dict[str, Any]:
+    """Historical track points with optional date / time-window filters.
+
+    Same as ``web_app.py:2320``.
+    """
+    from src.services.aircraft_service import AircraftService
+    from web_app import config, convert_beijing_to_utc, convert_utc_to_beijing, db_manager
+
+    parsed_date = None
+    if date:
+        try:
+            parsed_date = datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            pass
+
+    parsed_start = convert_beijing_to_utc(start_time) if start_time else None
+    parsed_end = convert_beijing_to_utc(end_time) if end_time else None
+
+    session = db_manager.get_session()
+    try:
+        aircraft_service = AircraftService(session, config.config if config else {})
+        track_points = aircraft_service.get_aircraft_history(
+            identifier, parsed_date, parsed_start, parsed_end, limit
+        )
+        for point in track_points:
+            if point.get("datetime"):
+                point["datetime_beijing"] = convert_utc_to_beijing(point["datetime"])
+            point["timezone"] = "Asia/Shanghai"
+        return {
+            "success": True,
+            "identifier": identifier,
+            "tracks": track_points,
+            "count": len(track_points),
+        }
+    finally:
+        session.close()
+
+
+@router.get("/api/aircraft/{identifier}/flight-dates", name="aircraft_flight_dates")
+async def get_aircraft_flight_dates(
+    identifier: str,
+    days_back: int = Query(30, ge=1, le=365),
+) -> dict[str, Any]:
+    """Distinct dates with flight records over the last ``days_back`` days.
+
+    Same as ``web_app.py:2374``.
+    """
+    from src.services.aircraft_service import AircraftService
+    from web_app import config, db_manager
+
+    session = db_manager.get_session()
+    try:
+        aircraft_service = AircraftService(session, config.config if config else {})
+        dates = aircraft_service.get_aircraft_flight_dates(identifier, days_back)
+        return {
+            "success": True,
+            "identifier": identifier,
+            "dates": dates,
+            "count": len(dates),
+        }
+    finally:
+        session.close()
+
+
+@router.get("/api/aircraft/{registration}/recent-flights", name="aircraft_recent_flights")
+async def get_aircraft_recent_flights(registration: str) -> dict[str, Any]:
+    """Last 10 arrival/departure rows from flight_schedules for this aircraft.
+
+    Same as ``web_app.py:2480``. Note the path param name is
+    ``registration`` here (upper-cased) while sibling routes call it
+    ``identifier`` (accepts hex too). Kept literal so the OpenAPI spec
+    matches the Flask URL.
+    """
+    from web_app import _to_iso, db_manager
+
+    session = db_manager.get_session()
+    try:
+        result = session.execute(
+            text(
+                """
+                SELECT
+                    flight_type,
+                    airport_iata,
+                    remote_airport_iata,
+                    remote_airport_name,
+                    scheduled_time,
+                    status
+                FROM flight_schedules
+                WHERE aircraft_registration = :reg
+                ORDER BY scheduled_time DESC
+                LIMIT 10
+                """
+            ),
+            {"reg": registration.upper()},
+        ).fetchall()
+
+        flights = [
+            {
+                "flight_type": row[0],
+                "airport_iata": row[1],
+                "remote_airport_iata": row[2],
+                "remote_airport_name": row[3],
+                "scheduled_time": _to_iso(row[4]),
+                "status": row[5],
+            }
+            for row in result
+        ]
+        return {
+            "success": True,
+            "registration": registration.upper(),
+            "flights": flights,
+            "count": len(flights),
+        }
+    finally:
+        session.close()
+
+
+@router.get("/api/aircraft/{identifier}/images", name="aircraft_images_api")
+async def get_aircraft_images_api(identifier: str) -> dict[str, Any]:
+    """Image list for one aircraft — bare-URL list + richer metadata list.
+
+    Same as ``web_app.py:2533``. ``identifier`` may be a registration or
+    hex; a hex lookup falls back to the most recent snapshot's
+    registration.
+    """
+    from web_app import _to_iso, db_manager, get_image_url
+
+    registration = identifier.upper()
+    session = db_manager.get_session()
+    try:
+        # Try hex lookup first — if identifier is a hex it maps to a
+        # registration via the most recent snapshot.
+        hex_lookup = session.execute(
+            text(
+                """
+                SELECT registration
+                FROM aircraft_snapshots
+                WHERE hex = :hex AND registration IS NOT NULL AND registration != ''
+                ORDER BY snapshot_time DESC
+                LIMIT 1
+                """
+            ),
+            {"hex": identifier.lower()},
+        ).fetchone()
+        if hex_lookup and hex_lookup[0]:
+            registration = hex_lookup[0]
+
+        images_result = session.execute(
+            text(
+                """
+                SELECT
+                    image_path, photographer, photo_date, location,
+                    airport_name, notes, display_order, is_primary,
+                    jetphotos_id, source_url, upload_date
+                FROM aircraft_images
+                WHERE registration = :reg
+                AND image_path IS NOT NULL
+                AND image_path != ''
+                ORDER BY photo_date DESC NULLS LAST
+                """
+            ),
+            {"reg": registration},
+        ).fetchall()
+
+        image_urls: list[str] = []
+        images_with_metadata: list[dict[str, Any]] = []
+        for row in images_result:
+            url = get_image_url(row[0])
+            if url:
+                image_urls.append(url)
+                images_with_metadata.append(
+                    {
+                        "url": url,
+                        "photographer": row[1],
+                        "photo_date": _to_iso(row[2]),
+                        "location": row[3],
+                        "airport_name": row[4],
+                        "notes": row[5],
+                        "display_order": row[6],
+                        "is_primary": row[7],
+                        "jetphotos_id": row[8],
+                        "source_url": row[9],
+                        "upload_date": _to_iso(row[10]),
+                    }
+                )
+        return {
+            "success": True,
+            "identifier": identifier,
+            "registration": registration,
+            "images": image_urls,
+            "images_with_metadata": images_with_metadata,
+            "count": len(image_urls),
+        }
+    finally:
+        session.close()
+
+
+@router.get("/api/aircraft/{identifier}/static-info", name="aircraft_static_info_api")
+async def get_aircraft_static_info_api(identifier: str) -> dict[str, Any]:
+    """Static info by registration OR hex — narrower shape than
+    ``/api/aircraft/static/{registration}``.
+
+    Same as ``web_app.py:2614``. This endpoint predates the more
+    complete ``/static/{registration}`` route above; both are kept for
+    backward compat with clients that were already using either.
+    """
+    from web_app import db_manager, get_image_url
+
+    registration = identifier.upper()
+    session = db_manager.get_session()
+    try:
+        result = session.execute(
+            text(
+                """
+                SELECT
+                    registration, hex_code, owner, operator,
+                    manufacturer, model, aircraft_type,
+                    serial_number, year_built, country_of_registration,
+                    organization, livery_type
+                FROM aircraft_static_info
+                WHERE registration = :reg OR hex_code = :hex
+                """
+            ),
+            {"reg": registration, "hex": identifier.lower()},
+        ).fetchone()
+
+        if not result:
+            raise HTTPException(
+                status_code=404,
+                detail={"success": False, "error": "Static info not found"},
+            )
+
+        images_result = session.execute(
+            text(
+                """
+                SELECT image_path FROM aircraft_images
+                WHERE registration = :reg
+                ORDER BY display_order LIMIT 3
+                """
+            ),
+            {"reg": result[0]},
+        ).fetchall()
+        image_paths = [get_image_url(row[0]) for row in images_result if row[0]]
+
+        static_info = {
+            "registration": result[0],
+            "hex_code": result[1],
+            "owner": result[2],
+            "operator": result[3] or result[10],  # fallback to organization
+            "manufacturer": result[4],
+            "model": result[5],
+            "aircraft_type": result[6],
+            "serial_number": result[7],
+            "year_built": result[8],
+            "country_of_registration": result[9],
+            "organization": result[10],
+            "livery_type": result[11],
+            "images": image_paths,
+        }
+        return {"success": True, "static_info": static_info}
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# HTML shells — pure `render_template`, login-gated. The client-side JS
+# fetches from the JSON endpoints above.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/aircraft/{registration}", name="aircraft_detail")
+async def aircraft_detail(
+    request: Request,
+    registration: str,
+    _user: dict[str, Any] = Depends(require_login),
+):
+    """Aircraft detail page shell. Same as ``web_app.py:1520``."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request, "aircraft_detail.html", {"registration": registration}
+    )
+
+
+@router.get("/aircraft-type/{type_code}", name="aircraft_type_detail")
+async def aircraft_type_detail(
+    request: Request,
+    type_code: str,
+    _user: dict[str, Any] = Depends(require_login),
+):
+    """Aircraft-type detail page shell. Same as ``web_app.py:1527``."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request, "aircraft_type_detail.html", {"type_code": type_code}
+    )
