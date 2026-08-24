@@ -26,12 +26,16 @@ a second module just for one FR24 pass-through.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import Any
 
 import requests
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from sqlalchemy import text
+
+from src.auth.dependencies import require_login
 
 logger = logging.getLogger("web.aircraft")
 
@@ -312,3 +316,508 @@ async def get_fr24_flight_trail(fr24_id: str) -> dict[str, Any]:
         "tracks": tracks,
         "count": len(tracks),
     }
+
+
+# ---------------------------------------------------------------------------
+# Batch 2 — types + unique + static series
+# ---------------------------------------------------------------------------
+
+
+def _extract_ai_flags(ai_analysis: Any) -> dict[str, Any]:
+    """Pull the four ai_analysis booleans + summary in one place.
+
+    web_app.py duplicates this shape in `/api/aircraft/static`,
+    `/api/aircraft/static/batch` and `/api/aircraft/static/<reg>`; here
+    we deduplicate. Accepts both a dict (JSONB from Postgres) and a JSON
+    string (SQLite / legacy rows).
+    """
+    if not ai_analysis:
+        return {"is_military": False, "is_government": False, "is_vip": False, "summary": None}
+    if isinstance(ai_analysis, str):
+        try:
+            data = json.loads(ai_analysis)
+        except json.JSONDecodeError:
+            data = {}
+    elif isinstance(ai_analysis, dict):
+        data = ai_analysis
+    else:
+        data = {}
+    return {
+        "is_military": data.get("is_military", False),
+        "is_government": data.get("is_government", False),
+        "is_vip": data.get("is_vip", False),
+        "summary": data.get("summary"),
+    }
+
+
+@router.get("/api/aircraft/types", name="aircraft_types")
+async def get_aircraft_types() -> dict[str, Any]:
+    """Top 50 aircraft types by snapshot count over the last 7 days.
+
+    Same query as ``web_app.py:893``. ``get_aircraft_type_name`` still
+    lives on the Flask module (a static Chinese-name lookup dict);
+    delegated to keep this handler in lockstep with the Flask version.
+    """
+    from web_app import db_manager, get_aircraft_type_name
+
+    session = db_manager.get_session()
+    try:
+        result = session.execute(
+            text(
+                """
+                SELECT aircraft_type, COUNT(*) as count
+                FROM aircraft_snapshots
+                WHERE aircraft_type IS NOT NULL
+                  AND aircraft_type != ''
+                  AND snapshot_time >= datetime('now', '-7 days')
+                GROUP BY aircraft_type
+                ORDER BY count DESC
+                LIMIT 50
+                """
+            )
+        )
+        aircraft_types = [
+            {
+                "code": row.aircraft_type,
+                "count": row.count,
+                "name": get_aircraft_type_name(row.aircraft_type),
+            }
+            for row in result
+        ]
+        return {"success": True, "aircraft_types": aircraft_types, "count": len(aircraft_types)}
+    finally:
+        session.close()
+
+
+@router.get("/api/aircraft/types/{type_code}", name="aircraft_type_info")
+async def get_aircraft_type_info(
+    type_code: str,
+    _user: dict[str, Any] = Depends(require_login),
+) -> dict[str, Any]:
+    """Stats for one aircraft type. Same shape as ``web_app.py:989``.
+
+    Login-gated on the Flask side (``@login_required``) and here.
+    """
+    from web_app import db_manager, get_aircraft_type_name
+
+    type_code_upper = type_code.upper()
+    session = db_manager.get_session()
+    try:
+        stats_row = session.execute(
+            text(
+                """
+                SELECT
+                    COUNT(*) as total_aircraft,
+                    COUNT(DISTINCT CASE WHEN ai.registration IS NOT NULL THEN asi.registration END) as aircraft_with_images
+                FROM aircraft_static_info asi
+                LEFT JOIN aircraft_images ai ON asi.registration = ai.registration
+                WHERE asi.aircraft_type = :type_code
+                """
+            ),
+            {"type_code": type_code_upper},
+        ).fetchone()
+        return {
+            "success": True,
+            "type_code": type_code_upper,
+            "name": get_aircraft_type_name(type_code_upper),
+            "total_aircraft": stats_row.total_aircraft if stats_row else 0,
+            "aircraft_with_images": stats_row.aircraft_with_images if stats_row else 0,
+        }
+    finally:
+        session.close()
+
+
+@router.get("/api/aircraft/types/{type_code}/instances", name="aircraft_type_instances")
+async def get_aircraft_type_instances(
+    type_code: str,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=200),
+    _user: dict[str, Any] = Depends(require_login),
+) -> dict[str, Any]:
+    """Paginated aircraft-of-this-type list, photo-bearing rows first.
+
+    Same query (correlated subquery for cross-dialect portability) as
+    ``web_app.py:1030``. Login-gated.
+    """
+    from web_app import db_manager, get_image_url
+
+    type_code_upper = type_code.upper()
+    session = db_manager.get_session()
+    try:
+        aircraft_result = session.execute(
+            text(
+                """
+                SELECT
+                    asi.registration,
+                    asi.aircraft_type,
+                    asi.owner,
+                    asi.operator,
+                    asi.hex_code,
+                    (SELECT image_path FROM aircraft_images
+                     WHERE registration = asi.registration
+                     ORDER BY display_order ASC, created_at DESC
+                     LIMIT 1) AS image_path
+                FROM aircraft_static_info asi
+                WHERE asi.aircraft_type = :type_code
+                ORDER BY
+                    CASE WHEN (SELECT image_path FROM aircraft_images
+                               WHERE registration = asi.registration
+                               LIMIT 1) IS NOT NULL THEN 0 ELSE 1 END,
+                    asi.registration
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {"type_code": type_code_upper, "limit": limit, "offset": offset},
+        )
+        aircraft_list = [
+            {
+                "registration": row.registration,
+                "aircraft_type": row.aircraft_type,
+                "owner": row.owner,
+                "operator": row.operator,
+                "hex_code": row.hex_code,
+                "image_url": get_image_url(row.image_path) if row.image_path else None,
+            }
+            for row in aircraft_result
+        ]
+        return {
+            "success": True,
+            "aircraft": aircraft_list,
+            "offset": offset,
+            "limit": limit,
+            "has_more": len(aircraft_list) == limit,
+        }
+    finally:
+        session.close()
+
+
+@router.get("/api/aircraft/unique", name="aircraft_unique")
+async def get_unique_aircraft(days: int = Query(7, ge=1, le=365)) -> dict[str, Any]:
+    """Distinct aircraft seen in the last ``days`` days.
+
+    ORM query (unlike sibling raw-SQL handlers), same as
+    ``web_app.py:1109``.
+    """
+    from src.data.models import AircraftSnapshot
+    from web_app import db_manager
+
+    session = db_manager.get_session()
+    try:
+        cutoff_time = datetime.now() - timedelta(days=days)
+        unique_aircraft = (
+            session.query(
+                AircraftSnapshot.registration,
+                AircraftSnapshot.aircraft_type,
+                AircraftSnapshot.hex,
+                AircraftSnapshot.is_military,
+                AircraftSnapshot.country_of_registration,
+            )
+            .filter(
+                AircraftSnapshot.snapshot_time >= cutoff_time,
+                AircraftSnapshot.registration.isnot(None),
+            )
+            .distinct()
+            .limit(1000)
+            .all()
+        )
+        result = [
+            {
+                "registration": a.registration,
+                "aircraft_type": a.aircraft_type,
+                "hex": a.hex,
+                "is_military": a.is_military,
+                "country_of_registration": a.country_of_registration,
+            }
+            for a in unique_aircraft
+        ]
+        return {"success": True, "aircraft": result, "count": len(result)}
+    finally:
+        session.close()
+
+
+def _static_info_row_to_dict(row: Any) -> dict[str, Any]:
+    """Shape used by both list and batch static-info endpoints.
+
+    Extracted so a future column addition lands in one place. Not applied
+    to the single-registration endpoint below because that one already
+    returns a superset of fields (livery, attention, hit_count, etc.).
+    """
+    from web_app import convert_utc_to_beijing
+
+    flags = _extract_ai_flags(row.ai_analysis)
+    return {
+        "id": row.id,
+        "registration": row.registration,
+        "hex": row.hex_code,
+        "owner": row.owner,
+        "operator": row.operator,
+        "aircraft_model": row.model,
+        "aircraft_type": row.aircraft_type,
+        "manufacturer": row.manufacturer,
+        "serial_number": row.serial_number,
+        "year_built": row.year_built,
+        "country": row.country_of_registration,
+        "is_military": flags["is_military"],
+        "is_government": flags["is_government"],
+        "is_vip": flags["is_vip"],
+        "summary": flags["summary"],
+        "updated_at": convert_utc_to_beijing(str(row.last_updated)) if row.last_updated else None,
+        "has_images": bool(row.images_downloaded),
+    }
+
+
+@router.get("/api/aircraft/static", name="aircraft_static_list")
+async def get_all_static_info() -> dict[str, Any]:
+    """List up to 1000 static-info rows, most-recently-updated first.
+
+    Same query and shape as ``web_app.py:1160``.
+    """
+    from web_app import db_manager
+
+    session = db_manager.get_session()
+    try:
+        result = session.execute(
+            text(
+                """
+                SELECT
+                    id, registration, hex_code, owner, operator,
+                    model, manufacturer, serial_number, year_built,
+                    country_of_registration, aircraft_type, ai_analysis,
+                    last_updated, data_source, images_downloaded
+                FROM aircraft_static_info
+                ORDER BY last_updated DESC NULLS LAST
+                LIMIT 1000
+                """
+            )
+        )
+        aircraft_list = [_static_info_row_to_dict(row) for row in result]
+        return {"success": True, "data": aircraft_list, "count": len(aircraft_list)}
+    finally:
+        session.close()
+
+
+@router.post("/api/aircraft/static/batch", name="aircraft_static_batch")
+async def get_batch_static_info(
+    payload: dict[str, Any] = Body(...),
+) -> dict[str, Any]:
+    """Bulk static-info fetch by registration list. Cap at 500 per call.
+
+    Same as ``web_app.py:1230``. ``payload["registrations"]`` must be a
+    non-empty list; 400 on missing key.
+    """
+    from web_app import db_manager
+
+    if not isinstance(payload, dict) or "registrations" not in payload:
+        raise HTTPException(
+            status_code=400,
+            detail={"success": False, "error": "Missing registrations list in request body"},
+        )
+
+    registrations = payload["registrations"]
+    if not isinstance(registrations, list) or len(registrations) == 0:
+        return {"success": True, "data": [], "count": 0}
+
+    if len(registrations) > 500:
+        registrations = registrations[:500]
+
+    session = db_manager.get_session()
+    try:
+        placeholders = ", ".join([f":reg{i}" for i in range(len(registrations))])
+        params = {f"reg{i}": reg for i, reg in enumerate(registrations)}
+
+        result = session.execute(
+            text(
+                f"""
+                SELECT
+                    id, registration, hex_code, owner, operator,
+                    model, manufacturer, serial_number, year_built,
+                    country_of_registration, aircraft_type, ai_analysis,
+                    last_updated, data_source, images_downloaded
+                FROM aircraft_static_info
+                WHERE registration IN ({placeholders})
+                ORDER BY registration
+                """  # noqa: S608 — placeholders are :name binds, not user text
+            ),
+            params,
+        )
+        aircraft_list = [_static_info_row_to_dict(row) for row in result]
+        return {"success": True, "data": aircraft_list, "count": len(aircraft_list)}
+    finally:
+        session.close()
+
+
+@router.get("/api/aircraft/static/stats", name="aircraft_static_stats")
+async def get_static_info_stats() -> dict[str, Any]:
+    """Rollup: total, military, government, vip, by_country, by_manufacturer.
+
+    Same query as ``web_app.py:1430``.
+    """
+    from web_app import db_manager
+
+    session = db_manager.get_session()
+    try:
+        total = session.execute(text("SELECT COUNT(*) FROM aircraft_static_info")).scalar() or 0
+        military = (
+            session.execute(
+                text("SELECT COUNT(*) FROM aircraft_static_info WHERE is_military = 1")
+            ).scalar()
+            or 0
+        )
+        government = (
+            session.execute(
+                text("SELECT COUNT(*) FROM aircraft_static_info WHERE is_government = 1")
+            ).scalar()
+            or 0
+        )
+        vip = (
+            session.execute(
+                text("SELECT COUNT(*) FROM aircraft_static_info WHERE is_vip = 1")
+            ).scalar()
+            or 0
+        )
+        country_stats = session.execute(
+            text(
+                """
+                SELECT country, COUNT(*) as count
+                FROM aircraft_static_info
+                WHERE country IS NOT NULL AND country != ''
+                GROUP BY country
+                ORDER BY count DESC
+                """
+            )
+        ).fetchall()
+        manufacturer_stats = session.execute(
+            text(
+                """
+                SELECT manufacturer, COUNT(*) as count
+                FROM aircraft_static_info
+                WHERE manufacturer IS NOT NULL AND manufacturer != ''
+                GROUP BY manufacturer
+                ORDER BY count DESC
+                """
+            )
+        ).fetchall()
+        return {
+            "success": True,
+            "stats": {
+                "total": total,
+                "military": military,
+                "government": government,
+                "vip": vip,
+                "by_country": [{"country": r[0], "count": r[1]} for r in country_stats],
+                "by_manufacturer": [
+                    {"manufacturer": r[0], "count": r[1]} for r in manufacturer_stats
+                ],
+            },
+        }
+    finally:
+        session.close()
+
+
+@router.get("/api/aircraft/static/{registration}", name="aircraft_static_one")
+async def get_static_info(registration: str) -> dict[str, Any]:
+    """Full static-info row for one registration, superset of the list shape.
+
+    Same query + response shape as ``web_app.py:1319``, including the
+    ``livery_*``, ``attention_*``, ``anomalies``, ``flight_pattern``,
+    ``recommended_actions``, ``hit_count``, and image-path fields the
+    list shape doesn't return. 404 when the registration has no row.
+
+    Route order matters: ``/static/{registration}`` must come *after*
+    ``/static/stats`` and ``/static/batch`` in this file so ``stats`` /
+    ``batch`` don't get swallowed as a ``registration``.
+    """
+    from web_app import convert_utc_to_beijing, db_manager, get_image_url
+
+    session = db_manager.get_session()
+    try:
+        result = session.execute(
+            text("SELECT * FROM aircraft_static_info WHERE registration = :reg"),
+            {"reg": registration},
+        ).fetchone()
+
+        if not result:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "success": False,
+                    "error": f"No static info found for registration: {registration}",
+                },
+            )
+
+        raw_data = result._mapping if hasattr(result, "_mapping") else dict(result)
+
+        data: dict[str, Any] = {
+            "id": raw_data.get("id"),
+            "registration": raw_data.get("registration"),
+            "hex": raw_data.get("hex_code"),
+            "aircraft_type": raw_data.get("aircraft_type"),
+            "aircraft_model": raw_data.get("model"),
+            "owner": raw_data.get("owner"),
+            "operator": raw_data.get("operator"),
+            "manufacturer": raw_data.get("manufacturer"),
+            "serial_number": raw_data.get("serial_number"),
+            "year_built": raw_data.get("year_built"),
+            "country": raw_data.get("country_of_registration"),
+            "data_source": raw_data.get("data_source"),
+            "updated_at": (
+                convert_utc_to_beijing(str(raw_data["last_updated"]))
+                if raw_data.get("last_updated")
+                else None
+            ),
+            "organization": raw_data.get("organization"),
+            "livery_type": raw_data.get("livery_type"),
+            "livery_name": raw_data.get("livery_name"),
+            "livery_description": raw_data.get("livery_description"),
+            "special_markings": raw_data.get("special_markings"),
+            "attention_level": raw_data.get("attention_level"),
+            "attention_reason": raw_data.get("attention_reason"),
+            "intelligence_summary": raw_data.get("intelligence_summary"),
+            "anomalies": raw_data.get("anomalies"),
+            "flight_pattern": raw_data.get("flight_pattern"),
+            "recommended_actions": raw_data.get("recommended_actions"),
+            "hit_count": raw_data.get("hit_count"),
+            "images_downloaded": raw_data.get("images_downloaded"),
+            "images_updated_at": (
+                convert_utc_to_beijing(str(raw_data["images_updated_at"]))
+                if raw_data.get("images_updated_at")
+                else None
+            ),
+        }
+
+        flags = _extract_ai_flags(raw_data.get("ai_analysis"))
+        data["is_military"] = flags["is_military"]
+        data["is_government"] = flags["is_government"]
+        data["is_vip"] = flags["is_vip"]
+        data["summary"] = flags["summary"]
+        # These two only surface on the single-registration endpoint.
+        ai_raw = raw_data.get("ai_analysis")
+        if ai_raw:
+            if isinstance(ai_raw, str):
+                try:
+                    ai_data = json.loads(ai_raw)
+                except json.JSONDecodeError:
+                    ai_data = {}
+            else:
+                ai_data = ai_raw if isinstance(ai_raw, dict) else {}
+            data["tags"] = ai_data.get("tags", [])
+            data["previous_owners"] = ai_data.get("previous_owners")
+
+        images_result = session.execute(
+            text(
+                """
+                SELECT image_path FROM aircraft_images
+                WHERE registration = :reg
+                ORDER BY display_order LIMIT 3
+                """
+            ),
+            {"reg": registration},
+        ).fetchall()
+        image_paths = [row[0] for row in images_result if row[0]]
+        data["image_path_1"] = get_image_url(image_paths[0]) if len(image_paths) > 0 else None
+        data["image_path_2"] = get_image_url(image_paths[1]) if len(image_paths) > 1 else None
+        data["image_path_3"] = get_image_url(image_paths[2]) if len(image_paths) > 2 else None
+
+        return {"success": True, "data": data}
+    finally:
+        session.close()
