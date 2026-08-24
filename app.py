@@ -37,6 +37,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from src.web.routes.aircraft_fastapi import router as aircraft_router
 from src.web.routes.airports_fastapi import router as airports_router
 from src.web.routes.auth_fastapi import router as auth_router
+from src.web.routes.flight_schedules_fastapi import router as flight_schedules_router
 from src.web.routes.ingest_fastapi import router as ingest_router
 from src.web.routes.search_fastapi import router as search_router
 
@@ -145,6 +146,7 @@ def create_app() -> FastAPI:
     app.include_router(aircraft_router)
     app.include_router(airports_router)
     app.include_router(search_router)
+    app.include_router(flight_schedules_router)
     app.include_router(ingest_router)
 
     @app.get("/healthz", tags=["ops"])
