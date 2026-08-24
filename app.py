@@ -34,8 +34,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from src.data.db_manager import DatabaseManager
-from src.utils.yaml_config import YAMLConfig
+from src.web.routes.aircraft_fastapi import router as aircraft_router
 from src.web.routes.auth_fastapi import router as auth_router
 from src.web.routes.ingest_fastapi import router as ingest_router
 
@@ -63,24 +62,36 @@ def _mask_database_url(url: str) -> str:
 async def lifespan(app: FastAPI):
     """Populate ``app.state`` with the config + DatabaseManager on startup.
 
-    Mirrors ``web_app.init_app()`` — same env vars, same YAMLConfig entry
-    point, same DatabaseManager constructor — so the FastAPI and Flask
-    entries observe the same runtime state. Neither closes the DB engine
-    on shutdown today; SQLAlchemy handles pool teardown at process exit
-    and the Flask side never did anything more.
+    Additionally runs ``web_app.init_app()`` so the Flask module's global
+    ``db_manager`` / ``config`` are filled too. Migrated FastAPI handlers
+    delegate to helpers still defined in ``web_app`` during stage 0 (see
+    ``src.web.routes.aircraft_fastapi``), and those helpers read the
+    module globals rather than taking the manager as a parameter — so
+    both the FastAPI and Flask entries end up pointing at the *same*
+    ``DatabaseManager`` instance, not two.
+
+    Neither closes the DB engine on shutdown today; SQLAlchemy handles
+    pool teardown at process exit and the Flask side never did more.
     """
     try:
-        config_path = os.environ.get("CONFIG_PATH", "config/config.yaml")
-        config = YAMLConfig(config_path)
-        db_config = config.get_database_config()
-        db_url = os.environ.get("DATABASE_URL", db_config["url"])
-        logger.info("Database URL: %s", _mask_database_url(db_url))
+        # Bring the Flask module up first — helpers migrated FastAPI
+        # handlers delegate to live on it. Import inside the lifespan
+        # (not at module top) to avoid a circular import at load time
+        # and to keep FastAPI runnable when web_app fails to import in
+        # some future refactor.
+        import web_app as web_app_module
 
-        db_manager = DatabaseManager(db_url)
+        web_app_module.init_app()
 
-        app.state.config = config
-        app.state.db_manager = db_manager
-        logger.info("FastAPI application initialised successfully")
+        # Share the initialised state under app.state so migrated
+        # handlers can read it via ``request.app.state.db_manager``
+        # without going back through the web_app module.
+        app.state.config = web_app_module.config
+        app.state.db_manager = web_app_module.db_manager
+        logger.info(
+            "FastAPI application initialised (Database URL: %s)",
+            _mask_database_url(getattr(web_app_module.db_manager, "database_url", "unknown")),
+        )
         yield
     except Exception:
         logger.exception("Failed to initialise FastAPI application")
@@ -129,6 +140,7 @@ def create_app() -> FastAPI:
 
     # Routers ---
     app.include_router(auth_router)
+    app.include_router(aircraft_router)
     app.include_router(ingest_router)
 
     @app.get("/healthz", tags=["ops"])
