@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Also run CI on long-lived migration branches (feat/*) so we get
+    # signal without opening a PR. Ephemeral topic branches that don't
+    # match will still exercise CI via the pull_request trigger below.
+    branches: [main, 'feat/*']
   pull_request:
 
 concurrency:
