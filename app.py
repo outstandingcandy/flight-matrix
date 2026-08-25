@@ -170,6 +170,32 @@ def create_app() -> FastAPI:
             content={"success": False, "error": "Internal server error"},
         )
 
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(
+        request: Request, exc: StarletteHTTPException
+    ) -> JSONResponse:
+        """Unwrap ``detail`` when handlers pass a dict, matching Flask's
+        flat error shape.
+
+        Handlers written for stage 0 raise ``HTTPException(status_code=401,
+        detail={"success": False, "error": "…"})`` to keep the response
+        body the Flask endpoint returned. FastAPI's default handler would
+        wrap that under ``{"detail": {…}}`` — this override peels it back
+        off so ``response.json() == {"success": False, "error": "…"}``,
+        which is what every Flask-era test in ``tests/web/`` asserts and
+        what the migrated frontend / mobile clients will parse.
+
+        A non-dict ``detail`` (a plain string) keeps FastAPI's default
+        shape ``{"detail": "…"}`` — those are FastAPI-native paths
+        (Pydantic 422 validation errors, for instance), not migrated
+        handlers, and their clients are already used to that shape.
+        """
+        if isinstance(exc.detail, dict):
+            return JSONResponse(status_code=exc.status_code, content=exc.detail)
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
     return app
 
 

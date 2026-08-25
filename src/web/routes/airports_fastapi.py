@@ -45,7 +45,7 @@ async def get_statistics() -> dict[str, Any]:
 async def search_airports(
     q: str = Query("", description="Search text (name / IATA / ICAO / city)"),
     limit: int = Query(20, ge=1, le=100),
-    type: str | None = Query(  # noqa: A002 - Flask signature kept
+    type: str | None = Query(
         None, description="Airport type filter: large_airport / medium_airport / …"
     ),
 ) -> dict[str, Any]:
@@ -240,14 +240,11 @@ async def get_realtime_aircraft_near_airport(
             lat = float(row.latitude)
             lon = float(row.longitude)
 
-            R = 6371  # noqa: N806 - matches Flask variable name
+            R = 6371
             lat1, lon1 = math.radians(airport_lat), math.radians(airport_lon)
             lat2, lon2 = math.radians(lat), math.radians(lon)
             dlat, dlon = lat2 - lat1, lon2 - lon1
-            a = (
-                math.sin(dlat / 2) ** 2
-                + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-            )
+            a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
             distance_km = 2 * R * math.asin(math.sqrt(a))
             if radius_km and distance_km > radius_km:
                 continue

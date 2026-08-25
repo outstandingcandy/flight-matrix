@@ -362,9 +362,7 @@ async def get_flight_schedules(
         session.close()
 
 
-@router.get(
-    "/api/flight-schedules/filter-options", name="get_flight_schedule_filter_options"
-)
+@router.get("/api/flight-schedules/filter-options", name="get_flight_schedule_filter_options")
 async def get_flight_schedule_filter_options(
     airport: str = Query("", description="Airport IATA / ICAO — narrows types+liveries+dates"),
     date: str = Query("", description="YYYY-MM-DD (Beijing)"),
@@ -446,9 +444,7 @@ async def get_flight_schedule_filter_options(
                 params["start_time"] = now_utc - timedelta(days=1)
                 params["end_time"] = now_utc + timedelta(days=3)
 
-            date_filter = (
-                "AND fs.scheduled_time >= :start_time AND fs.scheduled_time <= :end_time"
-            )
+            date_filter = "AND fs.scheduled_time >= :start_time AND fs.scheduled_time <= :end_time"
 
             local_day = beijing_date("fs.scheduled_time", is_postgres=db_manager.is_postgres)
             combined_query = f"""

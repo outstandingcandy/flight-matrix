@@ -160,9 +160,7 @@ async def search_aircraft(
         except ValueError:
             pass
 
-    conditions.append(
-        "registration IS NOT NULL AND registration != '' AND registration != 'None'"
-    )
+    conditions.append("registration IS NOT NULL AND registration != '' AND registration != 'None'")
 
     has_search_conditions = any(
         [registration, hex_code, aircraft_type, start_date, end_date, is_military]
@@ -636,7 +634,7 @@ async def get_batch_static_info(
                 FROM aircraft_static_info
                 WHERE registration IN ({placeholders})
                 ORDER BY registration
-                """  # noqa: S608 — placeholders are :name binds, not user text
+                """
             ),
             params,
         )

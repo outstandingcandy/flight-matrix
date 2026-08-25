@@ -131,7 +131,7 @@ async def search_suggestions() -> dict[str, Any]:
                     SELECT a.iata_code, a.icao_code, a.name, a.city, a.country, a.country_code
                     FROM airports a
                     WHERE a.iata_code IN ({placeholders}) OR a.icao_code IN ({placeholders})
-                    """  # noqa: S608 — placeholders are :name binds
+                    """
                 ),
                 params,
             )
@@ -158,7 +158,7 @@ async def search_suggestions() -> dict[str, Any]:
                     SELECT asi.registration, asi.aircraft_type, asi.owner, asi.operator
                     FROM aircraft_static_info asi
                     WHERE asi.registration IN ({placeholders})
-                    """  # noqa: S608 — placeholders are :name binds
+                    """
                 ),
                 params,
             )
