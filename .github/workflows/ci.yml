@@ -23,6 +23,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # pyproject.toml has `resilient-scraper` as an editable path
+          # dependency at lib/resilient-scraper (a git submodule);
+          # `uv sync` fails to build it if the submodule isn't checked out.
+          submodules: recursive
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
@@ -45,6 +50,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # pyproject.toml has `resilient-scraper` as an editable path
+          # dependency at lib/resilient-scraper (a git submodule);
+          # `uv sync` fails to build it if the submodule isn't checked out.
+          submodules: recursive
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
