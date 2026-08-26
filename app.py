@@ -34,6 +34,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
+from src.web.routes.admin_users_fastapi import router as admin_users_router
 from src.web.routes.aircraft_fastapi import router as aircraft_router
 from src.web.routes.airports_fastapi import router as airports_router
 from src.web.routes.auth_fastapi import router as auth_router
@@ -149,6 +150,7 @@ def create_app() -> FastAPI:
     app.include_router(search_router)
     app.include_router(flight_schedules_router)
     app.include_router(user_router)
+    app.include_router(admin_users_router)
     app.include_router(ingest_router)
 
     @app.get("/healthz", tags=["ops"])
@@ -194,9 +196,16 @@ def create_app() -> FastAPI:
         (Pydantic 422 validation errors, for instance), not migrated
         handlers, and their clients are already used to that shape.
         """
+        # `exc.headers` matters for redirects — `require_login` raises
+        # HTTPException(302, headers={"Location": "/login"}). Forwarding
+        # the headers keeps that Location in the JSONResponse.
         if isinstance(exc.detail, dict):
-            return JSONResponse(status_code=exc.status_code, content=exc.detail)
-        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+            return JSONResponse(
+                status_code=exc.status_code, content=exc.detail, headers=exc.headers
+            )
+        return JSONResponse(
+            status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers
+        )
 
     return app
 
