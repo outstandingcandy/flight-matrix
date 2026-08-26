@@ -61,6 +61,22 @@ class User(Base):
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
+    # OIDC / native-login subject identifiers. Nullable because rows
+    # predate the columns and email-only accounts (admin-created via
+    # /api/admin/users) never touch these. See
+    # scripts/migrate_add_oauth_columns.py — production adds these via
+    # CREATE UNIQUE INDEX CONCURRENTLY with a partial WHERE ... IS NOT
+    # NULL, so multiple existing rows with NULL don't collide.
+    google_sub = Column(String(255), index=True)
+    apple_sub = Column(String(255), index=True)
+    # Weixin returns openid per (app, user); unionid is stable across
+    # apps under the same Open Platform account. Match on unionid first,
+    # fall back to (openid, platform) — the mp/app platform distinction
+    # matters because openid values are namespaced by AppID.
+    wechat_unionid = Column(String(64), index=True)
+    wechat_openid = Column(String(64))
+    wechat_platform = Column(String(16))  # "mp" (mini-program) | "app" (mobile)
+
     # Relationships
     subscriptions = relationship(
         "Subscription", back_populates="user", cascade="all, delete-orphan"
@@ -72,6 +88,14 @@ class User(Base):
     __table_args__ = (
         Index("idx_user_status", "status"),
         Index("idx_user_created", "created_at"),
+        # `(wechat_openid, wechat_platform)` is unique per (AppID, user) —
+        # a mini-program user and an iOS-App user with the same openid
+        # are actually two different accounts on Weixin's side because
+        # openids are namespaced by AppID and the two apps have different
+        # AppIDs. The migration adds this index as CREATE UNIQUE INDEX
+        # ... WHERE wechat_openid IS NOT NULL so pre-migration rows don't
+        # collide.
+        Index("idx_user_wechat_openid_platform", "wechat_openid", "wechat_platform"),
     )
 
     def generate_api_key(self) -> str:
