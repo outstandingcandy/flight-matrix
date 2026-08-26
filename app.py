@@ -35,6 +35,8 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from src.web.routes.admin_aircraft_fastapi import router as admin_aircraft_router
+from src.web.routes.admin_ops_fastapi import import_router as admin_import_router
+from src.web.routes.admin_ops_fastapi import scraper_router as admin_scraper_router
 from src.web.routes.admin_reports_scraped_fastapi import router as admin_reports_scraped_router
 from src.web.routes.admin_users_fastapi import router as admin_users_router
 from src.web.routes.aircraft_fastapi import router as aircraft_router
@@ -155,6 +157,8 @@ def create_app() -> FastAPI:
     app.include_router(admin_users_router)
     app.include_router(admin_aircraft_router)
     app.include_router(admin_reports_scraped_router)
+    app.include_router(admin_scraper_router)
+    app.include_router(admin_import_router)
     app.include_router(ingest_router)
 
     @app.get("/healthz", tags=["ops"])
