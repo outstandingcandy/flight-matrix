@@ -1,69 +1,69 @@
+"""AWS Lambda handler for flight-matrix.
+
+Wraps the FastAPI ASGI app with Mangum. Previously this file wrapped a
+Flask WSGI app via ``asgiref.wsgi.WsgiToAsgi``; the FastAPI cut-over
+removes that indirection — Mangum speaks ASGI natively.
+
+The FastAPI startup lives inside the app's ASGI ``lifespan`` handler
+(``app.create_app``), so this file doesn't need to call ``init_app()``
+by hand. Mangum's ``lifespan='auto'`` runs the FastAPI startup once
+per Lambda cold start.
 """
-AWS Lambda handler for flight-matrix Flask application
-Wraps Flask WSGI app using Mangum adapter for AWS Lambda compatibility
-"""
+
+from __future__ import annotations
+
+import logging
 import os
 import sys
-import logging
 
-# Add project root to Python path
+# Add project root to Python path — matches the prior Flask handler.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Configure logging for Lambda
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger('lambda_handler')
+logger = logging.getLogger("lambda_handler")
 
-# Import Flask app
-from web_app import app, init_app
+from app import app  # noqa: E402 — sys.path setup must precede import
+from mangum import Mangum  # noqa: E402
 
-# Initialize app on cold start (executed once per Lambda container)
-init_app()
-logger.info("Lambda handler initialized")
+# lifespan='auto' runs the FastAPI startup on cold start; on Lambda the
+# shutdown side never fires (container just disappears), which is what
+# FastAPI's lifespan already tolerates.
+handler = Mangum(app, lifespan="auto")
 
-# Import Mangum adapter and WSGI-to-ASGI converter
-from mangum import Mangum
-from asgiref.wsgi import WsgiToAsgi
+logger.info("Lambda handler initialized (FastAPI + Mangum ASGI)")
 
-# Wrap Flask WSGI app in ASGI adapter, then wrap in Mangum for Lambda
-asgi_app = WsgiToAsgi(app)
-handler = Mangum(asgi_app, lifespan="off")
 
-def lambda_handler(event, context):
-    """
-    AWS Lambda entry point
+def lambda_handler(event, context):  # type: ignore[no-untyped-def]
+    """AWS Lambda entry point.
 
     Args:
-        event: API Gateway event payload
-        context: Lambda context object
+        event: API Gateway event payload.
+        context: Lambda context object.
 
     Returns:
-        API Gateway response
+        API Gateway response.
     """
     try:
-        # Log request details
-        request_context = event.get('requestContext', {})
-        http_context = request_context.get('http', {})
-        method = http_context.get('method', 'UNKNOWN')
-        path = http_context.get('path', '/')
+        request_context = event.get("requestContext", {})
+        http_context = request_context.get("http", {})
+        method = http_context.get("method", "UNKNOWN")
+        path = http_context.get("path", "/")
+        logger.info("Incoming request: %s %s", method, path)
 
-        logger.info(f"Incoming request: {method} {path}")
-
-        # Process request through Mangum adapter
         response = handler(event, context)
 
-        logger.info(f"Response status: {response.get('statusCode', 'UNKNOWN')}")
+        logger.info("Response status: %s", response.get("statusCode", "UNKNOWN"))
         return response
-
-    except Exception as e:
-        logger.error(f"Lambda handler error: {str(e)}", exc_info=True)
+    except Exception:
+        logger.exception("Lambda handler error")
         return {
-            'statusCode': 500,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
+            "statusCode": 500,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
             },
-            'body': '{"error": "Internal server error"}'
+            "body": '{"error": "Internal server error"}',
         }
