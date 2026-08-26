@@ -40,6 +40,7 @@ from src.web.routes.auth_fastapi import router as auth_router
 from src.web.routes.flight_schedules_fastapi import router as flight_schedules_router
 from src.web.routes.ingest_fastapi import router as ingest_router
 from src.web.routes.search_fastapi import router as search_router
+from src.web.routes.user_fastapi import router as user_router
 
 logger = logging.getLogger("app")
 
@@ -147,6 +148,7 @@ def create_app() -> FastAPI:
     app.include_router(airports_router)
     app.include_router(search_router)
     app.include_router(flight_schedules_router)
+    app.include_router(user_router)
     app.include_router(ingest_router)
 
     @app.get("/healthz", tags=["ops"])
