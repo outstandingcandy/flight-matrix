@@ -154,7 +154,6 @@ def test_web_app_re_exports_time_helpers() -> None:
     # freshly-resolved names for identity instead of assuming the
     # module-load-time bindings survive.
     import web_app
-
     from src.web import time_helpers as th
 
     assert web_app._to_iso is th._to_iso
