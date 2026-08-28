@@ -57,11 +57,14 @@ class GoogleAuth:
         logout_url: str = "",
         allowed_domains: list[str] | None = None,
         group_map: dict[str, list[str]] | None = None,
+        additional_audiences: list[str] | None = None,
     ):
         """Initialize the Google auth handler.
 
         Args:
-            client_id: OAuth 2.0 Web application client ID.
+            client_id: OAuth 2.0 Web application client ID. Used both for the
+                web (browser) hosted-UI flow and as the default audience when
+                verifying tokens.
             client_secret: OAuth 2.0 client secret.
             callback_url: Redirect URI registered in the Google Cloud console.
             logout_url: Optional post-logout redirect. Google has no
@@ -71,6 +74,12 @@ class GoogleAuth:
                 accepts any verified Google account.
             group_map: Group name -> list of member emails, loaded from
                 `config/auth.yaml`.
+            additional_audiences: Extra client_ids accepted as valid `aud`
+                claims when verifying tokens. This is how iOS / Android /
+                other-platform native sign-ins reuse this provider — each
+                native platform has its own client_id (Google requires it),
+                but the underlying signing keys and issuers are the same.
+                Empty or None keeps the classic single-audience behaviour.
         """
         self.client_id = client_id
         self.client_secret = client_secret
@@ -78,6 +87,12 @@ class GoogleAuth:
         self.logout_url = logout_url
 
         self.allowed_domains = [d.strip().lower() for d in (allowed_domains or []) if d.strip()]
+
+        # jose's `audience=` accepts either a single string or a list — we
+        # always pass a list here so a caller adding an iOS/Android client_id
+        # doesn't have to touch verify_token.
+        extras = [a.strip() for a in (additional_audiences or []) if a and a.strip()]
+        self.accepted_audiences: list[str] = [client_id, *extras]
 
         # Normalise the group map once so every lookup is a cheap set test.
         self.group_map: dict[str, set[str]] = {
@@ -221,7 +236,10 @@ class GoogleAuth:
                 token,
                 public_key,
                 algorithms=["RS256"],
-                audience=self.client_id,
+                # Accept any registered audience — the web client's id plus
+                # any additional iOS / Android / Android-TV client_ids from
+                # `additional_audiences`. jose treats a list as OR-of-audiences.
+                audience=self.accepted_audiences,
                 issuer=ISSUERS,
                 options={
                     "verify_at_hash": False,  # No access_token available here

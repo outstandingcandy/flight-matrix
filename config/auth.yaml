@@ -36,3 +36,34 @@ auth:
         - "outstandingcandy@gmail.com"
       flight-schedules-viewers:
         - "outstandingcandy@gmail.com"
+
+    # Native-client audiences. iOS / Android sign-ins target their own
+    # client_id (Google requires it); listing them here lets
+    # `/api/auth/google/native` verify tokens minted for either platform
+    # against this same GoogleAuth instance — the signing keys and
+    # issuer are the same as the web client's.
+    ios_client_id: "${GOOGLE_OAUTH_IOS_CLIENT_ID}"
+    android_client_id: "${GOOGLE_OAUTH_ANDROID_CLIENT_ID}"
+
+  # Sign in with Apple — required by App Store Guideline 4.8 whenever an
+  # iOS app offers any other third-party sign-in. Server-side we only
+  # verify the identityToken the iOS SDK produces; there is no hosted-UI
+  # or server-to-server code exchange to configure.
+  apple:
+    # Apple Service ID or App Bundle ID — whatever the iOS SDK stamps
+    # into the `aud` claim. If both an iOS App target and a companion
+    # macOS / watchOS target sign in against the same server, put the
+    # second Bundle ID in `additional_bundle_ids`.
+    bundle_id: "${APPLE_BUNDLE_ID}"
+    additional_bundle_ids: []
+
+  # WeChat native + mini-program logins. Two separate AppIDs because
+  # WeChat namespaces openids by AppID — the mini-program (`mp`) sits on
+  # the Public Platform and the iOS App (`app`) sits on the Open
+  # Platform. Cross-app user linkage requires both AppIDs to live under
+  # one Open Platform account, which exposes a shared `unionid`.
+  wechat:
+    mp_appid: "${WECHAT_MP_APPID}"
+    mp_appsecret: "${WECHAT_MP_APPSECRET}"
+    app_appid: "${WECHAT_APP_APPID}"
+    app_appsecret: "${WECHAT_APP_APPSECRET}"

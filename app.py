@@ -44,6 +44,7 @@ from src.web.routes.airports_fastapi import router as airports_router
 from src.web.routes.auth_fastapi import router as auth_router
 from src.web.routes.flight_schedules_fastapi import router as flight_schedules_router
 from src.web.routes.ingest_fastapi import router as ingest_router
+from src.web.routes.native_auth_fastapi import router as native_auth_router
 from src.web.routes.pages_fastapi import router as pages_router
 from src.web.routes.search_fastapi import router as search_router
 from src.web.routes.user_fastapi import router as user_router
@@ -162,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_import_router)
     app.include_router(pages_router)
     app.include_router(ingest_router)
+    app.include_router(native_auth_router)
 
     @app.get("/healthz", tags=["ops"])
     async def healthz() -> dict:
@@ -187,9 +189,7 @@ def create_app() -> FastAPI:
     from starlette.exceptions import HTTPException as StarletteHTTPException
 
     @app.exception_handler(StarletteHTTPException)
-    async def http_exception_handler(
-        request: Request, exc: StarletteHTTPException
-    ) -> JSONResponse:
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         """Unwrap ``detail`` when handlers pass a dict, matching Flask's
         flat error shape.
 
