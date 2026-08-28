@@ -203,69 +203,18 @@ def inject_auth_config():
 # Auth routes live in src/web/routes/auth.py (registered as `auth_bp` above).
 
 
-# Timezone settings
-UTC = pytz.UTC
-BEIJING_TZ = pytz.timezone("Asia/Shanghai")
-
-# "This aircraft has a livery worth showing", as a SQL predicate on
-# `aircraft_static_info asi`.
-#
-# Three queries used to write `asi.has_special_livery = TRUE`, but no such
-# column exists in any environment: it is absent from `AircraftStaticInfo`,
-# from `_ensure_analysis_columns()` in the analysis service, and from every
-# migration script. Those queries raised "no such column" on both dialects.
-# `livery_type` is the field the analysis service actually populates (free text
-# such as "special livery" or "government VIP"), so its presence is the
-# available expression of the same idea.
-HAS_LIVERY_SQL = "(asi.livery_type IS NOT NULL AND asi.livery_type != '')"
-
-
-def _to_iso(value) -> str | None:
-    """Render a timestamp column from a raw-SQL row as an ISO-8601 string.
-
-    A `text()` query carries no type information, so the driver decides what a
-    timestamp column becomes: psycopg2 returns a `datetime`, but SQLite hands
-    back the stored string. `value.isoformat()` therefore raises
-    `AttributeError` on SQLite for SQL that works fine against Aurora.
-
-    Args:
-        value: A `datetime`, a timestamp string, or None.
-
-    Returns:
-        The ISO-8601 form, or None when `value` is None or empty.
-    """
-    if not value:
-        return None
-    if isinstance(value, str):
-        return value
-    return value.isoformat()
-
-
-def _to_datetime(value) -> datetime | None:
-    """Read a timestamp column from a raw-SQL row as a `datetime`.
-
-    The mirror of `_to_iso`, for the callers that do arithmetic on the value
-    rather than rendering it: subtracting a `str` from a `datetime` is a
-    `TypeError`, so the same driver difference breaks those too.
-
-    Args:
-        value: A `datetime`, a timestamp string, or None.
-
-    Returns:
-        The value as a `datetime`, or None when it is None, empty, or not a
-        timestamp this can parse.
-    """
-    if not value:
-        return None
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, str):
-        try:
-            return datetime.fromisoformat(value)
-        except ValueError:
-            logger.warning(f"Unparseable timestamp from the database: {value!r}")
-            return None
-    return None
+# Timezone constants + shared timestamp helpers moved to src/web/time_helpers.py
+# so FastAPI handlers can import them without dragging Flask + the whole
+# web_app module into their import graph. Re-exported here to keep every
+# ``from web_app import _to_iso, ...`` in the Flask half working during the
+# co-existence window.
+from src.web.time_helpers import (
+    BEIJING_TZ,
+    HAS_LIVERY_SQL,
+    UTC,
+    _to_datetime,
+    _to_iso,
+)
 
 
 def _table_exists(session, table_name: str) -> bool:
@@ -487,58 +436,14 @@ def batch_get_images_from_static_info(registrations: list[str]) -> dict[str, dic
         return {}
 
 
-def convert_utc_to_beijing(utc_datetime_str):
-    """将UTC时间字符串转换为北京时间字符串"""
-    if not utc_datetime_str:
-        return None
-
-    try:
-        # 解析UTC时间
-        if isinstance(utc_datetime_str, str):
-            # 处理不同的时间格式
-            if utc_datetime_str.endswith("Z"):
-                utc_dt = datetime.fromisoformat(utc_datetime_str.replace("Z", "+00:00"))
-            elif "+" in utc_datetime_str or utc_datetime_str.endswith("UTC"):
-                utc_dt = datetime.fromisoformat(utc_datetime_str.replace("UTC", "").strip())
-            else:
-                utc_dt = datetime.fromisoformat(utc_datetime_str)
-        else:
-            utc_dt = utc_datetime_str
-
-        # 确保是UTC时区
-        if utc_dt.tzinfo is None:
-            utc_dt = UTC.localize(utc_dt)
-
-        # 转换为北京时间
-        beijing_dt = utc_dt.astimezone(BEIJING_TZ)
-        return beijing_dt.strftime("%Y-%m-%d %H:%M:%S")
-    except Exception as e:
-        logger.warning(f"Time conversion error for '{utc_datetime_str}': {e}")
-        return str(utc_datetime_str)
-
-
-def convert_beijing_to_utc(beijing_datetime_str):
-    """将北京时间字符串转换为UTC时间"""
-    if not beijing_datetime_str:
-        return None
-
-    try:
-        # 解析北京时间
-        beijing_dt = datetime.fromisoformat(beijing_datetime_str)
-        # 检查是否已经有时区信息
-        if beijing_dt.tzinfo is None:
-            beijing_dt = BEIJING_TZ.localize(beijing_dt)
-
-        # 转换为UTC
-        utc_dt = beijing_dt.astimezone(UTC)
-        return utc_dt.replace(tzinfo=None)  # DB stores naive datetimes.
-    except Exception as e:
-        logger.warning(f"Time conversion error: {e}")
-        try:
-            # Last-ditch: parse the string as ISO-format.
-            return datetime.fromisoformat(beijing_datetime_str)
-        except (ValueError, TypeError):
-            return None
+# Beijing/UTC conversion helpers live in src/web/time_helpers.py — see the
+# note next to the _to_iso import above. Kept re-exported here so the
+# Flask handlers that still `from web_app import convert_utc_to_beijing`
+# keep resolving.
+from src.web.time_helpers import (
+    convert_beijing_to_utc,
+    convert_utc_to_beijing,
+)
 
 
 def init_app():
