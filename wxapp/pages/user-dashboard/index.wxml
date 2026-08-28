@@ -1,0 +1,20 @@
+<view class="container">
+  <view wx:if="{{loading}}" class="muted">加载中…</view>
+  <view wx:elif="{{error}}" class="empty-state">{{error}}</view>
+  <block wx:else>
+    <view class="card" wx:if="{{profile}}">
+      <view class="title">{{profile.name || profile.email}}</view>
+      <view class="muted">{{profile.email}}</view>
+    </view>
+    <view class="card" wx:if="{{features}}">
+      <view>订阅套餐:{{features.tier}}</view>
+      <view class="muted">最多筛选:{{features.max_filters}}</view>
+      <view class="muted">冷却时间:{{features.cooldown_hours}} 小时</view>
+    </view>
+    <view class="card" wx:if="{{usage}}">
+      <view>今日已发送:{{usage.reports_today || 0}}</view>
+      <view class="muted">本月已发送:{{usage.reports_month || 0}}</view>
+    </view>
+    <navigator url="/pages/user-filters/index" class="card">进入筛选器管理 →</navigator>
+  </block>
+</view>

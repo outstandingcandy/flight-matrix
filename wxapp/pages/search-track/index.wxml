@@ -1,0 +1,20 @@
+<view class="container">
+  <view class="card row">
+    <input placeholder="输入注册号,如 B-1234" bindinput="onSearchInput" />
+    <button size="mini" bindtap="onSearchTap">搜索</button>
+  </view>
+  <view wx:if="{{loading}}" class="muted">加载中…</view>
+  <view wx:elif="{{error}}" class="empty-state">出错了:{{error}}</view>
+  <block wx:else>
+    <map
+      wx:if="{{polyline.length}}"
+      class="map"
+      polyline="{{polyline}}"
+      latitude="{{polyline[0].points[0].latitude}}"
+      longitude="{{polyline[0].points[0].longitude}}"
+      scale="6"
+    />
+    <view wx:elif="{{tracks.length === 0}}" class="empty-state">暂无轨迹</view>
+    <view wx:else class="muted">共 {{tracks.length}} 条快照(但没有可绘制的经纬度)</view>
+  </block>
+</view>

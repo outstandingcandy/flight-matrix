@@ -1,0 +1,6 @@
+{
+  "desc": "Search-engine indexing config. Default allow-all — the mini-program has no private-only pages.",
+  "rules": [
+    { "action": "allow", "page": "*" }
+  ]
+}

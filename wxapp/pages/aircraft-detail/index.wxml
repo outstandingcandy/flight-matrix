@@ -1,0 +1,20 @@
+<view class="container">
+  <view wx:if="{{loading}}" class="muted">加载中…</view>
+  <view wx:elif="{{error}}" class="empty-state">出错了:{{error}}</view>
+  <block wx:else>
+    <view class="card" wx:if="{{details}}">
+      <view class="title">{{details.registration}}</view>
+      <view class="muted">{{details.aircraft_type}}</view>
+      <view class="muted">{{details.airline_name}}</view>
+    </view>
+    <swiper wx:if="{{images.length > 0}}" class="photos" autoplay indicator-dots>
+      <swiper-item wx:for="{{images}}" wx:key="url">
+        <image src="{{item.url || item.image_url}}" mode="aspectFill" />
+      </swiper-item>
+    </swiper>
+    <view class="card" wx:if="{{history.length}}">
+      <view class="muted">最近 {{history.length}} 条快照</view>
+    </view>
+    <view wx:if="{{!details && !history.length}}" class="empty-state">没有找到此飞机</view>
+  </block>
+</view>

@@ -1,0 +1,17 @@
+.row {
+  display: flex;
+  gap: 16rpx;
+  align-items: center;
+}
+.row input {
+  flex: 1;
+  background: #f4f7fb;
+  border-radius: 12rpx;
+  padding: 16rpx 24rpx;
+}
+.picker {
+  background: #f4f7fb;
+  border-radius: 12rpx;
+  padding: 16rpx 24rpx;
+  font-size: 28rpx;
+}

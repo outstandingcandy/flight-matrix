@@ -1,0 +1,15 @@
+<view class="container">
+  <view wx:if="{{loading}}" class="muted">加载中…</view>
+  <view wx:elif="{{error}}" class="empty-state">出错了:{{error}}</view>
+  <block wx:else>
+    <view class="card" wx:if="{{stats}}">
+      <view>总飞机数:{{stats.total_aircraft || 0}}</view>
+      <view class="muted">最近 24 小时快照 {{stats.recent_snapshots || 0}} 条</view>
+    </view>
+    <view class="card" wx:for="{{recentAircraft}}" wx:key="registration">
+      <view>{{item.registration || item.hex}}</view>
+      <view class="muted">{{item.aircraft_type}} · {{item.flight_number}}</view>
+    </view>
+    <view wx:if="{{recentAircraft.length === 0}}" class="empty-state">暂无近期飞行数据</view>
+  </block>
+</view>
