@@ -144,6 +144,14 @@ def test_real_bedrock_client_satisfies_the_protocol(monkeypatch: pytest.MonkeyPa
 
 def test_create_reads_the_yaml_llm_config(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(ENV_VAR, "aws")
+    # Building the Gemini client instantiates httpx under the hood, which
+    # auto-detects ``ALL_PROXY`` / ``HTTPS_PROXY`` from the environment.
+    # A developer with a local SOCKS proxy set (a real thing that
+    # happens) crashes here with ``ImportError: 'socksio' not installed``
+    # even though the test isn't going near the network. Strip the proxy
+    # env before constructing the client.
+    for var in ("ALL_PROXY", "all_proxy", "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
+        monkeypatch.delenv(var, raising=False)
     yaml_config = _FakeYAMLConfig({"provider": "gemini", "gemini_api_key": "sk-test"})
 
     client = LLMClientFactory.create(yaml_config)  # type: ignore[arg-type]

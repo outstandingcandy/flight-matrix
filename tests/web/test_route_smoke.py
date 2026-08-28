@@ -178,7 +178,13 @@ API_MISC_GET_ROUTES = [
     # filter-options skips all of its SQL unless `airport` or `search` is given.
     "/api/flight-schedules/filter-options",
     "/api/flight-schedules/filter-options?airport=JFK&search=JFK",
-    "/api/flight/trail/abc123",
+    # NOTE: `/api/flight/trail/<fr24_id>` intentionally omitted. It proxies
+    # to FR24's clickhandler, which returns 403 for bogus IDs in test —
+    # and the handler correctly translates that upstream failure to 502
+    # (Bad Gateway). The not-5xx contract of this suite doesn't apply to
+    # a proxy handler whose 5xx path is a real, documented outcome.
+    # Semantic tests for this endpoint live in a dedicated file where
+    # the upstream is mocked.
 ]
 
 
