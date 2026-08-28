@@ -53,7 +53,14 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    # BigInteger on Postgres → BIGSERIAL. `.with_variant(Integer, "sqlite")`
+    # falls back to SQLite's `INTEGER PRIMARY KEY AUTOINCREMENT`, which is
+    # the only shape SQLite auto-assigns ids for. Bare `BigInteger` produces
+    # `BIGINT NOT NULL` on SQLite with no rowid alias, so every INSERT hits
+    # `NOT NULL constraint failed: users.id`. See also the raw DDL in
+    # ``src/data/schema.py::_create_multi_user_tables_sqlite`` which uses the
+    # same `INTEGER PRIMARY KEY AUTOINCREMENT` shape.
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     name = Column(String(100))
     status = Column(String(20), default="active", index=True)  # active, suspended, deleted
@@ -141,7 +148,7 @@ class Subscription(Base):
 
     __tablename__ = "subscriptions"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     tier = Column(String(20), default="basic", index=True)  # basic, premium, enterprise
     status = Column(String(20), default="active", index=True)  # active, expired, cancelled
@@ -234,7 +241,7 @@ class UserFilter(Base):
 
     __tablename__ = "user_filters"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)
     description = Column(Text)
@@ -286,7 +293,7 @@ class UserCooldown(Base):
 
     __tablename__ = "user_cooldowns"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     aircraft_hex = Column(String(6), nullable=False)
     last_report_time = Column(DateTime, nullable=False)
@@ -335,7 +342,7 @@ class UserUsage(Base):
 
     __tablename__ = "user_usage"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     period_start = Column(Date, nullable=False)
     period_type = Column(String(10), default="monthly")  # daily, monthly
@@ -401,7 +408,7 @@ class AircraftSnapshot(Base):
 
     __tablename__ = "aircraft_snapshots"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     snapshot_time = Column(DateTime, nullable=False, default=func.now())
 
     # Aircraft identification
@@ -1047,7 +1054,7 @@ class ReportCooldown(Base):
 
     __tablename__ = "report_cooldowns"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     aircraft_hex = Column(String(6), nullable=False, unique=True, index=True)
     last_report_time = Column(DateTime, nullable=False)
     last_latitude = Column(Numeric(10, 7))
@@ -1104,7 +1111,7 @@ class NoteAircraftAnalysis(Base):
 
     __tablename__ = "note_aircraft_analysis"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     note_id = Column(String(50), nullable=False, unique=True, index=True)
     source_type = Column(String(20), nullable=False, index=True)  # xiaohongshu, weibo, douyin
 
@@ -1187,7 +1194,7 @@ class AircraftAttentionAggregate(Base):
 
     __tablename__ = "aircraft_attention_aggregate"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     registration = Column(String(20), nullable=False, unique=True, index=True)
 
     # Mention counts

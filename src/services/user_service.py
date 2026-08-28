@@ -355,11 +355,21 @@ class UserService(BaseService):
 
         Makes sure the row has an api_key and an active subscription,
         detaches from the session, returns the User.
+
+        The ``session.refresh(user)`` before expunge is load-bearing:
+        ``created_at`` / ``updated_at`` are server-side defaults, so
+        after INSERT they exist in the DB but not in the mapped Python
+        instance. Accessing them post-expunge would trigger a lazy
+        refresh against a detached instance and raise
+        :class:`DetachedInstanceError`. Refreshing while the object is
+        still attached forces those columns into the instance's
+        ``__dict__``, which then survives detachment intact.
         """
         if not user.api_key:
             user.generate_api_key()
         session.flush()
         self._ensure_free_tier_subscription(session, user.id)
+        session.refresh(user)
         session.expunge(user)
         return user
 
