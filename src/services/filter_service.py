@@ -7,6 +7,8 @@ for the multi-user subscription system.
 
 import logging
 from datetime import datetime, timedelta
+from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import text
 
@@ -249,7 +251,7 @@ class FilterService(BaseService):
 
     def execute_user_filters(
         self, user_id: int, limit: int = 1000, max_age_hours: float | None = None
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Execute all active filters for a user.
 
         Args:
@@ -287,7 +289,9 @@ class FilterService(BaseService):
         # Execute the filter query
         return self.db.execute_filter_query(combined_sql, limit)
 
-    def test_filter(self, filter_sql: str, limit: int = 10) -> tuple[bool, list[dict], str | None]:
+    def test_filter(
+        self, filter_sql: str, limit: int = 10
+    ) -> tuple[bool, list[dict[str, Any]], str | None]:
         """Test a filter SQL and return sample results.
 
         Args:
@@ -409,8 +413,12 @@ class FilterService(BaseService):
 
                 if cooldown:
                     cooldown.last_report_time = datetime.now()
-                    cooldown.last_latitude = latitude
-                    cooldown.last_longitude = longitude
+                    # ``Numeric`` columns type as ``Decimal | None`` on the
+                    # ORM side; the caller hands us plain floats and
+                    # SQLAlchemy coerces on the way to the DB. Cast to
+                    # ``Decimal`` here to keep the type annotation honest.
+                    cooldown.last_latitude = Decimal(str(latitude))
+                    cooldown.last_longitude = Decimal(str(longitude))
                     cooldown.report_count = (cooldown.report_count or 0) + 1
                 else:
                     cooldown = UserCooldown(
@@ -431,7 +439,7 @@ class FilterService(BaseService):
             )
             return False
 
-    def get_user_cooldown_status(self, user_id: int, aircraft_hex: str) -> dict | None:
+    def get_user_cooldown_status(self, user_id: int, aircraft_hex: str) -> dict[str, Any] | None:
         """Get cooldown status for a specific aircraft and user.
 
         Args:

@@ -220,6 +220,8 @@ module = [
     "src.search.aircraft_index",
     "src.search.aircraft_sync",
     "src.search.opensearch_client",
+    "src.services.filter_service",
+    "src.services.user_service",
     "src.storage.*",
     "src.web.helpers",
     "src.web.image_helpers",
