@@ -11,10 +11,11 @@ Provides business logic for aircraft-related operations:
 import logging
 from datetime import datetime, timedelta
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, func, or_, true
 from sqlalchemy.orm import Session
 
 from src.data.models import AircraftSnapshot, AircraftStaticInfo
+from src.web.time_helpers import naive_utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,7 @@ class AircraftService:
 
             # Only add time filter if hours_back is specified
             if hours_back is not None:
-                cutoff_time = datetime.utcnow() - timedelta(hours=hours_back)
+                cutoff_time = naive_utc_now() - timedelta(hours=hours_back)
                 conditions.append(AircraftSnapshot.snapshot_time >= cutoff_time)
 
             # Registration filter
@@ -157,7 +158,7 @@ class AircraftService:
                 self.session.query(
                     AircraftSnapshot.hex, func.max(AircraftSnapshot.snapshot_time).label("max_time")
                 )
-                .filter(and_(*conditions))
+                .filter(and_(true(), *conditions))
                 .group_by(AircraftSnapshot.hex)
                 .subquery()
             )
@@ -262,7 +263,7 @@ class AircraftService:
                 return None
 
             # Check if data is recent (within last hour)
-            age = datetime.utcnow() - snapshot.snapshot_time
+            age = naive_utc_now() - snapshot.snapshot_time
             is_live = age.total_seconds() < 3600
 
             aircraft_type = snapshot.aircraft_type or ""
@@ -459,7 +460,7 @@ class AircraftService:
                     query = query.filter(AircraftSnapshot.snapshot_time <= end_time)
             else:
                 # Default: last 24 hours
-                cutoff_time = datetime.utcnow() - timedelta(hours=24)
+                cutoff_time = naive_utc_now() - timedelta(hours=24)
                 query = query.filter(AircraftSnapshot.snapshot_time >= cutoff_time)
 
             # Filter for valid coordinates and order by time
@@ -515,7 +516,7 @@ class AircraftService:
         """
         try:
             identifier_upper = identifier.upper().strip()
-            cutoff_time = datetime.utcnow() - timedelta(days=days_back)
+            cutoff_time = naive_utc_now() - timedelta(days=days_back)
 
             # Get distinct dates with counts
             results = (
@@ -560,7 +561,7 @@ class AircraftService:
             List of unique aircraft
         """
         try:
-            cutoff_time = datetime.utcnow() - timedelta(hours=hours_back)
+            cutoff_time = naive_utc_now() - timedelta(hours=hours_back)
 
             # Build conditions
             conditions = [
@@ -578,7 +579,7 @@ class AircraftService:
                     AircraftSnapshot.registration,
                     func.max(AircraftSnapshot.snapshot_time).label("max_time"),
                 )
-                .filter(and_(*conditions))
+                .filter(and_(true(), *conditions))
                 .group_by(AircraftSnapshot.registration)
                 .subquery()
             )

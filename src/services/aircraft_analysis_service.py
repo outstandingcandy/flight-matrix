@@ -47,6 +47,7 @@ from src.media.image_loader import load_image_bytes
 from src.storage import ObjectStorage, StorageFactory
 from src.utils.database import DatabaseManager
 from src.utils.yaml_config import YAMLConfig
+from src.web.time_helpers import naive_utc_now
 
 logger = logging.getLogger("aircraft_analysis")
 
@@ -386,7 +387,7 @@ class AircraftAnalysisService:
             """),
                 {
                     "reg": registration.upper(),
-                    "start_time": datetime.utcnow() - timedelta(days=days),
+                    "start_time": naive_utc_now() - timedelta(days=days),
                     "limit": self.max_track_points,
                 },
             )
