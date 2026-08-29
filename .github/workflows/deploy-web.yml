@@ -48,7 +48,7 @@ jobs:
           submodules: recursive
 
       - name: Set up SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
+        uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.REDPANDA_SSH_KEY }}
 
