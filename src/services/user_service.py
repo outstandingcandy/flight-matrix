@@ -5,11 +5,17 @@ Handles user CRUD operations, authentication via API key,
 and user status management for the multi-user subscription system.
 """
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from src.data.models import Subscription, User
 from src.services.base import BaseService
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger("user_service")
 
@@ -206,7 +212,7 @@ class UserService(BaseService):
             logger.error(f"Error regenerating API key for user {user_id}: {e}")
             return None
 
-    def get_active_subscribers(self) -> list[dict]:
+    def get_active_subscribers(self) -> list[dict[str, Any]]:
         """Get all users with active subscriptions.
 
         Returns:
@@ -233,7 +239,7 @@ class UserService(BaseService):
 
     def list_users(
         self, status: str | None = None, limit: int = 100, offset: int = 0
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """List users with optional filtering.
 
         Args:
@@ -289,7 +295,7 @@ class UserService(BaseService):
 
             return query.count()
 
-    def authenticate_by_api_key(self, api_key: str) -> dict | None:
+    def authenticate_by_api_key(self, api_key: str) -> dict[str, Any] | None:
         """Authenticate a user by API key.
 
         Args:
@@ -318,7 +324,7 @@ class UserService(BaseService):
             result["subscription"] = subscription.to_dict()
             return result
 
-    def _ensure_free_tier_subscription(self, session, user_id: int) -> Subscription:
+    def _ensure_free_tier_subscription(self, session: Session, user_id: int) -> Subscription:
         """Create an active free-tier subscription if the user has none.
 
         Called from the ``find_or_create_by_*`` native-login helpers so
@@ -331,7 +337,7 @@ class UserService(BaseService):
         sequence has to commit atomically or the row will be visible in
         one query and invisible to the next.
         """
-        active = (
+        active: Subscription | None = (
             session.query(Subscription)
             .filter(Subscription.user_id == user_id, Subscription.status == "active")
             .first()
@@ -350,7 +356,7 @@ class UserService(BaseService):
         logger.info("Created free-tier subscription for user %s", user_id)
         return subscription
 
-    def _finalise_native_user(self, session, user: User) -> User:
+    def _finalise_native_user(self, session: Session, user: User) -> User:
         """Common tail for native-login helpers.
 
         Makes sure the row has an api_key and an active subscription,
@@ -538,7 +544,7 @@ class UserService(BaseService):
             logger.error("Error resolving apple user sub=%s: %s", sub, e)
             return None
 
-    def get_user_with_subscription(self, user_id: int) -> dict | None:
+    def get_user_with_subscription(self, user_id: int) -> dict[str, Any] | None:
         """Get user with their subscription details.
 
         Args:

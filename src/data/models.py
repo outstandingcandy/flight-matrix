@@ -6,6 +6,8 @@ All database tables are defined here for centralized schema management.
 """
 
 import secrets
+from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
@@ -22,7 +24,7 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import Mapped, declarative_base, mapped_column, relationship
 from sqlalchemy.sql import func
 
 # SQLAlchemy Base - shared across all models
@@ -59,13 +61,21 @@ class User(Base):
     # `NOT NULL constraint failed: users.id`. See also the raw DDL in
     # ``src/data/schema.py::_create_multi_user_tables_sqlite`` which uses the
     # same `INTEGER PRIMARY KEY AUTOINCREMENT` shape.
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
-    email = Column(String(255), unique=True, nullable=False, index=True)
-    name = Column(String(100))
-    status = Column(String(20), default="active", index=True)  # active, suspended, deleted
-    api_key = Column(String(64), unique=True, index=True)
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    name: Mapped[str | None] = mapped_column(String(100))
+    status: Mapped[str | None] = mapped_column(
+        String(20), default="active", index=True
+    )  # active, suspended, deleted
+    api_key: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=func.now(), onupdate=func.now()
+    )
 
     # OIDC / native-login subject identifiers. Nullable because rows
     # predate the columns and email-only accounts (admin-created via
@@ -73,23 +83,31 @@ class User(Base):
     # scripts/migrate_add_oauth_columns.py — production adds these via
     # CREATE UNIQUE INDEX CONCURRENTLY with a partial WHERE ... IS NOT
     # NULL, so multiple existing rows with NULL don't collide.
-    google_sub = Column(String(255), index=True)
-    apple_sub = Column(String(255), index=True)
+    google_sub: Mapped[str | None] = mapped_column(String(255), index=True)
+    apple_sub: Mapped[str | None] = mapped_column(String(255), index=True)
     # Weixin returns openid per (app, user); unionid is stable across
     # apps under the same Open Platform account. Match on unionid first,
     # fall back to (openid, platform) — the mp/app platform distinction
     # matters because openid values are namespaced by AppID.
-    wechat_unionid = Column(String(64), index=True)
-    wechat_openid = Column(String(64))
-    wechat_platform = Column(String(16))  # "mp" (mini-program) | "app" (mobile)
+    wechat_unionid: Mapped[str | None] = mapped_column(String(64), index=True)
+    wechat_openid: Mapped[str | None] = mapped_column(String(64))
+    wechat_platform: Mapped[str | None] = mapped_column(
+        String(16)
+    )  # "mp" (mini-program) | "app" (mobile)
 
     # Relationships
-    subscriptions = relationship(
-        "Subscription", back_populates="user", cascade="all, delete-orphan"
+    subscriptions: Mapped[list["Subscription"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
-    filters = relationship("UserFilter", back_populates="user", cascade="all, delete-orphan")
-    cooldowns = relationship("UserCooldown", back_populates="user", cascade="all, delete-orphan")
-    usage_records = relationship("UserUsage", back_populates="user", cascade="all, delete-orphan")
+    filters: Mapped[list["UserFilter"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    cooldowns: Mapped[list["UserCooldown"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    usage_records: Mapped[list["UserUsage"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index("idx_user_status", "status"),
@@ -147,30 +165,40 @@ class Subscription(Base):
 
     __tablename__ = "subscriptions"
 
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    tier = Column(String(20), default="basic", index=True)  # basic, premium, enterprise
-    status = Column(String(20), default="active", index=True)  # active, expired, cancelled
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    tier: Mapped[str | None] = mapped_column(
+        String(20), default="basic", index=True
+    )  # basic, premium, enterprise
+    status: Mapped[str | None] = mapped_column(
+        String(20), default="active", index=True
+    )  # active, expired, cancelled
 
     # Feature toggles (override tier defaults)
-    enable_maps = Column(Boolean, default=True)
-    enable_aircraft_images = Column(Boolean, default=True)
-    enable_deep_analysis = Column(Boolean, default=False)
+    enable_maps: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    enable_aircraft_images: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    enable_deep_analysis: Mapped[bool | None] = mapped_column(Boolean, default=False)
 
     # Report configuration (user-specific settings)
-    cooldown_hours = Column(Numeric(6, 2), default=12.0)  # Cooldown hours between reports
-    daily_report_limit = Column(Integer, default=-1)  # Daily report limit (-1 = unlimited)
-    monthly_report_limit = Column(Integer, default=-1)  # Monthly report limit (-1 = unlimited)
-    max_filters = Column(Integer, default=-1)  # Max number of filters (-1 = unlimited)
+    cooldown_hours: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), default=12.0)
+    daily_report_limit: Mapped[int | None] = mapped_column(Integer, default=-1)
+    monthly_report_limit: Mapped[int | None] = mapped_column(Integer, default=-1)
+    max_filters: Mapped[int | None] = mapped_column(Integer, default=-1)
 
     # Subscription period
-    starts_at = Column(DateTime, nullable=False, default=func.now())
-    expires_at = Column(DateTime)  # NULL means no expiration
+    starts_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime)
 
-    created_at = Column(DateTime, default=func.now())
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=func.now())
 
     # Relationships
-    user = relationship("User", back_populates="subscriptions")
+    user: Mapped["User"] = relationship(back_populates="subscriptions")
 
     __table_args__ = (
         Index("idx_subscription_user", "user_id"),
@@ -240,18 +268,28 @@ class UserFilter(Base):
 
     __tablename__ = "user_filters"
 
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    name = Column(String(100), nullable=False)
-    description = Column(Text)
-    filter_sql = Column(Text, nullable=False)
-    is_active = Column(Boolean, default=True, index=True)
-    priority = Column(Integer, default=0)  # Higher priority = processed first
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    filter_sql: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool | None] = mapped_column(Boolean, default=True, index=True)
+    priority: Mapped[int | None] = mapped_column(
+        Integer, default=0
+    )  # Higher priority = processed first
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
-    user = relationship("User", back_populates="filters")
+    user: Mapped["User"] = relationship(back_populates="filters")
 
     __table_args__ = (
         Index("idx_user_filter_user", "user_id"),
@@ -292,16 +330,22 @@ class UserCooldown(Base):
 
     __tablename__ = "user_cooldowns"
 
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    aircraft_hex = Column(String(6), nullable=False)
-    last_report_time = Column(DateTime, nullable=False)
-    last_latitude = Column(Numeric(10, 7))
-    last_longitude = Column(Numeric(11, 7))
-    report_count = Column(Integer, default=1)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    aircraft_hex: Mapped[str] = mapped_column(String(6), nullable=False)
+    last_report_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    last_latitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
+    last_longitude: Mapped[Decimal | None] = mapped_column(Numeric(11, 7))
+    report_count: Mapped[int | None] = mapped_column(Integer, default=1)
 
     # Relationships
-    user = relationship("User", back_populates="cooldowns")
+    user: Mapped["User"] = relationship(back_populates="cooldowns")
 
     __table_args__ = (
         Index("idx_user_aircraft_cooldown", "user_id", "aircraft_hex", unique=True),
@@ -341,16 +385,22 @@ class UserUsage(Base):
 
     __tablename__ = "user_usage"
 
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    period_start = Column(Date, nullable=False)
-    period_type = Column(String(10), default="monthly")  # daily, monthly
-    reports_sent = Column(Integer, default=0)
-    deep_analyses_used = Column(Integer, default=0)
-    emails_sent = Column(Integer, default=0)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_type: Mapped[str | None] = mapped_column(String(10), default="monthly")  # daily, monthly
+    reports_sent: Mapped[int | None] = mapped_column(Integer, default=0)
+    deep_analyses_used: Mapped[int | None] = mapped_column(Integer, default=0)
+    emails_sent: Mapped[int | None] = mapped_column(Integer, default=0)
 
     # Relationships
-    user = relationship("User", back_populates="usage_records")
+    user: Mapped["User"] = relationship(back_populates="usage_records")
 
     __table_args__ = (
         Index("idx_user_usage_period", "user_id", "period_start", "period_type", unique=True),
