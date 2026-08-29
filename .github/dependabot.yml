@@ -1,0 +1,78 @@
+# Dependabot config for flight-matrix.
+#
+# Weekly scan of three ecosystems: Python (pyproject.toml), GitHub Actions
+# (workflow `uses:` versions), and Docker base images. Each PR gets the
+# ``dependencies`` label so a repo-wide filter can find them, and the
+# ``auto-merge`` label so the setup-branch-protection helper knows to flag
+# these for auto-merge when CI is green.
+#
+# open-pull-requests-limit is capped at 5 per ecosystem to prevent a
+# stale weekend from flooding the PR queue when several deps release at
+# once.
+
+version: 2
+updates:
+  # -----------------------------------------------------------------------
+  # Python — pyproject.toml
+  # -----------------------------------------------------------------------
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - auto-merge
+      - python
+    groups:
+      # Bundle runtime + dev updates separately so a Ruff / mypy bump doesn't
+      # sit in the same PR as an SQLAlchemy point release.
+      runtime:
+        dependency-type: production
+      dev:
+        dependency-type: development
+    ignore:
+      # Manual bumps for these — they cross-cut a lot of the app and merit
+      # more than a rubber-stamp review.
+      - dependency-name: sqlalchemy
+        update-types: [version-update:semver-major]
+      - dependency-name: fastapi
+        update-types: [version-update:semver-major]
+      - dependency-name: pydantic
+        update-types: [version-update:semver-major]
+
+  # -----------------------------------------------------------------------
+  # GitHub Actions — `uses:` versions in .github/workflows/*.yml
+  # -----------------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - auto-merge
+      - github-actions
+
+  # -----------------------------------------------------------------------
+  # Docker — base images in Dockerfile.web / Dockerfile.scraper / Dockerfile.lambda
+  # -----------------------------------------------------------------------
+  - package-ecosystem: docker
+    directories:
+      - "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - auto-merge
+      - docker
