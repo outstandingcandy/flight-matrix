@@ -1,0 +1,61 @@
+name: Dependabot auto-merge
+
+# Fires on every ``pull_request`` event. The ``if: github.actor ==
+# 'dependabot[bot]'`` gate on the job level ensures human-authored PRs
+# are ignored — we don't want the workflow to auto-merge a PR opened
+# by a person just because it happens to touch a dep line.
+#
+# Rule: patch + minor bumps → auto-merge on CI-green.
+#       major bumps → post a comment tagging the maintainer, don't
+#       merge. Majors are usually breaking; a human should read the
+#       changelog before landing.
+
+on: pull_request
+
+# Auto-merge requires ``pull-requests: write``. The default token
+# permission is read-only across the org, so we scope up here.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  dependabot:
+    name: Auto-merge patch/minor bumps
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Fetch update metadata
+        # ``dependabot/fetch-metadata`` parses the PR title +
+        # dependabot commit trailer and exposes ``update-type``
+        # (version-update:semver-{patch,minor,major}), ``dependency-type``
+        # (direct:production, direct:development, indirect), and
+        # ``dependency-names``. That's how we tell "0.9 → 0.10 minor"
+        # from "3 → 7 major" without regexing the PR title ourselves.
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-merge (patch or minor)
+        if: >
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          steps.meta.outputs.update-type == 'version-update:semver-minor'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Enabling auto-merge for ${{ steps.meta.outputs.dependency-names }} \
+            (${{ steps.meta.outputs.update-type }})"
+          gh pr merge --auto --merge "$PR_URL"
+
+      - name: Flag major bumps for manual review
+        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "$PR_URL" --body "**Major-version bump — needs human review.** \
+          ${{ steps.meta.outputs.dependency-names }} is going up a major version \
+          (\`${{ steps.meta.outputs.previous-version }}\` → \
+          \`${{ steps.meta.outputs.new-version }}\`). Auto-merge is intentionally \
+          skipped for majors; read the changelog before landing."
