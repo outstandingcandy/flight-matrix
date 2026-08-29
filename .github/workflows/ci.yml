@@ -78,7 +78,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        # 3.11 = ``requires-python`` floor; the runtime target we ship
+        # to production on GCP + Lambda images. 3.12 catches soft
+        # deprecations. 3.14 tracks the latest stable so Dependabot's
+        # Docker-base bumps (python:3.x-slim) actually get validated
+        # against real test output instead of being rubber-stamped.
+        python-version: ["3.11", "3.12", "3.14"]
     steps:
       - uses: actions/checkout@v4
         with:
