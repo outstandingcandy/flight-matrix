@@ -68,8 +68,8 @@ def seeded_client(app_client: Any) -> Any:
 def _registrations(client: Any, query: str) -> list[str]:
     """Return the registrations `/api/aircraft/search?<query>` hands back."""
     response = client.get(f"/api/aircraft/search?{query}")
-    assert response.status_code == 200, response.get_data(as_text=True)[:400]
-    payload = response.get_json()
+    assert response.status_code == 200, response.text[:400]
+    payload = response.json()
     assert payload["success"] is True
     return [row.get("r") for row in payload["data"]]
 

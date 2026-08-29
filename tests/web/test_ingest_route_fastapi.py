@@ -9,8 +9,8 @@ Flask test file and swaps the client.
 
 Client-API differences that get renamed here:
 
-- ``response.get_json()`` → ``response.json()``
-- ``response.get_data(as_text=True)`` → ``response.text``
+- ``response.json()`` → ``response.json()``
+- ``response.text`` → ``response.text``
 
 Response body shape is deliberately identical to the Flask version —
 the ``StarletteHTTPException`` handler in :mod:`app` unwraps ``detail``

@@ -28,11 +28,11 @@ OK = {200, 201, 204, 301, 302, 303, 307, 308, 400, 401, 403, 404, 405, 409, 422}
 
 def _assert_not_5xx(r: Any, method: str, path: str) -> None:
     assert r.status_code < 500, (
-        f"{method} {path} returned {r.status_code} — body: {r.get_data(as_text=True)[:300]}"
+        f"{method} {path} returned {r.status_code} — body: {r.text[:300]}"
     )
     assert r.status_code in OK, (
         f"{method} {path} returned unexpected {r.status_code} — "
-        f"body: {r.get_data(as_text=True)[:200]}"
+        f"body: {r.text[:200]}"
     )
 
 

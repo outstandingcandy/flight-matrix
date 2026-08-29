@@ -1,14 +1,14 @@
 # Dockerfile for the flight-matrix FastAPI web app.
 #
 # Serves the FastAPI application defined in ``app.py`` under gunicorn
-# using the uvicorn worker class. Historically this image ran Flask via
-# ``wsgi:app`` — the Flask entry (``web_app.py`` + ``wsgi.py``) is kept
-# in the image as a roll-back target; a one-line CMD flip is enough to
-# revert if the FastAPI cut-over reveals a problem in production.
+# using the uvicorn worker class. The Flask entry (``wsgi.py``) has
+# been deleted — ``web_app.py`` is now a helper-only module retained
+# for the runtime-state globals ``db_manager`` / ``config`` /
+# ``api_cache`` that FastAPI's lifespan populates. Rollback to Flask
+# now requires the ``pre-fastapi-2026-08-24`` git tag, not a CMD flip.
 #
-# Same install mechanism as before (uv sync --frozen). Multi-stage so
-# the final image doesn't carry build-essential or the uv cache;
-# structure follows Dockerfile.scraper's builder/runtime split.
+# Multi-stage so the final image doesn't carry build-essential or the
+# uv cache; structure follows Dockerfile.scraper's builder/runtime split.
 
 FROM python:3.12-slim AS builder
 
@@ -47,7 +47,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-COPY --chown=webapp:webapp app.py asgi.py web_app.py wsgi.py ./
+COPY --chown=webapp:webapp app.py asgi.py web_app.py ./
 COPY --chown=webapp:webapp src/ ./src/
 COPY --chown=webapp:webapp web_templates/ ./web_templates/
 COPY --chown=webapp:webapp web_static/ ./web_static/
@@ -85,9 +85,9 @@ EXPOSE 8000
 #     --threads (that flag is a sync-worker concept and uvicorn workers
 #     ignore it).
 #
-# Roll-back: replace ``asgi:app`` with ``wsgi:app`` and swap the worker
-# class back to ``sync`` (or drop the -k flag entirely). Both wsgi.py
-# and web_app.py are still in the image for exactly this.
+# Roll-back: check out the ``pre-fastapi-2026-08-24`` tag and rebuild.
+# ``wsgi.py`` is gone from the tree, so an in-image CMD flip is no
+# longer sufficient.
 CMD ["gunicorn", \
      "asgi:app", \
      "-k", "uvicorn.workers.UvicornWorker", \

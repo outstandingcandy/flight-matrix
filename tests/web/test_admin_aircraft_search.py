@@ -99,7 +99,7 @@ class TestTheIndexAnswersTheWholeList:
         _use(app_client, cluster)
         cluster.queue_hits("B-1234", "N703PA")
 
-        payload = app_client.get(LIST_PATH).get_json()
+        payload = app_client.get(LIST_PATH).json()
 
         assert payload["search_backend"] == "opensearch"
         assert cluster.last_search_body["query"] == {"match_all": {}}
@@ -114,7 +114,7 @@ class TestTheIndexAnswersTheWholeList:
         _use(app_client, cluster)
         cluster.queue_hits("N703PA", "B-1234")
 
-        payload = app_client.get(LIST_PATH).get_json()
+        payload = app_client.get(LIST_PATH).json()
 
         assert _registrations(payload) == ["N703PA", "B-1234"]
 
@@ -126,7 +126,7 @@ class TestTheIndexAnswersTheWholeList:
         _use(app_client, cluster)
         cluster.queue_hits("B-1234", total=1250)
 
-        payload = app_client.get(LIST_PATH).get_json()
+        payload = app_client.get(LIST_PATH).json()
 
         assert (payload["total"], payload["pages"]) == (1250, 63)
 
@@ -180,7 +180,7 @@ class TestTheIndexAnswersTheWholeList:
         _use(app_client, cluster)
         cluster.queue_hits("B-1234", "N703PA")
 
-        payload = app_client.get(f"{LIST_PATH}?category=widebody").get_json()
+        payload = app_client.get(f"{LIST_PATH}?category=widebody").json()
 
         assert cluster.last_search_body["query"] == {"match_all": {}}
         assert len(payload["aircraft"]) == 2
@@ -193,7 +193,7 @@ class TestTheIndexAnswersTheWholeList:
         _use(app_client, cluster)
         cluster.queue_hits("N703PA")
 
-        payload = app_client.get(f"{LIST_PATH}?search=pan+am").get_json()
+        payload = app_client.get(f"{LIST_PATH}?search=pan+am").json()
 
         assert payload["search_backend"] == "opensearch"
         assert _registrations(payload) == ["N703PA"]
@@ -217,7 +217,7 @@ class TestTheIndexAnswersTheWholeList:
         _use(app_client, cluster)
         cluster.queue_hits()
 
-        payload = app_client.get(f"{LIST_PATH}?search=qantas").get_json()
+        payload = app_client.get(f"{LIST_PATH}?search=qantas").json()
 
         assert payload["success"] is True
         assert payload["aircraft"] == []
@@ -236,7 +236,7 @@ class TestTheIndexAnswersTheWholeList:
         response = app_client.get(f"{LIST_PATH}?search=air+china")
 
         assert response.status_code == 200
-        assert _registrations(response.get_json()) == ["B-1234"]
+        assert _registrations(response.json()) == ["B-1234"]
 
     def test_matched_registrations_are_bound_not_interpolated(
         self, app_client: Any, cluster: FakeOpenSearch
@@ -250,9 +250,9 @@ class TestTheIndexAnswersTheWholeList:
         response = app_client.get(f"{LIST_PATH}?search=air+china")
 
         assert response.status_code == 200
-        assert _registrations(response.get_json()) == ["B-1234"]
+        assert _registrations(response.json()) == ["B-1234"]
         _use(app_client, None)
-        assert app_client.get(LIST_PATH).get_json()["total"] == 2
+        assert app_client.get(LIST_PATH).json()["total"] == 2
 
 
 class TestHeaderCountsAndDropdowns:
@@ -285,7 +285,7 @@ class TestHeaderCountsAndDropdowns:
         _use(app_client, cluster)
         self._index(cluster)
 
-        stats = app_client.get(STATS_PATH).get_json()["stats"]
+        stats = app_client.get(STATS_PATH).json()["stats"]
 
         assert (stats["total"], stats["with_images"], stats["special"]) == (2, 1, 1)
         # Not derivable from the current data by either backend.
@@ -298,7 +298,7 @@ class TestHeaderCountsAndDropdowns:
         _use(app_client, cluster)
         self._index(cluster)
 
-        types = app_client.get(TYPES_PATH).get_json()["types"]
+        types = app_client.get(TYPES_PATH).json()["types"]
 
         assert types == [{"code": "A350", "full_name": "A350", "count": 2}]
 
@@ -311,7 +311,7 @@ class TestHeaderCountsAndDropdowns:
         _use(app_client, cluster)
         self._index(cluster)
 
-        liveries = app_client.get(f"{LIVERIES_PATH}?search=alli").get_json()["liveries"]
+        liveries = app_client.get(f"{LIVERIES_PATH}?search=alli").json()["liveries"]
 
         assert liveries == [{"name": "Star Alliance", "count": 1}]
         assert cluster.last_search_body["query"]["wildcard"]["livery_name.keyword"]["value"] == (
@@ -326,7 +326,7 @@ class TestHeaderCountsAndDropdowns:
         _use(app_client, cluster)
         cluster.queue_hits("N703PA", "B-1234")
 
-        payload = app_client.get(f"{REGISTRATIONS_PATH}?search=70").get_json()
+        payload = app_client.get(f"{REGISTRATIONS_PATH}?search=70").json()
 
         assert payload["registrations"] == [
             {"registration": "N703PA", "hex_code": "a1b2c3", "aircraft_type": None},
@@ -340,7 +340,7 @@ class TestHeaderCountsAndDropdowns:
         _use(app_client, cluster)
         cluster.queue_hits("DELETED-1", "B-1234")
 
-        payload = app_client.get(f"{REGISTRATIONS_PATH}?search=B-").get_json()
+        payload = app_client.get(f"{REGISTRATIONS_PATH}?search=B-").json()
 
         assert [row["registration"] for row in payload["registrations"]] == ["B-1234"]
 
@@ -348,10 +348,10 @@ class TestHeaderCountsAndDropdowns:
         _seed(app_client)
         _use(app_client, FakeOpenSearch(fail_with=ConnectionError("connection refused")))
 
-        stats = app_client.get(STATS_PATH).get_json()
-        types = app_client.get(TYPES_PATH).get_json()
-        liveries = app_client.get(LIVERIES_PATH).get_json()
-        suggestions = app_client.get(f"{REGISTRATIONS_PATH}?search=B-").get_json()
+        stats = app_client.get(STATS_PATH).json()
+        types = app_client.get(TYPES_PATH).json()
+        liveries = app_client.get(LIVERIES_PATH).json()
+        suggestions = app_client.get(f"{REGISTRATIONS_PATH}?search=B-").json()
 
         assert stats["stats"]["total"] == 2
         assert types["success"] is True and liveries["success"] is True
@@ -365,7 +365,7 @@ class TestFallback:
         _seed(app_client)
         _use(app_client, None)
 
-        payload = app_client.get(f"{LIST_PATH}?search=B-12").get_json()
+        payload = app_client.get(f"{LIST_PATH}?search=B-12").json()
 
         assert payload["search_backend"] == "sql"
         assert _registrations(payload) == ["B-1234"]
@@ -376,7 +376,7 @@ class TestFallback:
         _use(app_client, FakeOpenSearch(fail_with=ConnectionError("connection refused")))
 
         response = app_client.get(f"{LIST_PATH}?search=780abc")
-        payload = response.get_json()
+        payload = response.json()
 
         assert response.status_code == 200
         assert payload["search_backend"] == "sql"
@@ -390,7 +390,7 @@ class TestFallback:
         _seed(app_client)
         _use(app_client, None)
 
-        payload = app_client.get(LIST_PATH).get_json()
+        payload = app_client.get(LIST_PATH).json()
 
         assert payload["search_backend"] == "sql"
         assert (payload["total"], len(payload["aircraft"])) == (2, 2)
@@ -404,7 +404,7 @@ class TestFallback:
         response = app_client.get(f"{LIST_PATH}?category=special")
 
         assert response.status_code == 200
-        assert response.get_json()["total"] == 0
+        assert response.json()["total"] == 0
 
     def test_a_page_deeper_than_the_index_window_is_served_by_sql(
         self, app_client: Any, cluster: FakeOpenSearch
@@ -414,7 +414,7 @@ class TestFallback:
         _seed(app_client)
         _use(app_client, cluster)
 
-        payload = app_client.get(f"{LIST_PATH}?page=501&limit=20").get_json()
+        payload = app_client.get(f"{LIST_PATH}?page=501&limit=20").json()
 
         assert cluster.searches == []
         assert payload["search_backend"] == "sql"
