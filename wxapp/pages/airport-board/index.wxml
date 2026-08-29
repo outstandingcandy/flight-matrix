@@ -1,0 +1,18 @@
+<view class="container">
+  <view class="card">
+    <input placeholder="输入 IATA / ICAO 代码" value="{{airport}}" bindconfirm="onSearchAirport" />
+  </view>
+  <view wx:if="{{loading}}" class="muted">加载中…</view>
+  <view wx:elif="{{error}}" class="empty-state">出错了:{{error}}</view>
+  <block wx:else>
+    <view class="card" wx:if="{{info}}">
+      <view>{{info.name || info.airport_name || airport}}</view>
+      <view class="muted">{{info.city}} · {{info.country}}</view>
+    </view>
+    <view class="card" wx:for="{{schedules}}" wx:key="fr24_flight_id">
+      <view>{{item.flight_number}} · {{item.flight_type}}</view>
+      <view class="muted">{{item.aircraft_type}} · {{item.registration || item.callsign}}</view>
+    </view>
+    <view wx:if="{{schedules.length === 0}}" class="empty-state">该机场暂无航班</view>
+  </block>
+</view>

@@ -70,7 +70,9 @@ FRONTEND_GET_CALLS = [
     # Flight schedules page
     "/api/flight-schedules",
     "/api/flight-schedules/filter-options?search=test",
-    "/api/flight/trail/abc123",
+    # `/api/flight/trail/<fr24_id>` intentionally omitted — proxy to
+    # FR24's clickhandler, whose 403 for bogus IDs the handler correctly
+    # returns as 502. See the identical note in test_route_smoke.py.
     # User dashboard + filter pages
     f"/api/user/{EMAIL}/profile",
     f"/api/user/{EMAIL}/usage",

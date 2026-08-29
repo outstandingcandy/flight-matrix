@@ -1,0 +1,21 @@
+<view class="container">
+  <view class="card">
+    <view class="row">
+      <input placeholder="机场代码" value="{{airport}}" bindinput="onAirportChange" />
+      <picker mode="selector" range="{{['全部', '进港', '出港']}}" bindchange="onFilterTypeChange">
+        <view class="picker">类型:{{flightType || '全部'}}</view>
+      </picker>
+      <button size="mini" bindtap="onSearchTap">查询</button>
+    </view>
+  </view>
+  <view wx:if="{{loading}}" class="muted">加载中…</view>
+  <view wx:elif="{{error}}" class="empty-state">出错了:{{error}}</view>
+  <block wx:else>
+    <view class="card" wx:for="{{schedules}}" wx:key="fr24_flight_id">
+      <view>{{item.flight_number}} · {{item.flight_type}}</view>
+      <view class="muted">{{item.aircraft_type}} · {{item.registration}}</view>
+      <view class="muted">{{item.scheduled_time_local || item.scheduled_time}}</view>
+    </view>
+    <view wx:if="{{schedules.length === 0}}" class="empty-state">当前筛选下暂无航班</view>
+  </block>
+</view>

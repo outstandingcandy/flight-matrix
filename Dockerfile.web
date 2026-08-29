@@ -1,12 +1,14 @@
-# Dockerfile for the flight-matrix Flask/gunicorn web app.
+# Dockerfile for the flight-matrix FastAPI web app.
 #
-# Mirrors the tuning already proven in production under systemd
-# (scripts/systemd/flight-matrix-web.service) rather than inventing new
-# defaults: same gunicorn flags, same wsgi:app target, same install mechanism
-# (uv sync --frozen) that scripts/gcp/deploy-app.sh uses on a bare host.
+# Serves the FastAPI application defined in ``app.py`` under gunicorn
+# using the uvicorn worker class. Historically this image ran Flask via
+# ``wsgi:app`` — the Flask entry (``web_app.py`` + ``wsgi.py``) is kept
+# in the image as a roll-back target; a one-line CMD flip is enough to
+# revert if the FastAPI cut-over reveals a problem in production.
 #
-# Multi-stage so the final image doesn't carry build-essential or the uv
-# cache. Structure follows Dockerfile.scraper's builder/runtime split.
+# Same install mechanism as before (uv sync --frozen). Multi-stage so
+# the final image doesn't carry build-essential or the uv cache;
+# structure follows Dockerfile.scraper's builder/runtime split.
 
 FROM python:3.12-slim AS builder
 
@@ -45,7 +47,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-COPY --chown=webapp:webapp web_app.py wsgi.py ./
+COPY --chown=webapp:webapp app.py asgi.py web_app.py wsgi.py ./
 COPY --chown=webapp:webapp src/ ./src/
 COPY --chown=webapp:webapp web_templates/ ./web_templates/
 COPY --chown=webapp:webapp web_static/ ./web_static/
@@ -60,26 +62,39 @@ USER webapp
 
 EXPOSE 8000
 
-# Same flags as scripts/systemd/flight-matrix-web.service's ExecStart, with one
-# deliberate difference: --bind 0.0.0.0:8000, not 127.0.0.1:8000. The unit binds
-# loopback because nginx runs on the same host; here the caddy container reaches
-# this one over the compose bridge network, where 127.0.0.1 would mean "inside
-# this container" and caddy would get connection-refused.
-#   - wsgi:app, not web_app:app — wsgi.py calls init_app(), which populates
-#     db_manager/config; web_app:app alone starts but 500s on every DB route.
-#   - --timeout 300 — aircraft analysis calls an LLM inline and can run for
-#     minutes; gunicorn's 30s default would kill the worker mid-request.
-#   - 2 workers x 4 threads rather than (2*CPU)+1 — the workload is IO-bound
-#     on the database and the LLM, and each worker is a full copy of the app
+# Same tuning as the previous Flask CMD, adapted to gunicorn's uvicorn worker
+# class — uvicorn.workers.UvicornWorker speaks ASGI to app.py's FastAPI
+# instance while keeping gunicorn as the process supervisor (graceful
+# shutdown, worker restart, boot timeouts). --bind 0.0.0.0:8000 (not
+# 127.0.0.1) because caddy reaches this container over the compose bridge
+# network; 127.0.0.1 inside a container is the container itself, not the
+# host.
+#
+#   - asgi:app — asgi.py exports the FastAPI ``app`` from app.py. The
+#     FastAPI startup lives inside the app's ASGI lifespan handler
+#     (populates db_manager / config via web_app.init_app()), so no
+#     explicit init call is needed here.
+#   - --timeout 300 — aircraft analysis calls an LLM inline and can run
+#     for minutes; gunicorn's 30s default would kill the worker
+#     mid-request.
+#   - 2 workers instead of (2*CPU)+1 — the workload is IO-bound on the
+#     database and the LLM, and each worker is a full copy of the app
 #     (SQLAlchemy, plotly, the Google SDKs), so worker count dominates
-#     resident memory more than it would for a CPU-bound service.
+#     resident memory more than it would for a CPU-bound service. The
+#     uvicorn worker is single-threaded but async, so we don't set
+#     --threads (that flag is a sync-worker concept and uvicorn workers
+#     ignore it).
+#
+# Roll-back: replace ``asgi:app`` with ``wsgi:app`` and swap the worker
+# class back to ``sync`` (or drop the -k flag entirely). Both wsgi.py
+# and web_app.py are still in the image for exactly this.
 CMD ["gunicorn", \
+     "asgi:app", \
+     "-k", "uvicorn.workers.UvicornWorker", \
      "--bind", "0.0.0.0:8000", \
      "--workers", "2", \
-     "--threads", "4", \
      "--timeout", "300", \
      "--graceful-timeout", "30", \
      "--keep-alive", "5", \
      "--access-logfile", "-", \
-     "--error-logfile", "-", \
-     "wsgi:app"]
+     "--error-logfile", "-"]

@@ -1,0 +1,16 @@
+<view class="container">
+  <view class="card">
+    <view class="title">新增筛选器</view>
+    <input placeholder="名字" value="{{newName}}" bindinput="onNameInput" />
+    <textarea placeholder="SQL WHERE (例如: is_military = 1)" value="{{newSql}}" bindinput="onSqlInput" />
+    <button bindtap="onCreateTap" type="primary" size="mini">创建</button>
+  </view>
+  <view wx:if="{{loading}}" class="muted">加载中…</view>
+  <view wx:elif="{{error}}" class="empty-state">{{error}}</view>
+  <view class="card" wx:for="{{filters}}" wx:key="id">
+    <view>{{item.name}}</view>
+    <view class="muted mono">{{item.filter_sql}}</view>
+    <button size="mini" bindtap="onDeleteTap" data-id="{{item.id}}">删除</button>
+  </view>
+  <view wx:if="{{!loading && filters.length === 0}}" class="empty-state">还没有筛选器</view>
+</view>

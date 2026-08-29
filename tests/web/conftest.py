@@ -31,14 +31,19 @@ def _build_test_config_dir(tmp_path: Path) -> Path:
     """Copy the project's config/ into tmp and drop a tiny .env next to it.
 
     Returns the path to the root `config.yaml` the app should use.
+
+    Historically DATABASE_URL was ``sqlite:///:memory:``. That works for
+    the Flask test client (same thread — SingletonThreadPool shares a
+    raw connection) but breaks against the FastAPI TestClient, which
+    runs async endpoints on a separate thread: each thread gets its own
+    in-memory database, so a row a handler wrote is invisible to the
+    test that asserts on it. Using a tmp-file database sidesteps the
+    thread-locality entirely and works identically for both clients.
     """
     test_config_root = tmp_path / "config"
     shutil.copytree(_SOURCE_CONFIG_DIR, test_config_root)
 
-    # dotenv is loaded from the parent of the config file (see
-    # YAMLConfig._load_env: `Path(config_file).parent / '.env'`). The
-    # config file lives at `tmp/config/config.yaml`, so the .env we need
-    # is at `tmp/config/.env`.
+    db_file = tmp_path / "test.db"
     (test_config_root / ".env").write_text(
         "\n".join(
             [
@@ -46,7 +51,7 @@ def _build_test_config_dir(tmp_path: Path) -> Path:
                 "SKIP_AUTH=true",
                 "LOCAL_DEV_EMAIL=test@example.com",
                 "LOCAL_DEV_GROUPS=admins,flight-schedules-viewers",
-                "DATABASE_URL=sqlite:///:memory:",
+                f"DATABASE_URL=sqlite:///{db_file}",
                 "FLASK_SECRET_KEY=test_secret_for_pytest_only",
                 "TAVILY_API_KEY=",
                 "ADSB_API_KEY=",
@@ -105,3 +110,60 @@ def app_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Any]
     client = web_app.app.test_client()
     client.application_module = web_app  # type: ignore[attr-defined]
     yield client
+
+
+@pytest.fixture
+def app_client_fastapi(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Any]:
+    """Fresh FastAPI test client for routes that have been ported off Flask.
+
+    Coexists with :func:`app_client` while the migration is in flight.
+    Tests for routes already migrated (see the ``*_fastapi.py`` modules
+    under ``src/web/routes/``) should use this fixture; tests for routes
+    still living in ``web_app.py`` keep using ``app_client``. When
+    stage 0 finishes, ``app_client`` and its Flask reload path go
+    together and this fixture takes over the plain name.
+
+    Yields a ``starlette.testclient.TestClient`` wrapped so tests can
+    still write ``client.application_module.db_manager`` — the FastAPI
+    lifespan calls ``web_app.init_app()`` so that attribute points at
+    the same DatabaseManager instance the Flask fixture would expose.
+
+    Test isolation is the same as the Flask fixture: a tmp config dir
+    with its own tiny ``.env``, an in-memory SQLite database, cached
+    modules cleared so ``app.py`` re-imports cleanly.
+    """
+    import importlib
+    import sys
+
+    test_config_path = _build_test_config_dir(tmp_path)
+
+    monkeypatch.setenv("CONFIG_PATH", str(test_config_path))
+    monkeypatch.setenv("STAGE", "local")
+    monkeypatch.setenv("SKIP_AUTH", "true")
+    monkeypatch.setenv("LOCAL_DEV_EMAIL", "test@example.com")
+    monkeypatch.setenv("LOCAL_DEV_GROUPS", "admins,flight-schedules-viewers")
+
+    # Drop cached copies so create_app() sees the new env. Both web_app
+    # (which the lifespan re-imports) and app.py itself need clearing.
+    for name in list(sys.modules):
+        if name == "web_app" or name == "app" or name.startswith("src.web."):
+            del sys.modules[name]
+
+    app_module = importlib.import_module("app")
+
+    from starlette.testclient import TestClient
+
+    # `with TestClient(app) as client` triggers ASGI lifespan (which is
+    # what populates app.state.db_manager via web_app.init_app()).
+    # `pytest.fixture` doesn't accept a context manager directly, so we
+    # enter/exit manually and yield the live client.
+    fastapi_app = app_module.create_app()
+    with TestClient(fastapi_app) as client:
+        # Legacy attribute — tests written for the Flask fixture reach
+        # for `client.application_module.db_manager` to build ad-hoc
+        # tables. Point it at the just-imported web_app the lifespan
+        # already initialised (same instance under fastapi_app.state).
+        import web_app as web_app_module
+
+        client.application_module = web_app_module  # type: ignore[attr-defined]
+        yield client

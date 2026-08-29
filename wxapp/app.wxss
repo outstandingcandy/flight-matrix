@@ -1,0 +1,33 @@
+/* Global type / layout resets. Page-specific styles live in each
+   page's <name>/index.wxss. */
+
+page {
+  background-color: #f4f7fb;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue",
+    Arial, sans-serif;
+  font-size: 28rpx;
+  color: #0d1b2a;
+}
+
+.container {
+  padding: 32rpx;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 24rpx;
+  box-shadow: 0 2rpx 8rpx rgba(13, 27, 42, 0.06);
+}
+
+.muted {
+  color: #7a8ba0;
+  font-size: 24rpx;
+}
+
+.empty-state {
+  padding: 96rpx 32rpx;
+  text-align: center;
+  color: #7a8ba0;
+}

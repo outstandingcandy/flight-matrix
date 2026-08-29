@@ -120,6 +120,13 @@ class FilterService(BaseService):
                 )
 
                 session.add(user_filter)
+                # Flush before refresh/expunge — expunging a still-pending
+                # instance removes it from ``session.new`` so the commit
+                # never inserts it. Refresh materialises server-side
+                # defaults (created_at) into the instance so ``to_dict``
+                # doesn't try to lazy-load off a detached row.
+                session.flush()
+                session.refresh(user_filter)
                 logger.info(f"Created filter '{name}' for user {user_id}")
 
                 session.expunge(user_filter)

@@ -317,13 +317,21 @@ class TestFilterOptions:
         assert {t["code"] for t in body["aircraft_types"]} == {"B738", "A320"}
         assert [lv["name"] for lv in body["liveries"]] == ["special livery"]
 
-        expected_day = (datetime.now(UTC) + timedelta(hours=8)).strftime("%Y-%m-%d")
-        # The seeded flights are up to 90 minutes out, so they may land on the
-        # next Beijing day; either way every returned value is a real date.
+        now_beijing = datetime.now(UTC) + timedelta(hours=8)
+        expected_today = now_beijing.strftime("%Y-%m-%d")
+        expected_tomorrow = (now_beijing + timedelta(days=1)).strftime("%Y-%m-%d")
+        # The seeded flights are up to 90 minutes out. On a normal run that
+        # spans today; on a run near Beijing midnight (UTC 16:00) every
+        # seeded flight may already sit on tomorrow. Accept either — the
+        # point of the assertion is "we got a real Beijing date back and it
+        # matches when the seeded rows should land", not "we got today's".
         assert body["available_dates"], "grouping by Beijing date returned nothing"
         for value in body["available_dates"]:
             datetime.strptime(value, "%Y-%m-%d")
-        assert expected_day in body["available_dates"] or len(body["available_dates"]) > 1
+        assert set(body["available_dates"]) & {expected_today, expected_tomorrow}, (
+            f"expected today ({expected_today}) or tomorrow ({expected_tomorrow}) "
+            f"in dates but got {body['available_dates']}"
+        )
 
 
 class TestAdminReportsMultiUser:

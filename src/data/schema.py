@@ -467,13 +467,31 @@ def _create_multi_user_tables_postgres(session: Session) -> None:
             status VARCHAR(20) DEFAULT 'active',
             api_key VARCHAR(64) UNIQUE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            google_sub VARCHAR(255),
+            apple_sub VARCHAR(255),
+            wechat_unionid VARCHAR(64),
+            wechat_openid VARCHAR(64),
+            wechat_platform VARCHAR(16)
         )
     """)
     )
     session.execute(text("CREATE INDEX IF NOT EXISTS idx_user_email ON users(email)"))
     session.execute(text("CREATE INDEX IF NOT EXISTS idx_user_status ON users(status)"))
     session.execute(text("CREATE INDEX IF NOT EXISTS idx_user_api_key ON users(api_key)"))
+    session.execute(text("CREATE INDEX IF NOT EXISTS idx_user_google_sub ON users(google_sub)"))
+    session.execute(text("CREATE INDEX IF NOT EXISTS idx_user_apple_sub ON users(apple_sub)"))
+    session.execute(
+        text("CREATE INDEX IF NOT EXISTS idx_user_wechat_unionid ON users(wechat_unionid)")
+    )
+    # Partial UNIQUE so pre-existing rows with NULL wechat_openid don't collide.
+    session.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_user_wechat_openid_platform "
+            "ON users (wechat_openid, wechat_platform) "
+            "WHERE wechat_openid IS NOT NULL"
+        )
+    )
 
     session.execute(
         text("""
@@ -567,13 +585,31 @@ def _create_multi_user_tables_sqlite(session: Session) -> None:
             status VARCHAR(20) DEFAULT 'active',
             api_key VARCHAR(64) UNIQUE,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            google_sub VARCHAR(255),
+            apple_sub VARCHAR(255),
+            wechat_unionid VARCHAR(64),
+            wechat_openid VARCHAR(64),
+            wechat_platform VARCHAR(16)
         )
     """)
     )
     session.execute(text("CREATE INDEX IF NOT EXISTS idx_user_email ON users(email)"))
     session.execute(text("CREATE INDEX IF NOT EXISTS idx_user_status ON users(status)"))
     session.execute(text("CREATE INDEX IF NOT EXISTS idx_user_api_key ON users(api_key)"))
+    session.execute(text("CREATE INDEX IF NOT EXISTS idx_user_google_sub ON users(google_sub)"))
+    session.execute(text("CREATE INDEX IF NOT EXISTS idx_user_apple_sub ON users(apple_sub)"))
+    session.execute(
+        text("CREATE INDEX IF NOT EXISTS idx_user_wechat_unionid ON users(wechat_unionid)")
+    )
+    # SQLite treats each NULL as distinct in a UNIQUE index by default, so a
+    # plain UNIQUE works here — no partial-index syntax needed.
+    session.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_user_wechat_openid_platform "
+            "ON users (wechat_openid, wechat_platform)"
+        )
+    )
 
     session.execute(
         text("""

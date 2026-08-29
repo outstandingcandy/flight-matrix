@@ -2,12 +2,20 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Also run CI on long-lived migration branches (feat/*) so we get
+    # signal without opening a PR. Ephemeral topic branches that don't
+    # match will still exercise CI via the pull_request trigger below.
+    branches: [main, 'feat/*']
   pull_request:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+# `uv pip install --system` stopped working when the runners moved to
+# Python 3.12 with PEP 668 (externally-managed). All jobs below use
+# `uv sync --extra dev` to build a project-local .venv, then `uv run`
+# to execute tools inside it.
 
 jobs:
   lint:
@@ -15,37 +23,53 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # pyproject.toml has `resilient-scraper` as an editable path
+          # dependency at lib/resilient-scraper (a git submodule);
+          # `uv sync` fails to build it if the submodule isn't checked out.
+          submodules: recursive
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          # uv.lock is intentionally not tracked (see .gitignore), so
+          # setup-uv's default `**/uv.lock` glob matches nothing and
+          # fails. Cache off pyproject.toml instead — the dep set moves
+          # slowly enough that this stays a useful cache key.
+          cache-dependency-glob: pyproject.toml
       - name: Set up Python
         run: uv python install 3.11
-      - name: Install dev deps
-        run: uv pip install --system -e '.[dev]'
+      - name: Install project + dev deps
+        run: uv sync --extra dev
       - name: ruff check
-        run: ruff check src/ tests/
+        run: uv run ruff check src/ tests/
       - name: ruff format --check
-        run: ruff format --check src/ tests/
+        run: uv run ruff format --check src/ tests/
 
   typecheck:
     name: Type-check (mypy)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # pyproject.toml has `resilient-scraper` as an editable path
+          # dependency at lib/resilient-scraper (a git submodule);
+          # `uv sync` fails to build it if the submodule isn't checked out.
+          submodules: recursive
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          cache-dependency-glob: pyproject.toml
       - name: Set up Python
         run: uv python install 3.11
-      - name: Install dev deps
-        run: uv pip install --system -e '.[dev]'
+      - name: Install project + dev deps
+        run: uv sync --extra dev
       # Strict gate on the curated clean modules. Enforces regression-free.
       - name: mypy --strict (strict-clean modules)
-        run: mypy --strict src/core/
+        run: uv run mypy --strict src/core/
       # Full-repo mypy runs non-strict and is informational for now.
       # Drop `continue-on-error` once the codebase is fully strict-clean.
       - name: mypy (full repo, informational)
-        run: mypy src/
+        run: uv run mypy src/
         continue-on-error: true
 
   test:
@@ -62,16 +86,17 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          cache-dependency-glob: pyproject.toml
       - name: Set up Python
         run: uv python install ${{ matrix.python-version }}
       - name: Install project + dev deps
-        run: uv pip install --system -e '.[dev]'
+        run: uv sync --extra dev
       - name: Run pytest
         env:
           DATABASE_URL: "sqlite:///:memory:"
           STAGE: local
           SKIP_AUTH: "true"
-        run: pytest --cov=src --cov-report=xml
+        run: uv run pytest --cov=src --cov-report=xml
       - name: Upload coverage
         if: matrix.python-version == '3.11'
         uses: actions/upload-artifact@v4
