@@ -22,8 +22,7 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
 
 # SQLAlchemy Base - shared across all models

@@ -21,6 +21,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import bindparam, text
 
+from src.web.time_helpers import naive_utc_now
+
 logger = logging.getLogger("web.airports")
 
 router = APIRouter(tags=["airports"])
@@ -365,7 +367,7 @@ async def get_realtime_aircraft_near_airport(
             "success": True,
             "airport": airport,
             "radius_km": radius_km,
-            "query_time": datetime.utcnow().isoformat(),
+            "query_time": naive_utc_now().isoformat(),
             "total_count": len(aircraft_list),
             "approaching_count": len(approaching),
             "departing_count": len(departing),

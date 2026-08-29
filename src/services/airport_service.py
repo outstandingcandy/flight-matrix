@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from src.data.models import AircraftSnapshot, Airport
 from src.geo.geo import haversine_distance
+from src.web.time_helpers import naive_utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +232,7 @@ class AirportService:
             max_lon = airport_lon + lon_delta
 
             # Query recent snapshots within bounding box
-            cutoff_time = datetime.utcnow() - timedelta(hours=hours_back)
+            cutoff_time = naive_utc_now() - timedelta(hours=hours_back)
 
             # Use subquery to get latest snapshot for each aircraft
             subquery = (
@@ -318,7 +319,7 @@ class AirportService:
             return {
                 "airport": airport,
                 "radius_km": radius_km,
-                "query_time": datetime.utcnow().isoformat(),
+                "query_time": naive_utc_now().isoformat(),
                 "total_count": len(aircraft_list),
                 "approaching_count": len(approaching),
                 "departing_count": len(departing),

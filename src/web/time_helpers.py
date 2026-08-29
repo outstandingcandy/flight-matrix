@@ -30,14 +30,37 @@ Why these live together:
 from __future__ import annotations
 
 import logging
+from datetime import UTC as _STDLIB_UTC
 from datetime import datetime
 
 import pytz
 
 logger = logging.getLogger("web.time_helpers")
 
+# Two UTC constants coexist here on purpose. ``pytz.UTC`` is the one
+# every other file in this project ``from web_app import UTC``s — we
+# preserve it. ``_STDLIB_UTC`` is only used inside :func:`naive_utc_now`
+# because ``datetime.now(...)`` prefers the stdlib flavour on 3.11+ (and
+# pytz has been deprecated by the CPython maintainers since 3.9).
 UTC = pytz.UTC
 BEIJING_TZ = pytz.timezone("Asia/Shanghai")
+
+
+def naive_utc_now() -> datetime:
+    """Return the current UTC time as a naive datetime.
+
+    Python 3.12 deprecates ``datetime.utcnow()`` in favour of
+    ``datetime.now(UTC)`` — but every DB column in this project stores
+    naive UTC (see ``convert_beijing_to_utc``'s ``replace(tzinfo=None)``
+    contract), so mixing an aware ``now(UTC)`` into a comparison
+    against those columns raises ``TypeError: can't compare
+    offset-naive and offset-aware datetimes``.
+
+    This helper is the deprecation-free replacement: aware ``now``,
+    then strip the tzinfo. Semantically identical to
+    ``datetime.utcnow()``, no warning.
+    """
+    return datetime.now(_STDLIB_UTC).replace(tzinfo=None)
 
 
 def _to_iso(value: datetime | str | None) -> str | None:
