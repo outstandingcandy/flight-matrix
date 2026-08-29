@@ -192,7 +192,8 @@ sync_lambda_code() {
 
     cp -r "${PROJECT_ROOT}/src/"* "${lambda_dir}/src/" 2>/dev/null || true
     cp "${PROJECT_ROOT}/lambda_handler.py" "${lambda_dir}/"
-    cp "${PROJECT_ROOT}/web_app.py" "${lambda_dir}/"
+    cp "${PROJECT_ROOT}/app.py" "${lambda_dir}/"
+    cp "${PROJECT_ROOT}/asgi.py" "${lambda_dir}/"
     cp "${PROJECT_ROOT}/config.yaml" "${lambda_dir}/" 2>/dev/null || true
     cp -r "${PROJECT_ROOT}/web_templates/"* "${lambda_dir}/web_templates/" 2>/dev/null || true
     cp -r "${PROJECT_ROOT}/web_static/"* "${lambda_dir}/web_static/" 2>/dev/null || true

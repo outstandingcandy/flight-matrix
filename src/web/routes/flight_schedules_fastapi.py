@@ -48,15 +48,10 @@ async def get_flight_schedules(
     changes live.
     """
     from src.data.dialect import day_of, latest_rows
-    from web_app import (
-        BEIJING_TZ,
-        HAS_LIVERY_SQL,
-        _to_iso,
-        convert_utc_to_beijing,
-        db_manager,
-        extract_livery_indicator,
-        get_image_url,
-    )
+    from src.web.helpers import extract_livery_indicator
+    from src.web.image_helpers import get_image_url
+    from src.web.runtime import db_manager
+    from src.web.time_helpers import BEIJING_TZ, HAS_LIVERY_SQL, _to_iso, convert_utc_to_beijing
 
     airport = airport.strip().upper()
     flight_type = flight_type.strip().lower()
@@ -376,7 +371,8 @@ async def get_flight_schedule_filter_options(
     "no search → empty airports list" fast path.
     """
     from src.data.dialect import beijing_date
-    from web_app import BEIJING_TZ, HAS_LIVERY_SQL, db_manager
+    from src.web.runtime import db_manager
+    from src.web.time_helpers import BEIJING_TZ, HAS_LIVERY_SQL
 
     airport = airport.strip().upper()
 

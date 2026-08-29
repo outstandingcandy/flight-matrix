@@ -15,7 +15,7 @@
 # Usage:
 #   ./scripts/quickstart.sh          # interactive
 #   ./scripts/quickstart.sh --yes    # accept all defaults, don't start server
-#   ./scripts/quickstart.sh --start  # also launch web_app.py at the end
+#   ./scripts/quickstart.sh --start  # also launch the FastAPI server at the end
 #   ./scripts/quickstart.sh --help
 
 set -euo pipefail
@@ -172,15 +172,16 @@ fi
 
 # --- 6. Optional: launch the web app ---------------------------------------
 if (( START_SERVER )); then
-    step "Starting Flask dev server (Ctrl-C to stop)"
-    echo "    visit: http://localhost:5000"
-    exec uv run python web_app.py --skip-auth
+    step "Starting FastAPI dev server (Ctrl-C to stop)"
+    echo "    visit: http://localhost:8000"
+    export SKIP_AUTH=true
+    exec uv run uvicorn asgi:app --reload --port 8000
 fi
 
 if (( ! AUTO_YES )); then
     echo
     printf "${BOLD}Setup complete.${RESET} Next:\n"
     echo "    source .venv/bin/activate"
-    echo "    uv run python web_app.py --skip-auth"
-    echo "    # then open http://localhost:5000"
+    echo "    SKIP_AUTH=true uv run uvicorn asgi:app --reload"
+    echo "    # then open http://localhost:8000"
 fi

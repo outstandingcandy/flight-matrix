@@ -38,7 +38,7 @@ TYPE_PHOTOS_CACHE_TTL = 1800
 async def get_statistics() -> dict[str, Any]:
     """Same as ``web_app.py:1098``. ``DatabaseManager.get_statistics()``
     already returns the shape the frontend expects."""
-    from web_app import db_manager
+    from src.web.runtime import db_manager
 
     return {"success": True, "statistics": db_manager.get_statistics()}
 
@@ -53,7 +53,7 @@ async def search_airports(
 ) -> dict[str, Any]:
     """Same as ``web_app.py:1726``. 400 when ``q`` is empty (Flask matched)."""
     from src.services.airport_service import AirportService
-    from web_app import config, db_manager
+    from src.web.runtime import config, db_manager
 
     query = q.strip()
     if not query:
@@ -82,7 +82,7 @@ async def get_popular_airports(
     doesn't get swallowed.
     """
     from src.services.airport_service import AirportService
-    from web_app import config, db_manager
+    from src.web.runtime import config, db_manager
 
     session = db_manager.get_session()
     try:
@@ -97,7 +97,7 @@ async def get_popular_airports(
 async def get_airport(airport_code: str) -> dict[str, Any]:
     """Same as ``web_app.py:1751``. 404 when no matching row."""
     from src.services.airport_service import AirportService
-    from web_app import config, db_manager
+    from src.web.runtime import config, db_manager
 
     session = db_manager.get_session()
     try:
@@ -124,7 +124,7 @@ async def get_aircraft_near_airport(
     ``AirportService.get_aircraft_near_airport`` which returns a dict
     that already includes the extra top-level keys."""
     from src.services.airport_service import AirportService
-    from web_app import config, db_manager
+    from src.web.runtime import config, db_manager
 
     session = db_manager.get_session()
     try:
@@ -163,7 +163,8 @@ async def get_realtime_aircraft_near_airport(
     """
     from src.data.dialect import latest_rows, minutes_ago, minutes_from_now
     from src.services.airport_service import AirportService
-    from web_app import _to_iso, config, convert_utc_to_beijing, db_manager
+    from src.web.runtime import config, db_manager
+    from src.web.time_helpers import _to_iso, convert_utc_to_beijing
 
     flight_numbers_filter = (
         [fn.strip().upper() for fn in flight_numbers.split(",") if fn.strip()]
@@ -391,7 +392,9 @@ async def get_airport_type_photos(
     """Best-N same-type-here photos per requested type. Same as
     ``web_app.py:2065``. Uses the shared ``api_cache`` on ``web_app``."""
     from src.services.airport_service import AirportService
-    from web_app import _to_iso, api_cache, config, db_manager, get_image_url
+    from src.web.image_helpers import get_image_url
+    from src.web.runtime import api_cache, config, db_manager
+    from src.web.time_helpers import _to_iso
 
     requested_types = sorted({t.strip().upper() for t in types.split(",") if t.strip()})[
         :MAX_TYPE_PHOTO_TYPES

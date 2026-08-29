@@ -146,19 +146,6 @@ class TestConvertBeijingToUtc:
 # _to_iso`` and would fail. Guard.
 
 
-def test_web_app_re_exports_time_helpers() -> None:
-    # Re-import both inside the test — the ``app_client`` /
-    # ``app_client_fastapi`` fixtures purge ``web_app`` and ``src.web.*``
-    # from ``sys.modules`` between tests, so a top-level import here
-    # gets replaced by a different module object mid-run. Compare
-    # freshly-resolved names for identity instead of assuming the
-    # module-load-time bindings survive.
-    import web_app
-    from src.web import time_helpers as th
-
-    assert web_app._to_iso is th._to_iso
-    assert web_app._to_datetime is th._to_datetime
-    assert web_app.convert_utc_to_beijing is th.convert_utc_to_beijing
-    assert web_app.convert_beijing_to_utc is th.convert_beijing_to_utc
-    assert web_app.BEIJING_TZ is th.BEIJING_TZ
-    assert web_app.UTC is th.UTC
+# The ``web_app`` re-export sanity check was removed when the module
+# was deleted. FastAPI handlers ``from src.web.time_helpers import
+# ...`` directly now.

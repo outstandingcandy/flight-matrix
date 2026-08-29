@@ -119,9 +119,11 @@ def _make_fastapi_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Ite
     - Fresh tmp config dir + tmp SQLite file per fixture invocation.
     - ``web_app`` and ``src.web.*`` cleared from ``sys.modules`` so
       ``create_app()`` sees the new env on re-import.
-    - ``client.application_module`` set to the re-imported ``web_app``
-      so tests reaching for ``client.application_module.db_manager``
-      to build ad-hoc tables keep working.
+    - ``client.application_module`` set to the re-imported
+      ``src.web.runtime`` so tests reaching for
+      ``client.application_module.db_manager`` to build ad-hoc tables
+      keep working. Historically pointed at ``web_app`` — that module
+      is gone; the attribute name stays for source-level compat.
     """
     import importlib
     import sys
@@ -156,9 +158,9 @@ def _make_fastapi_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Ite
     # exception through the assert — hides the global exception
     # handler and breaks any "confirm we return a generic 500" test.
     with TestClient(fastapi_app, raise_server_exceptions=False) as client:
-        import web_app as web_app_module
+        from src.web import runtime as runtime_module
 
-        client.application_module = web_app_module  # type: ignore[attr-defined]
+        client.application_module = runtime_module  # type: ignore[attr-defined]
         yield client
 
 

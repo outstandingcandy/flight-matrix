@@ -58,13 +58,9 @@ async def api_admin_list_reports(
     ``config.is_multi_user_enabled()`` — ``user_cooldowns`` when on,
     ``report_cooldowns`` otherwise."""
     from src.data.dialect import latest_rows
-    from web_app import (
-        _to_iso,
-        config,
-        convert_utc_to_beijing,
-        db_manager,
-        get_image_url,
-    )
+    from src.web.image_helpers import get_image_url
+    from src.web.runtime import config, db_manager
+    from src.web.time_helpers import _to_iso, convert_utc_to_beijing
 
     search = search.strip()
     offset = (page - 1) * limit
@@ -267,7 +263,7 @@ async def api_admin_report_stats() -> dict[str, Any]:
     Which cooldown table it reads is driven by
     ``config.is_multi_user_enabled()``."""
     from src.data.dialect import day_of
-    from web_app import config, db_manager
+    from src.web.runtime import config, db_manager
 
     multi_user_enabled = config.is_multi_user_enabled() if config else False
     table_name = "user_cooldowns" if multi_user_enabled else "report_cooldowns"
@@ -319,7 +315,9 @@ async def api_admin_report_detail(
 ) -> dict[str, Any]:
     """Per-aircraft cooldown detail + last 10 snapshots. Same as
     ``web_app.py:4205``. 404 when the aircraft has no cooldown row."""
-    from web_app import _to_iso, config, convert_utc_to_beijing, db_manager, get_image_url
+    from src.web.image_helpers import get_image_url
+    from src.web.runtime import config, db_manager
+    from src.web.time_helpers import _to_iso, convert_utc_to_beijing
 
     multi_user_enabled = config.is_multi_user_enabled() if config else False
 
@@ -476,7 +474,8 @@ def _count_json_list(raw: Any) -> int:
 @router.get("/api/admin/scraped-data/xiaohongshu/stats", name="api_admin_xhs_stats")
 async def api_admin_xhs_stats() -> dict[str, Any]:
     """XHS scraped-data rollup. Same as ``web_app.py:4352``."""
-    from web_app import _table_exists, db_manager
+    from src.web.helpers import table_exists as _table_exists
+    from src.web.runtime import db_manager
 
     session = db_manager.get_session()
     try:
@@ -525,7 +524,9 @@ async def api_admin_xhs_notes(
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
     """XHS notes list. Same as ``web_app.py:4427``."""
-    from web_app import _table_exists, _to_iso, db_manager
+    from src.web.helpers import table_exists as _table_exists
+    from src.web.runtime import db_manager
+    from src.web.time_helpers import _to_iso
 
     session = db_manager.get_session()
     try:
@@ -607,7 +608,10 @@ async def api_admin_xhs_note_detail(note_id: str) -> dict[str, Any]:
     """Full XHS note detail. Same as ``web_app.py:4524``. 404 when the
     note doesn't exist or the table isn't there."""
     from src.storage import ObjectStorage
-    from web_app import _table_exists, _to_iso, db_manager, get_image_url
+    from src.web.helpers import table_exists as _table_exists
+    from src.web.image_helpers import get_image_url
+    from src.web.runtime import db_manager
+    from src.web.time_helpers import _to_iso
 
     session = db_manager.get_session()
     try:
@@ -678,7 +682,7 @@ async def api_admin_xhs_note_detail(note_id: str) -> dict[str, Any]:
 @router.get("/api/admin/scraped-data/fr24/stats", name="api_admin_fr24_stats")
 async def api_admin_fr24_stats() -> dict[str, Any]:
     """FR24 flight-schedules rollup. Same as ``web_app.py:4591``."""
-    from web_app import db_manager
+    from src.web.runtime import db_manager
 
     session = db_manager.get_session()
     try:
@@ -724,7 +728,8 @@ async def api_admin_fr24_flights(
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
     """FR24 flights list. Same as ``web_app.py:4640``."""
-    from web_app import _to_iso, db_manager
+    from src.web.runtime import db_manager
+    from src.web.time_helpers import _to_iso
 
     session = db_manager.get_session()
     try:
@@ -789,7 +794,7 @@ async def api_admin_fr24_flights(
 @router.get("/api/admin/scraped-data/jetphotos/stats", name="api_admin_jetphotos_stats")
 async def api_admin_jetphotos_stats() -> dict[str, Any]:
     """JetPhotos scraped-data rollup. Same as ``web_app.py:4708``."""
-    from web_app import db_manager
+    from src.web.runtime import db_manager
 
     session = db_manager.get_session()
     try:
@@ -841,7 +846,9 @@ async def api_admin_jetphotos_images(
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
     """JetPhotos images list. Same as ``web_app.py:4766``."""
-    from web_app import _to_iso, db_manager, get_image_url
+    from src.web.image_helpers import get_image_url
+    from src.web.runtime import db_manager
+    from src.web.time_helpers import _to_iso
 
     session = db_manager.get_session()
     try:

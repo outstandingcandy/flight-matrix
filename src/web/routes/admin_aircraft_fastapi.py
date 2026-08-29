@@ -52,14 +52,12 @@ async def api_admin_list_aircraft(
     differs. ``search_backend`` in the response reports which one
     answered.
     """
-    from web_app import (
-        MAX_WINDOW,
-        SPECIAL_ATTENTION_LEVELS,
-        _to_iso,
-        db_manager,
-        get_image_url,
-        with_aircraft_index,
-    )
+    from src.search.aircraft_index import MAX_WINDOW
+    from src.web.helpers import SPECIAL_ATTENTION_LEVELS
+    from src.web.image_helpers import get_image_url
+    from src.web.runtime import db_manager
+    from src.web.search_index import with_aircraft_index
+    from src.web.time_helpers import _to_iso
 
     search = search.strip()
     aircraft_type = aircraft_type.strip()
@@ -237,7 +235,9 @@ async def api_admin_list_aircraft(
 @router.get("/api/admin/aircraft/stats", name="api_admin_aircraft_stats")
 async def api_admin_aircraft_stats() -> dict[str, Any]:
     """Aircraft list header counts. Same as ``web_app.py:3638``."""
-    from web_app import SPECIAL_ATTENTION_LEVELS, db_manager, with_aircraft_index
+    from src.web.helpers import SPECIAL_ATTENTION_LEVELS
+    from src.web.runtime import db_manager
+    from src.web.search_index import with_aircraft_index
 
     empty_categories = {"widebody": 0, "cargo": 0, "military": 0}
 
@@ -278,7 +278,8 @@ async def api_admin_aircraft_stats() -> dict[str, Any]:
 @router.get("/api/admin/aircraft/types", name="api_admin_aircraft_types")
 async def api_admin_aircraft_types(search: str = Query("")) -> dict[str, Any]:
     """Distinct aircraft types (autocomplete). Same as ``web_app.py:3695``."""
-    from web_app import db_manager, with_aircraft_index
+    from src.web.runtime import db_manager
+    from src.web.search_index import with_aircraft_index
 
     search = search.strip()
     narrowed = search if len(search) >= 2 else ""
@@ -335,7 +336,8 @@ async def api_admin_aircraft_types(search: str = Query("")) -> dict[str, Any]:
 @router.get("/api/admin/aircraft/liveries", name="api_admin_aircraft_liveries")
 async def api_admin_aircraft_liveries(search: str = Query("")) -> dict[str, Any]:
     """Distinct liveries (autocomplete). Same as ``web_app.py:3764``."""
-    from web_app import db_manager, with_aircraft_index
+    from src.web.runtime import db_manager
+    from src.web.search_index import with_aircraft_index
 
     search = search.strip()
     narrowed = search if len(search) >= 2 else ""
@@ -390,7 +392,8 @@ async def api_admin_aircraft_liveries(search: str = Query("")) -> dict[str, Any]
 @router.get("/api/admin/aircraft/registrations", name="api_admin_aircraft_registrations")
 async def api_admin_aircraft_registrations(search: str = Query("")) -> dict[str, Any]:
     """Registration autocomplete. Same as ``web_app.py:3830``."""
-    from web_app import db_manager, with_aircraft_index
+    from src.web.runtime import db_manager
+    from src.web.search_index import with_aircraft_index
 
     search = search.strip()
     if len(search) < 2:
@@ -464,7 +467,10 @@ async def api_admin_aircraft_query(registration: str) -> dict[str, Any]:
     reports where the time went.
     """
     from src.storage import ObjectStorage
-    from web_app import _table_exists, _to_iso, db_manager, get_image_url
+    from src.web.helpers import table_exists as _table_exists
+    from src.web.image_helpers import get_image_url
+    from src.web.runtime import db_manager
+    from src.web.time_helpers import _to_iso
 
     query_times: dict[str, float] = {}
     total_start = _time.time()

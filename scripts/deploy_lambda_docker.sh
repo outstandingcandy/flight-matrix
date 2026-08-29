@@ -208,8 +208,9 @@ sync_lambda_code() {
     # 同步 Python 源代码
     cp -r "${PROJECT_ROOT}/src/"* "${lambda_code_dir}/src/" 2>/dev/null || true
 
-    # 同步 Web 应用文件
-    cp "${PROJECT_ROOT}/web_app.py" "${lambda_code_dir}/"
+    # 同步 Web 应用入口 (FastAPI via Mangum — see lambda_handler.py)
+    cp "${PROJECT_ROOT}/app.py" "${lambda_code_dir}/"
+    cp "${PROJECT_ROOT}/asgi.py" "${lambda_code_dir}/"
     cp "${PROJECT_ROOT}/config.yaml" "${lambda_code_dir}/" 2>/dev/null || true
 
     # 同步模板

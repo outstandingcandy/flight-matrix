@@ -171,7 +171,7 @@ async def get_current_user_optional(request: Request) -> dict[str, Any] | None:
                 # Deferred import so a broken UserService doesn't fail
                 # module import for cookie-session-only deployments.
                 from src.services.user_service import UserService
-                from web_app import db_manager
+                from src.web.runtime import db_manager
 
                 svc = UserService(db_manager)
                 bearer_user = svc.authenticate_by_api_key(token)
