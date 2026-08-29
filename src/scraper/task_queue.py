@@ -13,6 +13,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from src.scraper.models import ScraperTask, TaskStatus, WorkerStatus
+from src.web.time_helpers import naive_utc_now
 
 logger = logging.getLogger("scraper.task_queue")
 
@@ -247,7 +248,7 @@ class TaskQueue:
                 "payload": json.dumps(payload) if payload else "{}",
                 "priority": priority,
                 "max_attempts": max_attempts,
-                "scheduled": scheduled_for or datetime.utcnow(),
+                "scheduled": scheduled_for or naive_utc_now(),
             }
 
             if self.is_postgres:
@@ -362,7 +363,7 @@ class TaskQueue:
             # First, reset stale tasks (no heartbeat for stale_timeout_minutes).
             # Compute the cutoff in Python so the SQL is dialect-agnostic —
             # Postgres's `NOW() - INTERVAL` syntax does not work on SQLite.
-            stale_cutoff = datetime.utcnow() - timedelta(minutes=stale_timeout_minutes)
+            stale_cutoff = naive_utc_now() - timedelta(minutes=stale_timeout_minutes)
             stale_result = session.execute(
                 text(
                     """
@@ -420,7 +421,7 @@ class TaskQueue:
             params: dict[str, Any] = {
                 "worker_id": worker_id,
                 "limit": limit,
-                "now": datetime.utcnow(),
+                "now": naive_utc_now(),
             }
 
             if available_task_types:
@@ -473,7 +474,7 @@ class TaskQueue:
                             max_attempts=row.max_attempts,
                             priority=row.priority,
                             claimed_by=worker_id,
-                            claimed_at=datetime.utcnow(),
+                            claimed_at=naive_utc_now(),
                             created_at=row.created_at,
                             scheduled_for=row.scheduled_for,
                         )
@@ -548,7 +549,7 @@ class TaskQueue:
                                 max_attempts=row.max_attempts,
                                 priority=row.priority,
                                 claimed_by=worker_id,
-                                claimed_at=datetime.utcnow(),
+                                claimed_at=naive_utc_now(),
                                 created_at=row.created_at,
                                 scheduled_for=row.scheduled_for,
                             )
@@ -795,7 +796,7 @@ class TaskQueue:
                 # Jitter prevents thundering herd when many tasks fail simultaneously
                 base_backoff = min(2 ** (attempts - 1) * 5, 60)  # 5, 10, 20, 40, 60
                 backoff_minutes = base_backoff * random.uniform(0.5, 1.5)
-                retry_time = datetime.utcnow() + timedelta(minutes=backoff_minutes)
+                retry_time = naive_utc_now() + timedelta(minutes=backoff_minutes)
 
                 session.execute(
                     text(
@@ -1088,7 +1089,7 @@ class TaskQueue:
         """
         session = self.get_session()
         try:
-            cutoff = datetime.utcnow() - timedelta(minutes=timeout_minutes)
+            cutoff = naive_utc_now() - timedelta(minutes=timeout_minutes)
             result = session.execute(
                 text(
                     """
@@ -1128,7 +1129,7 @@ class TaskQueue:
         """
         session = self.get_session()
         try:
-            cutoff = datetime.utcnow() - timedelta(days=days)
+            cutoff = naive_utc_now() - timedelta(days=days)
             result = session.execute(
                 text(
                     """
