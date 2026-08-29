@@ -85,23 +85,22 @@ async def lifespan(app: FastAPI):
     pool teardown at process exit and the Flask side never did more.
     """
     try:
-        # Bring the Flask module up first — helpers migrated FastAPI
-        # handlers delegate to live on it. Import inside the lifespan
-        # (not at module top) to avoid a circular import at load time
-        # and to keep FastAPI runnable when web_app fails to import in
-        # some future refactor.
-        import web_app as web_app_module
+        # ``runtime.init_app()`` populates the process-wide ``db_manager``
+        # / ``config`` singletons that every helper module reads. Import
+        # inside the lifespan (not at module top) to avoid a circular
+        # dependency and to keep FastAPI runnable if the runtime module
+        # ever gains an import-time side effect that fails.
+        from src.web import runtime
 
-        web_app_module.init_app()
+        runtime.init_app()
 
-        # Share the initialised state under app.state so migrated
-        # handlers can read it via ``request.app.state.db_manager``
-        # without going back through the web_app module.
-        app.state.config = web_app_module.config
-        app.state.db_manager = web_app_module.db_manager
+        # Mirror onto app.state for handlers that reach through
+        # ``request.app.state.db_manager`` — same instance either way.
+        app.state.config = runtime.config
+        app.state.db_manager = runtime.db_manager
         logger.info(
             "FastAPI application initialised (Database URL: %s)",
-            _mask_database_url(getattr(web_app_module.db_manager, "database_url", "unknown")),
+            _mask_database_url(getattr(runtime.db_manager, "database_url", "unknown")),
         )
         yield
     except Exception:

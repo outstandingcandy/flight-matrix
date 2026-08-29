@@ -70,9 +70,16 @@ def _seed(client: Any) -> None:
 
 
 def _use(client: Any, cluster: FakeOpenSearch | None) -> None:
-    """Point the app's client factory at `cluster` (None = nothing configured)."""
-    web_app = client.application_module
-    web_app.get_client = lambda settings=None: cluster  # type: ignore[assignment]
+    """Point the app's client factory at `cluster` (None = nothing configured).
+
+    ``aircraft_search_index`` moved out of ``web_app`` into
+    :mod:`src.web.search_index` (which imports ``get_client`` directly
+    from ``src.search.opensearch_client``). Patch there — patching
+    ``web_app.get_client`` no longer reaches the call site.
+    """
+    from src.web import search_index
+
+    search_index.get_client = lambda settings=None: cluster  # type: ignore[assignment]
 
 
 def _registrations(payload: dict[str, Any]) -> list[str]:

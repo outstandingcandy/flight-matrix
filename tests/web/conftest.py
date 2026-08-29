@@ -134,8 +134,15 @@ def _make_fastapi_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Ite
     monkeypatch.setenv("LOCAL_DEV_EMAIL", "test@example.com")
     monkeypatch.setenv("LOCAL_DEV_GROUPS", "admins,flight-schedules-viewers")
 
+    # Wipe both ``src.web`` (the package) and its submodules. Wiping only
+    # the submodules leaves stale ``src.web.<submodule>`` attributes on
+    # the parent package object; ``from src.web import runtime`` then
+    # returns those cached attributes instead of importing the fresh
+    # submodule, and the next test sees a runtime whose ``db_manager`` is
+    # from a prior fixture — invisibly wrong until a handler crashes on
+    # ``None.get_session()``.
     for name in list(sys.modules):
-        if name == "web_app" or name == "app" or name.startswith("src.web."):
+        if name in ("web_app", "app", "src.web") or name.startswith("src.web."):
             del sys.modules[name]
 
     app_module = importlib.import_module("app")
