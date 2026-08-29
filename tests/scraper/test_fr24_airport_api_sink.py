@@ -106,7 +106,7 @@ class TestPayload:
     def test_the_body_is_what_the_route_validates(self, post: Recorder) -> None:
         """Checked against the route's own model rather than a copy of its field
         names, so a rename on either side fails here."""
-        from src.web.routes.ingest import IngestBatch
+        from src.web.routes.ingest_fastapi import IngestBatch
 
         FR24AirportApiSink(BASE_URL, TOKEN, flight_type_hint="arrival").on_success(
             None,  # type: ignore[arg-type]

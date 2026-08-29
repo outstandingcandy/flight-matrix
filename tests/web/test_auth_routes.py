@@ -35,23 +35,9 @@ class TestAuthBlueprintRegistered:
         assert "/flight-schedules" in r.headers.get("Location", "")
 
 
-class TestAuthShimNoops:
-    def test_decorators_are_passthrough_in_skip_auth(self) -> None:
-        from src.web.auth_shim import (
-            admin_required,
-            flight_schedules_required,
-            group_required,
-            login_required,
-            optional_login,
-        )
-
-        def handler():
-            return "ok"
-
-        # All decorators should return the handler unchanged in skip-auth mode.
-        assert login_required(handler) is handler
-        assert admin_required(handler) is handler
-        assert flight_schedules_required(handler) is handler
-        assert optional_login(handler) is handler
-        # group_required is a factory; its inner decorator is also identity.
-        assert group_required(["admins"])(handler) is handler
+# The former TestAuthShimNoops block was removed alongside the Flask
+# decorators. ``src.web.auth_shim`` no longer installs no-op
+# decorators — the FastAPI half uses ``src.auth.dependencies``
+# instead, and the Flask half doesn't exist anymore. The remaining
+# TestAuthBlueprintRegistered class still covers /login, /auth/callback,
+# /auth/set-session, and /logout — those are FastAPI routes now.

@@ -13,7 +13,10 @@ from typing import Any
 
 import pytest
 
-from src.web.errors import GENERIC_ERROR_MESSAGE
+# The generic-500 body FastAPI's global exception handler returns. Copied
+# here as a local constant now that ``src.web.errors`` is gone with the
+# Flask side; the assertion is the contract, not the constant source.
+GENERIC_ERROR_MESSAGE = "Internal server error"
 
 # Shaped like the psycopg2 / sqlite3 messages these handlers actually raise:
 # the driver embeds the failing statement, so `str(exc)` carries the schema.
