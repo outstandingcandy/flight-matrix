@@ -79,6 +79,7 @@ gh api \
       "Type-check (mypy)",
       "Tests (pytest) (3.11)",
       "Tests (pytest) (3.12)",
+      "Tests (pytest) (3.14)",
       "gitleaks"
     ]
   },
