@@ -75,7 +75,7 @@ _T = TypeVar("_T")
 # `attention_level` values that make an aircraft "special" — the admin list's
 # `category=special` filter, its header count and the per-row flag all mean this
 # same set. Both the Chinese and English spellings occur in the data.
-SPECIAL_ATTENTION_LEVELS = ("高", "极高", "high", "very high")
+from src.web.helpers import SPECIAL_ATTENTION_LEVELS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("web_app")
@@ -208,6 +208,9 @@ def inject_auth_config():
 # web_app module into their import graph. Re-exported here to keep every
 # ``from web_app import _to_iso, ...`` in the Flask half working during the
 # co-existence window.
+# _table_exists lives in src/web/helpers.py; kept re-exported for the
+# Flask half's existing `from web_app import _table_exists` callers.
+from src.web.helpers import table_exists as _table_exists
 from src.web.time_helpers import (
     BEIJING_TZ,
     HAS_LIVERY_SQL,
@@ -215,21 +218,6 @@ from src.web.time_helpers import (
     _to_datetime,
     _to_iso,
 )
-
-
-def _table_exists(session, table_name: str) -> bool:
-    """Dialect-agnostic 'does this table exist?' check.
-
-    Originally the code used `SELECT EXISTS (SELECT FROM information_schema.tables
-    WHERE table_name = ...)`, which is Postgres-only. SQLAlchemy's Inspector
-    works across SQLite, Postgres, MySQL, etc.
-    """
-    from sqlalchemy import inspect
-
-    try:
-        return inspect(session.get_bind()).has_table(table_name)
-    except Exception:
-        return False
 
 
 def aircraft_search_index() -> AircraftSearchIndex | None:
@@ -840,55 +828,8 @@ def get_aircraft_types():
         return api_error(e, "Error getting aircraft types")
 
 
-def get_aircraft_type_name(code: str) -> str:
-    """获取机型的中文名称"""
-    type_names = {
-        "H60": "黑鹰直升机",
-        "C17": "环球霸王运输机",
-        "TWR": "塔台",
-        "C30J": "大力神运输机",
-        "TEX2": "教练机",
-        "C130": "大力神运输机",
-        "EC45": "欧直直升机",
-        "H47": "支奴干直升机",
-        "C295": "运输机",
-        "A139": "阿古斯塔直升机",
-        "B350": "商务机",
-        "A400": "运输机",
-        "K35R": "加油机",
-        "A332": "空客A330",
-        "BE20": "商务机",
-        "B737": "波音737",
-        "EC35": "欧直直升机",
-        "CN35": "其他",
-        "C172": "塞斯纳172",
-        "B762": "波音767",
-        "B738": "波音737-800",
-        "B739": "波音737-900",
-        "B77W": "波音777-300ER",
-        "B788": "波音787-8",
-        "B789": "波音787-9",
-        "B78X": "波音787-10",
-        "A320": "空客A320",
-        "A321": "空客A321",
-        "A319": "空客A319",
-        "A20N": "空客A320neo",
-        "A21N": "空客A321neo",
-        "A350": "空客A350",
-        "A359": "空客A350-900",
-        "A35K": "空客A350-1000",
-        "A333": "空客A330-300",
-        "A339": "空客A330-900neo",
-        "A388": "空客A380-800",
-        "E190": "Embraer E190",
-        "E195": "Embraer E195",
-        "CRJ9": "CRJ-900",
-        "CRJ7": "CRJ-700",
-        "C919": "C919",
-        "ARJ2": "ARJ21",
-        "MA60": "MA60",
-    }
-    return type_names.get(code, code)
+# get_aircraft_type_name lives in src/web/helpers.py.
+from src.web.helpers import get_aircraft_type_name
 
 
 @app.route("/api/aircraft/types/<type_code>")
@@ -5058,29 +4999,8 @@ def api_user_test_filter(email: str):
 
 import re
 
-
-def extract_livery_indicator(airline_name: str) -> str | None:
-    """Extract livery indicator from airline name.
-
-    Args:
-        airline_name: Airline name that may contain livery info like
-                      "China Eastern (SkyTeam Livery)"
-
-    Returns:
-        Livery indicator string or None if not found
-    """
-    if not airline_name:
-        return None
-    # Match patterns like "(SkyTeam Livery)" or "(Star Alliance)"
-    match = re.search(
-        r"\(([^)]*(?:Livery|Alliance|Special|Retro)[^)]*)\)", airline_name, re.IGNORECASE
-    )
-    if match:
-        livery = match.group(1)
-        # Clean up the livery string
-        livery = re.sub(r"\s*Livery\s*", "", livery, flags=re.IGNORECASE).strip()
-        return livery if livery else None
-    return None
+# extract_livery_indicator lives in src/web/helpers.py.
+from src.web.helpers import extract_livery_indicator
 
 
 @app.route("/flight-schedules")
