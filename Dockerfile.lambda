@@ -1,7 +1,7 @@
 # Dockerfile for Flight Matrix Lambda Web API
 # Uses AWS Lambda Python base image with custom dependencies
 
-FROM public.ecr.aws/lambda/python:3.12
+FROM public.ecr.aws/lambda/python:3.14
 
 # Install system dependencies for PostgreSQL
 RUN dnf install -y \
