@@ -51,12 +51,9 @@ async def get_recent_aircraft(
 
     Same behaviour as the Flask version at ``web_app.py:853``.
     """
-    from web_app import (
-        batch_get_images_from_static_info,
-        convert_utc_to_beijing,
-        db_manager,
-        transform_image_paths,
-    )
+    from src.web.image_helpers import batch_get_images_from_static_info, transform_image_paths
+    from src.web.runtime import db_manager
+    from src.web.time_helpers import convert_utc_to_beijing
 
     recent_time = datetime.now() - timedelta(hours=hours)
     recent_time_str = recent_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -103,13 +100,9 @@ async def search_aircraft(
     literal because ``SnapshotRepository`` rewrites ``= 1`` to ``= true``
     for Postgres by pattern-matching the digit.
     """
-    from web_app import (
-        batch_get_images_from_static_info,
-        convert_beijing_to_utc,
-        convert_utc_to_beijing,
-        db_manager,
-        transform_image_paths,
-    )
+    from src.web.image_helpers import batch_get_images_from_static_info, transform_image_paths
+    from src.web.runtime import db_manager
+    from src.web.time_helpers import convert_beijing_to_utc, convert_utc_to_beijing
 
     registration = registration.strip()
     hex_code = hex.strip()
@@ -209,7 +202,8 @@ async def get_aircraft_tracks(
     """
     from datetime import UTC as _UTC
 
-    from web_app import BEIJING_TZ, convert_beijing_to_utc, db_manager
+    from src.web.runtime import db_manager
+    from src.web.time_helpers import BEIJING_TZ, convert_beijing_to_utc
 
     start_timestamp: int | None = None
     if start_time:
@@ -356,7 +350,8 @@ async def get_aircraft_types() -> dict[str, Any]:
     lives on the Flask module (a static Chinese-name lookup dict);
     delegated to keep this handler in lockstep with the Flask version.
     """
-    from web_app import db_manager, get_aircraft_type_name
+    from src.web.helpers import get_aircraft_type_name
+    from src.web.runtime import db_manager
 
     session = db_manager.get_session()
     try:
@@ -396,7 +391,8 @@ async def get_aircraft_type_info(
 
     Login-gated on the Flask side (``@login_required``) and here.
     """
-    from web_app import db_manager, get_aircraft_type_name
+    from src.web.helpers import get_aircraft_type_name
+    from src.web.runtime import db_manager
 
     type_code_upper = type_code.upper()
     session = db_manager.get_session()
@@ -437,7 +433,8 @@ async def get_aircraft_type_instances(
     Same query (correlated subquery for cross-dialect portability) as
     ``web_app.py:1030``. Login-gated.
     """
-    from web_app import db_manager, get_image_url
+    from src.web.image_helpers import get_image_url
+    from src.web.runtime import db_manager
 
     type_code_upper = type_code.upper()
     session = db_manager.get_session()
@@ -497,7 +494,7 @@ async def get_unique_aircraft(days: int = Query(7, ge=1, le=365)) -> dict[str, A
     ``web_app.py:1109``.
     """
     from src.data.models import AircraftSnapshot
-    from web_app import db_manager
+    from src.web.runtime import db_manager
 
     session = db_manager.get_session()
     try:
@@ -540,7 +537,7 @@ def _static_info_row_to_dict(row: Any) -> dict[str, Any]:
     to the single-registration endpoint below because that one already
     returns a superset of fields (livery, attention, hit_count, etc.).
     """
-    from web_app import convert_utc_to_beijing
+    from src.web.time_helpers import convert_utc_to_beijing
 
     flags = _extract_ai_flags(row.ai_analysis)
     return {
@@ -570,7 +567,7 @@ async def get_all_static_info() -> dict[str, Any]:
 
     Same query and shape as ``web_app.py:1160``.
     """
-    from web_app import db_manager
+    from src.web.runtime import db_manager
 
     session = db_manager.get_session()
     try:
@@ -603,7 +600,7 @@ async def get_batch_static_info(
     Same as ``web_app.py:1230``. ``payload["registrations"]`` must be a
     non-empty list; 400 on missing key.
     """
-    from web_app import db_manager
+    from src.web.runtime import db_manager
 
     if not isinstance(payload, dict) or "registrations" not in payload:
         raise HTTPException(
@@ -650,7 +647,7 @@ async def get_static_info_stats() -> dict[str, Any]:
 
     Same query as ``web_app.py:1430``.
     """
-    from web_app import db_manager
+    from src.web.runtime import db_manager
 
     session = db_manager.get_session()
     try:
@@ -725,7 +722,9 @@ async def get_static_info(registration: str) -> dict[str, Any]:
     ``/static/stats`` and ``/static/batch`` in this file so ``stats`` /
     ``batch`` don't get swallowed as a ``registration``.
     """
-    from web_app import convert_utc_to_beijing, db_manager, get_image_url
+    from src.web.image_helpers import get_image_url
+    from src.web.runtime import db_manager
+    from src.web.time_helpers import convert_utc_to_beijing
 
     session = db_manager.get_session()
     try:
@@ -840,7 +839,9 @@ async def get_aircraft_live(identifier: str) -> dict[str, Any]:
     to :meth:`AircraftService.get_aircraft_live_position`.
     """
     from src.services.aircraft_service import AircraftService
-    from web_app import config, convert_utc_to_beijing, db_manager, transform_image_paths
+    from src.web.image_helpers import transform_image_paths
+    from src.web.runtime import config, db_manager
+    from src.web.time_helpers import convert_utc_to_beijing
 
     session = db_manager.get_session()
     try:
@@ -864,7 +865,9 @@ async def get_aircraft_live(identifier: str) -> dict[str, Any]:
 async def get_aircraft_details_api(identifier: str) -> dict[str, Any]:
     """Full detail row for one aircraft. Same as ``web_app.py:2292``."""
     from src.services.aircraft_service import AircraftService
-    from web_app import config, convert_utc_to_beijing, db_manager, transform_image_paths
+    from src.web.image_helpers import transform_image_paths
+    from src.web.runtime import config, db_manager
+    from src.web.time_helpers import convert_utc_to_beijing
 
     session = db_manager.get_session()
     try:
@@ -896,7 +899,8 @@ async def get_aircraft_history_api(
     Same as ``web_app.py:2320``.
     """
     from src.services.aircraft_service import AircraftService
-    from web_app import config, convert_beijing_to_utc, convert_utc_to_beijing, db_manager
+    from src.web.runtime import config, db_manager
+    from src.web.time_helpers import convert_beijing_to_utc, convert_utc_to_beijing
 
     parsed_date = None
     if date:
@@ -938,7 +942,7 @@ async def get_aircraft_flight_dates(
     Same as ``web_app.py:2374``.
     """
     from src.services.aircraft_service import AircraftService
-    from web_app import config, db_manager
+    from src.web.runtime import config, db_manager
 
     session = db_manager.get_session()
     try:
@@ -963,7 +967,8 @@ async def get_aircraft_recent_flights(registration: str) -> dict[str, Any]:
     ``identifier`` (accepts hex too). Kept literal so the OpenAPI spec
     matches the Flask URL.
     """
-    from web_app import _to_iso, db_manager
+    from src.web.runtime import db_manager
+    from src.web.time_helpers import _to_iso
 
     session = db_manager.get_session()
     try:
@@ -1015,7 +1020,9 @@ async def get_aircraft_images_api(identifier: str) -> dict[str, Any]:
     hex; a hex lookup falls back to the most recent snapshot's
     registration.
     """
-    from web_app import _to_iso, db_manager, get_image_url
+    from src.web.image_helpers import get_image_url
+    from src.web.runtime import db_manager
+    from src.web.time_helpers import _to_iso
 
     registration = identifier.upper()
     session = db_manager.get_session()
@@ -1096,7 +1103,8 @@ async def get_aircraft_static_info_api(identifier: str) -> dict[str, Any]:
     complete ``/static/{registration}`` route above; both are kept for
     backward compat with clients that were already using either.
     """
-    from web_app import db_manager, get_image_url
+    from src.web.image_helpers import get_image_url
+    from src.web.runtime import db_manager
 
     registration = identifier.upper()
     session = db_manager.get_session()

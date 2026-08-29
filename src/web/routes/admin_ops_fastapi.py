@@ -42,7 +42,7 @@ import_router = APIRouter(tags=["admin-import"])
 @scraper_router.get("/api/admin/scraper/stats", name="api_admin_scraper_stats")
 async def api_admin_scraper_stats() -> dict[str, Any]:
     """Queue depth by status + active-worker count. Same as ``web_app.py:5756``."""
-    from web_app import get_scraper_db_session
+    from src.web.service_factory import get_scraper_db_session
 
     session = get_scraper_db_session()
     try:
@@ -108,7 +108,8 @@ async def api_admin_scraper_stats() -> dict[str, Any]:
 @scraper_router.get("/api/admin/scraper/workers", name="api_admin_scraper_workers")
 async def api_admin_scraper_workers() -> dict[str, Any]:
     """Recent-heartbeat worker list. Same as ``web_app.py:5825``."""
-    from web_app import _to_datetime, _to_iso, get_scraper_db_session
+    from src.web.service_factory import get_scraper_db_session
+    from src.web.time_helpers import _to_datetime, _to_iso
 
     session = get_scraper_db_session()
     try:
@@ -154,7 +155,8 @@ async def api_admin_scraper_recent_tasks(
 ) -> dict[str, Any]:
     """Recent scraper task list with duration + last result. Same as
     ``web_app.py:5870``."""
-    from web_app import _to_iso, get_scraper_db_session
+    from src.web.service_factory import get_scraper_db_session
+    from src.web.time_helpers import _to_iso
 
     offset = (page - 1) * limit
     session = get_scraper_db_session()
@@ -265,7 +267,7 @@ async def import_data_api(data: dict[str, Any] = Body(...)) -> dict[str, Any]:
     every 500 rows so a mid-batch crash keeps most of the write.
     """
     from src.data.models import AircraftSnapshot, AircraftStaticInfo, Airport, GeographicRegion
-    from web_app import db_manager
+    from src.web.runtime import db_manager
 
     if not data:
         raise HTTPException(

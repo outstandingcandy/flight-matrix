@@ -66,8 +66,6 @@ fi
 # Set local development environment variables
 export STAGE="local"
 export SKIP_AUTH="$SKIP_AUTH"
-export FLASK_ENV="development"
-export FLASK_DEBUG="1"
 
 # Activate virtual environment if present
 if [[ -d "$PROJECT_DIR/.venv" ]]; then
@@ -90,34 +88,18 @@ if [[ "$SKIP_AUTH" == "true" ]]; then
 fi
 echo "  Livereload:  $USE_LIVERELOAD"
 echo ""
-echo "Server URL: http://localhost:5000"
+echo "Server URL: http://localhost:8000"
 echo ""
 echo "=========================================="
 echo ""
 
 if [[ "$USE_LIVERELOAD" == "true" ]]; then
-    # Check if livereload is installed
-    if ! python -c "import livereload" 2>/dev/null; then
-        echo "Error: livereload is not installed."
-        echo "Install it with: pip install livereload"
-        exit 1
-    fi
-
-    # Run with livereload
-    python -c "
-from livereload import Server
-from web_app import app
-
-server = Server(app.wsgi_app)
-
-# Watch templates and static files
-server.watch('web_templates/')
-server.watch('web_static/')
-
-print('Starting livereload server...')
-server.serve(port=5000, host='0.0.0.0', debug=True)
-"
+    # uvicorn --reload does the same auto-restart-on-file-change dance
+    # livereload used to provide for the Flask entry, and it works
+    # against the ASGI app directly.
+    exec uv run uvicorn asgi:app --reload \
+        --reload-dir src --reload-dir web_templates --reload-dir web_static \
+        --host 0.0.0.0 --port 8000
 else
-    # Run standard Flask development server
-    python web_app.py
+    exec uv run uvicorn asgi:app --host 0.0.0.0 --port 8000
 fi

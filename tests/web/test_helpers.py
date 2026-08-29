@@ -96,15 +96,6 @@ class TestExtractLiveryIndicator:
         assert extract_livery_indicator("Airline (Retro)") == "Retro"
 
 
-def test_web_app_re_exports_helpers() -> None:
-    """Sanity check that ``web_app.py`` still resolves the pre-refactor
-    names to the new module. Fresh-import both sides — the fixture
-    setup wipes ``web_app`` from ``sys.modules`` between tests, so a
-    module-load-time binding wouldn't survive."""
-    import web_app
-    from src.web import helpers as h
-
-    assert web_app._table_exists is h.table_exists
-    assert web_app.get_aircraft_type_name is h.get_aircraft_type_name
-    assert web_app.extract_livery_indicator is h.extract_livery_indicator
-    assert web_app.SPECIAL_ATTENTION_LEVELS is h.SPECIAL_ATTENTION_LEVELS
+# The ``web_app`` re-export sanity check was removed when the
+# module was deleted. FastAPI handlers now ``from src.web.helpers
+# import ...`` directly.

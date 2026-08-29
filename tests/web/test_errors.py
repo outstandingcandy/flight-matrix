@@ -40,12 +40,12 @@ class TestHandlerLeak:
     def test_route_failure_logs_the_detail_but_does_not_return_it(
         self, app_client: Any, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:
-        web_app = app_client.application_module
+        runtime_module = app_client.application_module
 
         def boom(*_args: object, **_kwargs: object) -> None:
             raise RuntimeError(LEAKY_MESSAGE)
 
-        monkeypatch.setattr(web_app.db_manager, "get_session", boom)
+        monkeypatch.setattr(runtime_module.db_manager, "get_session", boom)
 
         with caplog.at_level(logging.ERROR):
             response = app_client.get("/api/admin/reports")
@@ -58,10 +58,15 @@ class TestHandlerLeak:
         assert "secret_col" in caplog.text
 
     def test_no_handler_still_serialises_an_exception(self) -> None:
-        """A grep-level guard: `str(e)` in a response body must not come back."""
+        """Grep-level guard: ``str(e)`` in a response body must not come
+        back. Scans every FastAPI handler under ``src/web/routes/`` +
+        the ASGI app factory.
+        """
         from pathlib import Path
 
-        source = Path(__file__).resolve().parents[2] / "web_app.py"
-        text = source.read_text(encoding="utf-8")
-        assert '"error": str(e)' not in text
-        assert '"error": str(exc)' not in text
+        root = Path(__file__).resolve().parents[2]
+        scanned = [root / "app.py", *root.glob("src/web/routes/*.py")]
+        for source in scanned:
+            text = source.read_text(encoding="utf-8")
+            assert '"error": str(e)' not in text, source
+            assert '"error": str(exc)' not in text, source

@@ -29,7 +29,8 @@ async def unified_search(
     400 when ``q`` is shorter than 2 characters, matching Flask.
     """
     from src.services.airport_service import AirportService
-    from web_app import config, db_manager, get_aircraft_type_name
+    from src.web.helpers import get_aircraft_type_name
+    from src.web.runtime import config, db_manager
 
     query = q.strip()
     if not query or len(query) < 2:
@@ -108,7 +109,7 @@ async def search_suggestions() -> dict[str, Any]:
     DB queries when the config lists come up empty — matches Flask,
     which "skip[s] slow database fallback queries" too.
     """
-    from web_app import api_cache, config, db_manager
+    from src.web.runtime import api_cache, config, db_manager
 
     cache_key = "search_suggestions"
     cached_data, hit = api_cache.get(cache_key)
@@ -205,7 +206,9 @@ async def super_search_aircraft(
     filtered" branch, not the "false" branch.
     """
     from src.services.aircraft_service import AircraftService
-    from web_app import config, convert_utc_to_beijing, db_manager, transform_image_paths
+    from src.web.image_helpers import transform_image_paths
+    from src.web.runtime import config, db_manager
+    from src.web.time_helpers import convert_utc_to_beijing
 
     def _tri_bool(raw: str | None) -> bool | None:
         if raw is None:

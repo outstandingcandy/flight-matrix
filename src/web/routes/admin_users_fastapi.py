@@ -45,7 +45,7 @@ async def api_admin_list_users(
     """List users with pagination, plus optional ``search`` (email/name
     substring) and ``tier`` filters. Same query surface as
     ``web_app.py:3181``."""
-    from web_app import get_multi_user_services
+    from src.web.service_factory import get_multi_user_services
 
     us, _ss, _fs = get_multi_user_services()
 
@@ -84,7 +84,7 @@ async def api_admin_user_stats() -> dict[str, Any]:
     ``list_users(limit=10000)`` scan; a later optimisation, not
     stage 0's concern.
     """
-    from web_app import get_multi_user_services
+    from src.web.service_factory import get_multi_user_services
 
     us, _ss, _fs = get_multi_user_services()
 
@@ -111,7 +111,7 @@ async def api_admin_user_stats() -> dict[str, Any]:
 @router.post("/api/admin/users", name="api_admin_create_user")
 async def api_admin_create_user(data: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """Create a new user. Same as ``web_app.py:3253``."""
-    from web_app import get_multi_user_services
+    from src.web.service_factory import get_multi_user_services
 
     us, _ss, _fs = get_multi_user_services()
 
@@ -140,7 +140,7 @@ async def api_admin_create_user(data: dict[str, Any] = Body(...)) -> dict[str, A
 @router.get("/api/admin/users/{user_id}", name="api_admin_get_user")
 async def api_admin_get_user(user_id: int) -> dict[str, Any]:
     """Get a user's full profile + subscription. Same as ``web_app.py:3280``."""
-    from web_app import get_multi_user_services
+    from src.web.service_factory import get_multi_user_services
 
     us, _ss, _fs = get_multi_user_services()
     user = us.get_user_with_subscription(user_id)
@@ -161,7 +161,7 @@ async def api_admin_update_user(
     are treated as "reset to default", matching the Flask version's
     ``value != ""`` guard.
     """
-    from web_app import get_multi_user_services
+    from src.web.service_factory import get_multi_user_services
 
     us, ss, _fs = get_multi_user_services()
 
@@ -213,7 +213,7 @@ async def api_admin_update_user(
 @router.delete("/api/admin/users/{user_id}", name="api_admin_delete_user")
 async def api_admin_delete_user(user_id: int) -> dict[str, Any]:
     """Soft-delete a user. Same as ``web_app.py:3359`` (``hard_delete=False``)."""
-    from web_app import get_multi_user_services
+    from src.web.service_factory import get_multi_user_services
 
     us, _ss, _fs = get_multi_user_services()
     if us.delete_user(user_id, hard_delete=False):
@@ -226,7 +226,7 @@ async def api_admin_delete_user(user_id: int) -> dict[str, Any]:
 @router.post("/api/admin/users/{user_id}/api-key", name="api_admin_regenerate_api_key")
 async def api_admin_regenerate_api_key(user_id: int) -> dict[str, Any]:
     """Regenerate a user's API key. Same as ``web_app.py:3375``."""
-    from web_app import get_multi_user_services
+    from src.web.service_factory import get_multi_user_services
 
     us, _ss, _fs = get_multi_user_services()
     new_key = us.regenerate_api_key(user_id)

@@ -1,11 +1,10 @@
 # Dockerfile for the flight-matrix FastAPI web app.
 #
 # Serves the FastAPI application defined in ``app.py`` under gunicorn
-# using the uvicorn worker class. The Flask entry (``wsgi.py``) has
-# been deleted — ``web_app.py`` is now a helper-only module retained
-# for the runtime-state globals ``db_manager`` / ``config`` /
-# ``api_cache`` that FastAPI's lifespan populates. Rollback to Flask
-# now requires the ``pre-fastapi-2026-08-24`` git tag, not a CMD flip.
+# using the uvicorn worker class. Runtime state (``db_manager`` /
+# ``config`` / ``api_cache``) lives in ``src/web/runtime.py`` and gets
+# populated by the FastAPI lifespan handler at startup. Rollback to
+# Flask requires the ``pre-fastapi-2026-08-24`` git tag.
 #
 # Multi-stage so the final image doesn't carry build-essential or the
 # uv cache; structure follows Dockerfile.scraper's builder/runtime split.
@@ -47,7 +46,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-COPY --chown=webapp:webapp app.py asgi.py web_app.py ./
+COPY --chown=webapp:webapp app.py asgi.py ./
 COPY --chown=webapp:webapp src/ ./src/
 COPY --chown=webapp:webapp web_templates/ ./web_templates/
 COPY --chown=webapp:webapp web_static/ ./web_static/
@@ -72,7 +71,7 @@ EXPOSE 8000
 #
 #   - asgi:app — asgi.py exports the FastAPI ``app`` from app.py. The
 #     FastAPI startup lives inside the app's ASGI lifespan handler
-#     (populates db_manager / config via web_app.init_app()), so no
+#     (populates db_manager / config via src.web.runtime.init_app()), so no
 #     explicit init call is needed here.
 #   - --timeout 300 — aircraft analysis calls an LLM inline and can run
 #     for minutes; gunicorn's 30s default would kill the worker

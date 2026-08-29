@@ -29,7 +29,7 @@
 # Not started by this script (by design — they have different cadences):
 #   - Report service (src/report_main.py)     — run as a cron job or from
 #                                                Lambda, not continuously
-#   - The Flask web app                       — use `uv run python web_app.py`
+#   - The FastAPI web app                    — use `uv run uvicorn asgi:app --reload`
 #                                                directly, or `./deploy.sh webapp`
 #                                                for Lambda
 #

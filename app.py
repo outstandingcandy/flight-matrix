@@ -1,23 +1,16 @@
-"""FastAPI application factory — the successor to :mod:`web_app`.
+"""FastAPI application factory.
 
-Migration status (feat/fastapi-migration): this module owns the FastAPI
-runtime. Routes are being moved off ``web_app.py`` (Flask) one blueprint at
-a time. During the migration both entries are runnable in parallel — the
-FastAPI process handles the routes it has taken over, the Flask process
-handles everything else. Once every route is migrated ``web_app.py`` and
-the Flask/asgiref/flask-cors dependencies come out in one commit.
+Owns the FastAPI runtime for the whole web app — the Flask entry
+(``web_app.py`` + ``wsgi.py``) is gone. Runtime state lives in
+:mod:`src.web.runtime`; the ASGI ``lifespan`` handler here calls
+``runtime.init_app()`` at startup so ``db_manager`` and ``config``
+are ready before the first request.
 
-The order the migration follows lives in the plan file
-(``/Users/panda/.claude/plans/ios-app-lucky-sonnet.md``, stage 0). Pilot
-is ``src.web.routes.ingest_fastapi`` — one POST endpoint that reuses the
-existing Pydantic models from the Flask blueprint.
-
-Startup lives in the ASGI ``lifespan`` handler rather than the module top
-level: uvicorn / Mangum both prefer that, and it removes the two-copies
-trap ``web_app.init_app()`` had to work around (``python web_app.py``
-running the module as ``__main__`` while blueprints ``import web_app``).
-The initialised objects hang off ``app.state``; endpoint code reads them
-through ``request.app.state.<name>`` or a small dependency helper.
+Routes are registered from small per-domain modules under
+``src/web/routes/*_fastapi.py``; each one is a thin
+:class:`APIRouter` that reads shared state from :mod:`src.web.runtime`
+and image / index / service helpers from the sibling modules under
+:mod:`src.web`.
 """
 
 from __future__ import annotations
@@ -55,9 +48,8 @@ logger = logging.getLogger("app")
 def _mask_database_url(url: str) -> str:
     """Elide the password from a SQLAlchemy URL for log output.
 
-    Copy of ``web_app.mask_database_url`` narrowed to the shape actually
-    logged here. Kept local so this module doesn't import from ``web_app``
-    (which owns the Flask stack).
+    Local copy narrowed to the shape actually logged here. The
+    canonical version lives in ``src.utils.database.mask_database_url``.
     """
     if "://" not in url or "@" not in url:
         return url
@@ -73,16 +65,13 @@ def _mask_database_url(url: str) -> str:
 async def lifespan(app: FastAPI):
     """Populate ``app.state`` with the config + DatabaseManager on startup.
 
-    Additionally runs ``web_app.init_app()`` so the Flask module's global
-    ``db_manager`` / ``config`` are filled too. Migrated FastAPI handlers
-    delegate to helpers still defined in ``web_app`` during stage 0 (see
-    ``src.web.routes.aircraft_fastapi``), and those helpers read the
-    module globals rather than taking the manager as a parameter — so
-    both the FastAPI and Flask entries end up pointing at the *same*
-    ``DatabaseManager`` instance, not two.
+    Runs :func:`src.web.runtime.init_app` — the single writer of the
+    process-wide ``db_manager`` / ``config`` singletons every helper
+    reads from — and mirrors them onto ``app.state`` for handlers that
+    reach through ``request.app.state.db_manager``.
 
-    Neither closes the DB engine on shutdown today; SQLAlchemy handles
-    pool teardown at process exit and the Flask side never did more.
+    Nothing closes the DB engine on shutdown; SQLAlchemy handles pool
+    teardown at process exit.
     """
     try:
         # ``runtime.init_app()`` populates the process-wide ``db_manager``

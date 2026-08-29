@@ -41,7 +41,7 @@ def _user_or_404(email: str) -> tuple[Any, Any, Any, Any]:
     Factored out both to shrink the handlers and to keep the 404 body
     identical across them.
     """
-    from web_app import get_multi_user_services
+    from src.web.service_factory import get_multi_user_services
 
     us, ss, fs = get_multi_user_services()
     user = us.get_user_by_email(email)
@@ -123,7 +123,8 @@ async def api_user_update_settings(
 @router.get("/api/user/{email}/cooldowns", name="api_user_cooldowns")
 async def api_user_cooldowns(email: str) -> dict[str, Any]:
     """Recent per-aircraft report cooldown windows. Same as ``web_app.py:4930``."""
-    from web_app import _to_datetime, _to_iso, db_manager
+    from src.web.runtime import db_manager
+    from src.web.time_helpers import _to_datetime, _to_iso
 
     _us, _ss, _fs, user = _user_or_404(email)
 
