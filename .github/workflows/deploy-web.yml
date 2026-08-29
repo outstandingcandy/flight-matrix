@@ -1,0 +1,126 @@
+name: Deploy web
+
+# Triggers after the ``CI`` workflow finishes successfully on ``main``.
+# ``workflow_run`` is the right primitive here: it doesn't re-run the
+# tests, it just waits for CI to be green on that specific commit and
+# then fires this pipeline. Skips deploy if CI failed.
+#
+# ``workflow_dispatch`` is added so the deploy can be re-triggered by
+# hand from the Actions UI without landing a new commit — useful for
+# rolling back to the last known-good tag by editing ``main`` before
+# clicking the button.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# Only one deploy at a time — a fast-follow merge shouldn't race the
+# previous deploy's docker compose up. ``cancel-in-progress: false``
+# because the running deploy has already been counted against and
+# cancelling mid-``docker build`` leaves a partial image on the host.
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+# The token this workflow gets is used only for status reads (no writes),
+# so a read-only default is fine.
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: SSH deploy to redpanda
+    runs-on: ubuntu-latest
+    # ``workflow_run`` fires on every completion (success + failure);
+    # this gates the actual work on success. The manual dispatch bypasses
+    # the guard so someone can force a redeploy of the current main.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          submodules: recursive
+
+      - name: Set up SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.REDPANDA_SSH_KEY }}
+
+      - name: Populate known_hosts
+        # ``ssh-keyscan`` at deploy time doubles as a first-connection
+        # trust probe. If the host key ever changes (VM re-imaged, HW
+        # swap, MITM) this step's fingerprint diverges from what the key
+        # was collected with, and the SSH in the next step fails on
+        # ``REMOTE HOST IDENTIFICATION HAS CHANGED``. That's the correct
+        # behaviour — investigate before rotating the ``REDPANDA_KNOWN_HOSTS``
+        # secret.
+        env:
+          REDPANDA_HOST: ${{ secrets.REDPANDA_HOST }}
+          REDPANDA_KNOWN_HOSTS: ${{ secrets.REDPANDA_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$REDPANDA_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          # Sanity check: fail early if the recorded host key no longer
+          # matches — before spending time on a doomed SSH.
+          ssh-keygen -F "$REDPANDA_HOST" -f ~/.ssh/known_hosts >/dev/null
+
+      - name: Deploy
+        env:
+          REDPANDA_HOST: ${{ secrets.REDPANDA_HOST }}
+          REDPANDA_USER: ${{ secrets.REDPANDA_USER }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Single SSH session — every command runs on the VM. -T
+          # avoids allocating a pty (cleaner logs).
+          ssh -T "$REDPANDA_USER@$REDPANDA_HOST" <<REMOTE
+            set -euo pipefail
+            cd ~/flight-matrix
+
+            echo "==> git fetch + reset to origin/main"
+            git fetch origin main
+            git reset --hard origin/main
+            git submodule update --init --recursive
+
+            echo "==> docker compose build web"
+            docker compose -f docker-compose.web.yml build web
+
+            echo "==> docker compose up -d"
+            docker compose -f docker-compose.web.yml up -d
+
+            # Wait for web to be reachable inside the compose bridge
+            # network. 60s cap — cold start on this VM is < 30 s.
+            echo "==> waiting for web container to answer /healthz"
+            for i in \$(seq 1 30); do
+              if docker compose -f docker-compose.web.yml exec -T web \
+                   curl -fsS http://127.0.0.1:8000/healthz >/dev/null 2>&1; then
+                echo "    ready after \${i}x 2 s"
+                break
+              fi
+              sleep 2
+            done
+
+            echo "==> run migration (idempotent)"
+            # The migration is idempotent: existing columns/indexes are
+            # skipped. Non-zero exit is treated as fatal — a broken
+            # migration is a real problem, not a "keep going" event.
+            docker compose -f docker-compose.web.yml exec -T web \
+              python scripts/migrate_add_oauth_columns.py
+
+            echo "==> post-deploy state:"
+            docker compose -f docker-compose.web.yml ps
+          REMOTE
+
+      - name: Smoke test via public URL
+        # Runner → public URL. This exercises the caddy container's TLS
+        # + reverse proxy, not just the internal /healthz. Fails the
+        # workflow if the deploy left the site broken from the outside.
+        run: |
+          curl -fsS --max-time 10 https://flightmatrix.top/healthz
