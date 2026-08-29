@@ -23,20 +23,12 @@ dependencies = [
     "pyyaml>=6.0.1",
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",
-    # Legacy Flask deps. web_app.py's Flask routes are gone but
-    # ``src/auth/decorators.py`` + ``src/web/auth_shim.py`` +
-    # ``src/web/errors.py`` + ``src/web/routes/{auth,ingest}.py``
-    # still contain Flask-based helpers used by tests and by the
-    # `AUTH_ENABLED` probe in ``auth_shim``. A cleanup pass removes
-    # them separately; keep the deps in the meantime.
-    "flask>=3.0.0",
-    "flask-cors>=4.0.0",
-    "werkzeug>=3.0.0",
     # FastAPI + ASGI runtime.
     "fastapi>=0.115.0",
     "starlette>=0.40.0",
     "uvicorn[standard]>=0.32.0",
     "itsdangerous>=2.2.0",       # SessionMiddleware cookie signing
+    "jinja2>=3.1.0",             # Jinja2Templates for HTML shell pages
     "python-multipart>=0.0.9",   # form / file upload parsing
     "httpx>=0.27.0",             # sync + async HTTP client (replaces `requests` for FastAPI-side code)
     "mangum>=0.17.0",            # ASGI adapter for Lambda; works with FastAPI natively
@@ -146,7 +138,7 @@ select = [
 ]
 ignore = [
     "E501",   # line-too-long — handled by formatter
-    "B008",   # function call in default argument (common Flask pattern)
+    "B008",   # function call in default argument (common FastAPI Depends pattern)
     "SIM108", # ternary-vs-if-else — cosmetic
     # The following are enabled locally but ignored in CI until the Phase
     # 4/5 refactors that fix them. Drop each as the cleanup lands.
@@ -229,8 +221,12 @@ module = [
     "src.search.aircraft_sync",
     "src.search.opensearch_client",
     "src.storage.*",
-    "src.web.errors",
-    "src.web.routes.ingest",
+    "src.web.helpers",
+    "src.web.image_helpers",
+    "src.web.runtime",
+    "src.web.search_index",
+    "src.web.service_factory",
+    "src.web.time_helpers",
 ]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
