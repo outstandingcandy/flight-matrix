@@ -88,49 +88,40 @@ def _reload_web_app() -> Any:
 
 @pytest.fixture
 def app_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Any]:
-    """Fresh Flask test client isolated from the developer's real `.env`.
+    """Test client for the FastAPI app.
 
-    Yields a `flask.testing.FlaskClient`. Every call gets a fresh app
-    instance and an in-memory SQLite database.
+    Historically this fixture returned Flask's ``test_client()``. The
+    Flask half of ``web_app.py`` no longer serves any traffic — every
+    route is on the FastAPI side (``app.py``) — so ``app_client`` now
+    aliases ``app_client_fastapi``. The name stays for source-level
+    compatibility across the ~180 tests that already say
+    ``def test_...(app_client): ...``.
+
+    Tests calling Flask-specific response methods (``.get_json()``,
+    ``.get_data(as_text=True)``) were migrated to the httpx-style
+    ``.json()`` / ``.text`` in the same commit that flipped the
+    fixture.
     """
-    test_config_path = _build_test_config_dir(tmp_path)
-
-    # Point the app at the test config. CONFIG_PATH is what init_app reads.
-    monkeypatch.setenv("CONFIG_PATH", str(test_config_path))
-    # Also set a bunch of things directly, since `.env`'s override=True
-    # trumps os.environ. We re-set after YAMLConfig loads the tmp .env.
-    monkeypatch.setenv("STAGE", "local")
-    monkeypatch.setenv("SKIP_AUTH", "true")
-    monkeypatch.setenv("LOCAL_DEV_EMAIL", "test@example.com")
-    monkeypatch.setenv("LOCAL_DEV_GROUPS", "admins,flight-schedules-viewers")
-
-    web_app = _reload_web_app()
-    web_app.init_app()
-
-    client = web_app.app.test_client()
-    client.application_module = web_app  # type: ignore[attr-defined]
-    yield client
+    yield from _make_fastapi_client(monkeypatch, tmp_path)
 
 
-@pytest.fixture
-def app_client_fastapi(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Any]:
-    """Fresh FastAPI test client for routes that have been ported off Flask.
+def _make_fastapi_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Any]:
+    """Build a FastAPI ``TestClient`` isolated from the developer env.
 
-    Coexists with :func:`app_client` while the migration is in flight.
-    Tests for routes already migrated (see the ``*_fastapi.py`` modules
-    under ``src/web/routes/``) should use this fixture; tests for routes
-    still living in ``web_app.py`` keep using ``app_client``. When
-    stage 0 finishes, ``app_client`` and its Flask reload path go
-    together and this fixture takes over the plain name.
+    Shared body for the ``app_client`` and ``app_client_fastapi``
+    fixtures — historically two clients, one Flask and one FastAPI;
+    now the same ``TestClient(fastapi_app)`` with the Flask
+    ``test_client()``-compatible surface (``.get`` / ``.post`` / ...
+    plus ``.json()``/`.text` for response bodies).
 
-    Yields a ``starlette.testclient.TestClient`` wrapped so tests can
-    still write ``client.application_module.db_manager`` — the FastAPI
-    lifespan calls ``web_app.init_app()`` so that attribute points at
-    the same DatabaseManager instance the Flask fixture would expose.
+    Test isolation:
 
-    Test isolation is the same as the Flask fixture: a tmp config dir
-    with its own tiny ``.env``, an in-memory SQLite database, cached
-    modules cleared so ``app.py`` re-imports cleanly.
+    - Fresh tmp config dir + tmp SQLite file per fixture invocation.
+    - ``web_app`` and ``src.web.*`` cleared from ``sys.modules`` so
+      ``create_app()`` sees the new env on re-import.
+    - ``client.application_module`` set to the re-imported ``web_app``
+      so tests reaching for ``client.application_module.db_manager``
+      to build ad-hoc tables keep working.
     """
     import importlib
     import sys
@@ -143,27 +134,38 @@ def app_client_fastapi(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Itera
     monkeypatch.setenv("LOCAL_DEV_EMAIL", "test@example.com")
     monkeypatch.setenv("LOCAL_DEV_GROUPS", "admins,flight-schedules-viewers")
 
-    # Drop cached copies so create_app() sees the new env. Both web_app
-    # (which the lifespan re-imports) and app.py itself need clearing.
+    # Wipe both ``src.web`` (the package) and its submodules. Wiping only
+    # the submodules leaves stale ``src.web.<submodule>`` attributes on
+    # the parent package object; ``from src.web import runtime`` then
+    # returns those cached attributes instead of importing the fresh
+    # submodule, and the next test sees a runtime whose ``db_manager`` is
+    # from a prior fixture — invisibly wrong until a handler crashes on
+    # ``None.get_session()``.
     for name in list(sys.modules):
-        if name == "web_app" or name == "app" or name.startswith("src.web."):
+        if name in ("web_app", "app", "src.web") or name.startswith("src.web."):
             del sys.modules[name]
 
     app_module = importlib.import_module("app")
 
     from starlette.testclient import TestClient
 
-    # `with TestClient(app) as client` triggers ASGI lifespan (which is
-    # what populates app.state.db_manager via web_app.init_app()).
-    # `pytest.fixture` doesn't accept a context manager directly, so we
-    # enter/exit manually and yield the live client.
     fastapi_app = app_module.create_app()
-    with TestClient(fastapi_app) as client:
-        # Legacy attribute — tests written for the Flask fixture reach
-        # for `client.application_module.db_manager` to build ad-hoc
-        # tables. Point it at the just-imported web_app the lifespan
-        # already initialised (same instance under fastapi_app.state).
+    # ``raise_server_exceptions=False`` so a handler crashing inside a
+    # route surfaces as a 500 the *test* sees, matching what the
+    # frontend would see in production. The default re-raises the
+    # exception through the assert — hides the global exception
+    # handler and breaks any "confirm we return a generic 500" test.
+    with TestClient(fastapi_app, raise_server_exceptions=False) as client:
         import web_app as web_app_module
 
         client.application_module = web_app_module  # type: ignore[attr-defined]
         yield client
+
+
+@pytest.fixture
+def app_client_fastapi(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Any]:
+    """FastAPI TestClient — historically distinct from :func:`app_client`,
+    now the same fixture. Kept under this name because ~40 tests
+    already say ``def test_...(app_client_fastapi): ...``; renaming
+    them isn't worth the churn."""
+    yield from _make_fastapi_client(monkeypatch, tmp_path)

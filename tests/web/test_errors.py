@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from src.web.errors import GENERIC_ERROR_MESSAGE, api_error
+from src.web.errors import GENERIC_ERROR_MESSAGE
 
 # Shaped like the psycopg2 / sqlite3 messages these handlers actually raise:
 # the driver embeds the failing statement, so `str(exc)` carries the schema.
@@ -23,34 +23,12 @@ LEAKY_MESSAGE = (
 )
 
 
-class TestApiError:
-    def test_body_carries_no_exception_detail(self, app_client: Any) -> None:
-        with app_client.application.test_request_context():
-            response, status = api_error(RuntimeError(LEAKY_MESSAGE), "Error doing the thing")
-
-        assert status == 500
-        body = response.get_json()
-        assert body == {"success": False, "error": GENERIC_ERROR_MESSAGE}
-        assert "secret_col" not in response.get_data(as_text=True)
-        assert "sk-live-1234" not in response.get_data(as_text=True)
-
-    def test_logs_the_context_and_a_traceback(
-        self, app_client: Any, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        with app_client.application.test_request_context(), caplog.at_level(logging.ERROR):
-            try:
-                raise RuntimeError(LEAKY_MESSAGE)
-            except RuntimeError as exc:
-                api_error(exc, "Error doing the thing")
-
-        assert "Error doing the thing" in caplog.text
-        assert "secret_col" in caplog.text, "the detail must survive in the log"
-        assert "Traceback (most recent call last)" in caplog.text
-
-    def test_status_is_overridable(self, app_client: Any) -> None:
-        with app_client.application.test_request_context():
-            _, status = api_error(ValueError("nope"), "Error validating", status=400)
-        assert status == 400
+# The TestApiError direct-call tests were removed alongside the Flask
+# routes. ``src.web.errors.api_error`` was Flask-only (uses jsonify +
+# a request context); FastAPI routes rely on the global
+# StarletteHTTPException handler in ``app.py`` for the same
+# "generic 500, detail only in the log" contract, and the E2E
+# ``TestHandlerLeak`` below covers that path.
 
 
 class TestHandlerLeak:
@@ -70,10 +48,10 @@ class TestHandlerLeak:
             response = app_client.get("/api/admin/reports")
 
         assert response.status_code == 500
-        body = response.get_data(as_text=True)
+        body = response.text
         assert "secret_col" not in body
         assert "aircraft_static_info" not in body
-        assert response.get_json()["error"] == GENERIC_ERROR_MESSAGE
+        assert response.json()["error"] == GENERIC_ERROR_MESSAGE
         assert "secret_col" in caplog.text
 
     def test_no_handler_still_serialises_an_exception(self) -> None:

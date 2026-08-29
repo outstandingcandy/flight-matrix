@@ -23,16 +23,16 @@ dependencies = [
     "pyyaml>=6.0.1",
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",
-    # Web — Flask side is being migrated to FastAPI (feat/fastapi-migration).
-    # Both stacks are kept in the dependency set through the migration so the
-    # legacy web_app.py can keep running alongside app.py (the new FastAPI
-    # entry) until every route has been moved. Once the cut-over ships the
-    # Flask/asgiref/flask-cors block below can be dropped in one commit.
+    # Legacy Flask deps. web_app.py's Flask routes are gone but
+    # ``src/auth/decorators.py`` + ``src/web/auth_shim.py`` +
+    # ``src/web/errors.py`` + ``src/web/routes/{auth,ingest}.py``
+    # still contain Flask-based helpers used by tests and by the
+    # `AUTH_ENABLED` probe in ``auth_shim``. A cleanup pass removes
+    # them separately; keep the deps in the meantime.
     "flask>=3.0.0",
     "flask-cors>=4.0.0",
     "werkzeug>=3.0.0",
-    "asgiref>=3.7.0",
-    # FastAPI + ASGI runtime for the migrated routes.
+    # FastAPI + ASGI runtime.
     "fastapi>=0.115.0",
     "starlette>=0.40.0",
     "uvicorn[standard]>=0.32.0",

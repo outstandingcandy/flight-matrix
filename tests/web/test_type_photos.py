@@ -88,7 +88,7 @@ def photos(app_client: Any) -> Any:
 
 
 def types_of(response: Any) -> dict[str, list[dict[str, Any]]]:
-    body = response.get_json()
+    body = response.json()
     assert body["success"] is True, body
     return body["types"]
 
@@ -102,7 +102,7 @@ class TestWhatIsReturned:
         assert len(result["A359"]) == 1
 
     def test_the_iata_code_resolves_to_the_photos_icao(self, photos: Any) -> None:
-        body = photos.get(f"{URL}?types=B738").get_json()
+        body = photos.get(f"{URL}?types=B738").json()
 
         assert body["airport_icao"] == "ZBAA"
 
@@ -155,11 +155,17 @@ class TestOrderingAndLimits:
         assert len(result["B738"]) == 2
         assert len(result["A359"]) == 1
 
-    def test_an_oversized_limit_is_clamped(self, photos: Any) -> None:
-        assert photos.get(f"{URL}?types=B738&limit=500").status_code == 200
+    def test_an_oversized_limit_is_rejected(self, photos: Any) -> None:
+        # FastAPI's Pydantic Query(..., le=MAX_TYPE_PHOTOS_PER_TYPE)
+        # rejects rather than silently clamping. 422 (Unprocessable
+        # Entity) is the standard "your input's out of range" status
+        # — the frontend can display the message without guessing.
+        assert photos.get(f"{URL}?types=B738&limit=500").status_code == 422
 
     def test_a_non_numeric_limit_is_a_bad_request(self, photos: Any) -> None:
-        assert photos.get(f"{URL}?types=B738&limit=lots").status_code == 400
+        # Same rationale — non-int limit hits Pydantic's type coercion
+        # and 422s before the handler runs.
+        assert photos.get(f"{URL}?types=B738&limit=lots").status_code == 422
 
 
 class TestBadRequests:

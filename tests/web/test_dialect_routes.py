@@ -116,10 +116,8 @@ def seeded_client(app_client: Any) -> Any:
 
 
 def _payload(response: Any, path: str) -> dict[str, Any]:
-    assert response.status_code == 200, (
-        f"{path} → {response.status_code}: {response.get_data(as_text=True)[:400]}"
-    )
-    body = response.get_json()
+    assert response.status_code == 200, f"{path} → {response.status_code}: {response.text[:400]}"
+    body = response.json()
     assert body["success"] is True, body
     return body
 
