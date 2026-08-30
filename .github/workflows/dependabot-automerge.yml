@@ -5,41 +5,45 @@ name: Dependabot auto-merge
 # are ignored — we don't want the workflow to auto-merge a PR opened
 # by a person just because it happens to touch a dep line.
 #
-# Rule: patch + minor bumps → auto-merge on CI-green.
-#       major bumps → post a comment tagging the maintainer, don't
-#       merge. Majors are usually breaking; a human should read the
-#       changelog before landing.
+# Rule: **every** Dependabot PR gets ``--auto --merge``. The CI matrix
+# (ruff / mypy / pytest 3.11 + 3.12 + 3.14 / gitleaks) is what decides
+# whether the bump lands — auto-merge waits on those checks and skips
+# the merge if any red.
+#
+# The earlier version of this workflow distinguished major vs
+# patch/minor and left majors for human review. That distinction is
+# only load-bearing when downstream consumers exist to be broken; on
+# this solo-maintainer repo, "CI green → merge" is enough. Anything
+# CI actually tests (GH Actions, Python deps, Docker base image with
+# the 3.14 matrix in place) gets validated. Anything CI can't cover
+# (deploy-only actions like ``webfactory/ssh-agent``) has a next-deploy
+# blast radius that's cheap to revert.
 
 on: pull_request
 
-# Auto-merge requires ``pull-requests: write``. The default token
-# permission is read-only across the org, so we scope up here.
+# Auto-merge requires ``pull-requests: write``. Default is read-only.
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
   dependabot:
-    name: Auto-merge patch/minor bumps
+    name: Auto-merge every Dependabot PR
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
     steps:
       - name: Fetch update metadata
-        # ``dependabot/fetch-metadata`` parses the PR title +
-        # dependabot commit trailer and exposes ``update-type``
-        # (version-update:semver-{patch,minor,major}), ``dependency-type``
-        # (direct:production, direct:development, indirect), and
-        # ``dependency-names``. That's how we tell "0.9 → 0.10 minor"
-        # from "3 → 7 major" without regexing the PR title ourselves.
+        # Even though the routing doesn't switch on update-type any
+        # more, keeping the fetch step gives us the ``dependency-names``
+        # + ``update-type`` variables for the log line — makes it
+        # trivial to eyeball "which action ran for which bump" from the
+        # Actions UI without opening the PR.
         id: meta
         uses: dependabot/fetch-metadata@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Auto-merge (patch or minor)
-        if: >
-          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
-          steps.meta.outputs.update-type == 'version-update:semver-minor'
+      - name: Enable auto-merge
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -47,15 +51,3 @@ jobs:
           echo "Enabling auto-merge for ${{ steps.meta.outputs.dependency-names }} \
             (${{ steps.meta.outputs.update-type }})"
           gh pr merge --auto --merge "$PR_URL"
-
-      - name: Flag major bumps for manual review
-        if: steps.meta.outputs.update-type == 'version-update:semver-major'
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr comment "$PR_URL" --body "**Major-version bump — needs human review.** \
-          ${{ steps.meta.outputs.dependency-names }} is going up a major version \
-          (\`${{ steps.meta.outputs.previous-version }}\` → \
-          \`${{ steps.meta.outputs.new-version }}\`). Auto-merge is intentionally \
-          skipped for majors; read the changelog before landing."
