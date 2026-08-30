@@ -14,9 +14,20 @@ name: Auto-update PR branches
 # ``behind`` state and each one needs a manual rebase to catch up.
 # Auto-update closes that loop.
 #
-# Dependabot PRs are covered too. Dependabot has its own rebase
-# mechanism which fires on a slower schedule; calling ``update-branch``
-# on a Dependabot PR just gets there first, which is fine.
+# ---- Why GitHub App instead of GITHUB_TOKEN ---------------------
+#
+# The default ``GITHUB_TOKEN`` GitHub Actions hands each workflow is
+# deliberately blocked from triggering downstream workflow runs — a
+# safety measure against workflow loops. So when this workflow used
+# GITHUB_TOKEN to push merge commits via ``update-branch``, the
+# commits *were* pushed but CI didn't re-run on them; PRs stayed
+# ``blocked`` waiting for checks that never fired.
+#
+# Solution: authenticate as a GitHub App instead. App-authored
+# pushes DO trigger downstream workflows, because Apps have their
+# own identity distinct from the workflow token. The
+# ``flight-matrix-ci-bot`` App (see ``scripts/setup-github-app.py``)
+# is scoped to just this repo with Contents/Pull-request write.
 #
 # Merge conflicts on ``update-branch`` return a 422; ``|| true``
 # swallows it — the conflict-y PR stays open, no auto-merge fires,
@@ -29,14 +40,12 @@ on:
   # main. Useful right after enabling this workflow the first time.
   workflow_dispatch:
 
-# ``update-branch`` pushes a merge commit onto the PR's head branch,
-# so ``contents: write`` is required — ``pull-requests: write`` alone
-# only lets us change PR metadata (labels, title, etc.) and isn't
-# enough to write to the branch. The first version of this workflow
-# used ``contents: read`` and 403'd on every PR.
+# The GitHub App token replaces the default token entirely for the
+# API call, so the workflow's own permissions barely matter — but
+# keep them minimal for defence in depth. ``contents: read`` is
+# enough to check out (which this workflow doesn't even do).
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 # Only one sweep at a time. If two merges land in quick succession
 # the first sweep might still be running; ``cancel-in-progress: true``
@@ -51,9 +60,24 @@ jobs:
     name: Fold main into every open PR
     runs-on: ubuntu-latest
     steps:
+      # Mint a short-lived (1 h) install token for the App. The
+      # ``permissions`` block picks a subset of what the App was
+      # granted at install time — least-privilege for this specific
+      # workflow. Owner/repositories default to the current repo.
+      - name: Get install token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Update open PRs
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # This is the App install token — pushes made with it are
+          # authored by the App and DO trigger downstream workflows.
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
