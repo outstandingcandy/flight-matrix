@@ -102,6 +102,17 @@ jobs:
             --ssh-key-expire-after=5m \
             --command='
               set -euo pipefail
+
+              # Self-heal: if the repo directory does not exist, clone
+              # it from origin. Fresh-VM or wiped-home paths land here.
+              # Public repo, so no auth needed for the clone itself.
+              if [ ! -d "$HOME/flight-matrix" ]; then
+                echo "==> ~/flight-matrix missing; cloning from origin"
+                git clone --recurse-submodules \
+                  https://github.com/outstandingcandy/flight-matrix.git \
+                  "$HOME/flight-matrix"
+              fi
+
               cd ~/flight-matrix
               echo "==> git fetch + reset to origin/main"
               git fetch origin main
