@@ -1,0 +1,73 @@
+name: Auto-update PR branches
+
+# Fires every time main advances (which is: every merge). Iterates
+# every open PR and asks GitHub to fold the new ``main`` into it via
+# the ``PUT /repos/{owner}/{repo}/pulls/{n}/update-branch`` API. That
+# API creates a merge commit on the PR branch (not a rebase) —
+# equivalent effect for branch-protection purposes: the PR is no
+# longer ``behind`` main and its auto-merge can fire once CI stays
+# green on the merged-in state.
+#
+# Why this workflow exists at all: branch protection on ``main`` is
+# ``strict: true`` (branch must be up-to-date before merge). Without
+# auto-update, every merge to main pushes all *other* open PRs into
+# ``behind`` state and each one needs a manual rebase to catch up.
+# Auto-update closes that loop.
+#
+# Dependabot PRs are covered too. Dependabot has its own rebase
+# mechanism which fires on a slower schedule; calling ``update-branch``
+# on a Dependabot PR just gets there first, which is fine.
+#
+# Merge conflicts on ``update-branch`` return a 422; ``|| true``
+# swallows it — the conflict-y PR stays open, no auto-merge fires,
+# a human handles it.
+
+on:
+  push:
+    branches: [main]
+  # Manual trigger so you can force-run a sweep without pushing to
+  # main. Useful right after enabling this workflow the first time.
+  workflow_dispatch:
+
+# ``update-branch`` pushes a merge commit onto the PR's head branch,
+# so ``contents: write`` is required — ``pull-requests: write`` alone
+# only lets us change PR metadata (labels, title, etc.) and isn't
+# enough to write to the branch. The first version of this workflow
+# used ``contents: read`` and 403'd on every PR.
+permissions:
+  contents: write
+  pull-requests: write
+
+# Only one sweep at a time. If two merges land in quick succession
+# the first sweep might still be running; ``cancel-in-progress: true``
+# drops the earlier one since the newer merge already covers its
+# scope.
+concurrency:
+  group: auto-update-pr
+  cancel-in-progress: true
+
+jobs:
+  update:
+    name: Fold main into every open PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update open PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Paginate — a repo with dozens of open PRs would otherwise
+          # miss any beyond page 1.
+          prs=$(gh api "/repos/$REPO/pulls?state=open&per_page=100" --paginate --jq '.[].number')
+          if [ -z "$prs" ]; then
+            echo "No open PRs — nothing to do."
+            exit 0
+          fi
+          for pr in $prs; do
+            echo "==> updating PR #$pr"
+            # 422 = "already up to date" OR "merge conflict"; either
+            # way we don't want it to break the loop. Print the API's
+            # response for the log so a conflict is visible.
+            gh api --method PUT "/repos/$REPO/pulls/$pr/update-branch" 2>&1 || true
+          done

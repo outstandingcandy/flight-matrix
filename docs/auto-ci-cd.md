@@ -1,82 +1,139 @@
 # Auto CI/CD bootstrap
 
-Everything the ``chore/auto-ci-cd`` PR adds is dormant until the repo
-admin performs a one-time setup on GitHub. This doc is the runbook for
-that.
+Everything the ``chore/auto-ci-cd`` + ``chore/deploy-via-wif`` PRs added is
+now wired up to the actual GCP project. This doc is the reference for
+what's running and what still needs a human.
 
-## What lands with the PR (no admin action needed)
+## Pieces in place
 
 - ``.github/dependabot.yml`` — weekly PRs bumping Python / GitHub
-  Actions / Docker deps. Fires automatically once merged; no config
-  needed on the GitHub side.
-- ``.github/workflows/deploy-web.yml`` — deploy pipeline. Present but
-  will fail the first run until secrets are added (step 3 below).
+  Actions / Docker deps.
+- ``.github/workflows/dependabot-automerge.yml`` — reads each
+  Dependabot PR's update-type and calls ``gh pr merge --auto`` on it
+  (CI-green → merged).
+- ``.github/workflows/deploy-web.yml`` — triggered by ``workflow_run``
+  after ``CI`` completes on ``main``. Uses Workload Identity Federation
+  to auth against GCP as the ``flight-matrix-deploy`` service account,
+  then ``gcloud compute ssh`` into the redpanda VM to pull + build + up.
 - ``scripts/setup-branch-protection.sh`` — the one-shot script that
-  applies branch protection + auto-merge repo settings. Run it once
-  from a workstation with ``gh auth login`` done (step 1 below).
-- ``scripts/pr-open-and-automerge.sh`` — helper for opening a PR and
-  flagging it for auto-merge in a single command.
+  applied the branch-protection rules + repo-level auto-merge.
+- ``scripts/pr-open-and-automerge.sh`` — open a PR and flag it for
+  auto-merge in one step.
 
-## Step 1 — Branch protection + auto-merge (once)
+## Auth: no long-lived secrets, no SSH keys
+
+The deploy workflow authenticates to GCP via **Workload Identity
+Federation**: GitHub Actions mints a short-lived OIDC token for each
+run; Google's Workload Identity Pool verifies the token was minted by
+GitHub Actions on this specific repo and hands back a short-lived
+access token that impersonates the ``flight-matrix-deploy`` service
+account. No JSON keys, no pem files, no passwords.
+
+**Provider config on GCP** (already applied):
+
+- Pool: ``projects/699601590181/locations/global/workloadIdentityPools/github-actions``
+- Provider: ``.../providers/flight-matrix``
+- Attribute condition: ``assertion.repository == 'outstandingcandy/flight-matrix'``
+  — any other repo's OIDC token, even in this org, is rejected.
+- Service account:
+  ``flight-matrix-deploy@outstandingcandy.iam.gserviceaccount.com``
+  with ``roles/compute.instanceAdmin.v1`` on the project (enough for
+  ``gcloud compute ssh``) and ``roles/iam.serviceAccountUser`` on itself.
+
+**Repo config on GitHub** (already applied):
+
+Secrets (values redacted; ``gh secret list`` shows names + timestamps):
+
+| Name | Points at |
+|------|-----------|
+| ``WIF_PROVIDER`` | The pool provider resource name above. |
+| ``WIF_SERVICE_ACCOUNT`` | ``flight-matrix-deploy@outstandingcandy...`` |
+
+Variables (non-secret):
+
+| Name | Value |
+|------|-------|
+| ``GCP_PROJECT_ID`` | ``outstandingcandy`` |
+| ``GCP_VM_NAME`` | ``redpanda`` |
+| ``GCP_VM_ZONE`` | ``us-west1-b`` |
+
+## Everyday flow
 
 ```bash
-gh auth login                       # if not already logged in
-scripts/setup-branch-protection.sh  # applies the rules
+git checkout -b chore/foo
+# ... commit changes ...
+scripts/pr-open-and-automerge.sh "your title"
 ```
 
-Verify at `https://github.com/outstandingcandy/flight-matrix/settings/branches` —
-should show one rule for ``main`` with 5 required checks.
+CI green → PR auto-merges → deploy-web workflow fires → gcloud
+compute ssh → redpanda pulls the new commit + rebuilds + restarts.
+Zero manual steps.
 
-## Step 2 — GitHub secrets for deploy (once)
-
-Under `Settings → Secrets and variables → Actions`, add these four:
-
-| Name | Value | Notes |
-|------|-------|-------|
-| ``REDPANDA_SSH_KEY`` | Private key contents (whole file, including header + footer) | Read-only key that can pull + ``docker compose`` on the box; do NOT reuse your admin login key. |
-| ``REDPANDA_HOST`` | IP or hostname of the VM | e.g. ``136.109.216.214`` or ``redpanda.your-domain.com`` |
-| ``REDPANDA_USER`` | SSH username | Usually ``panda`` on the current setup. |
-| ``REDPANDA_KNOWN_HOSTS`` | Output of ``ssh-keyscan -H $REDPANDA_HOST`` | Multi-line value; paste as-is. |
-
-## Step 3 — Deploy dry-run
-
-- Merge one no-op PR to main (e.g. a doc typo) and watch
-  `Actions → Deploy web` — the SSH session logs should show
-  ``git fetch → build → up -d → migration → smoke``.
-- If it fails on ``ssh-keygen -F``, the ``REDPANDA_KNOWN_HOSTS`` value
-  is stale. Re-run ``ssh-keyscan -H <host>`` locally, paste the whole
-  output back into the secret.
-
-## Step 4 — Opening PRs after that
-
-Use ``scripts/pr-open-and-automerge.sh "your title"`` instead of ``gh pr
-create``. It opens the PR and immediately marks it for auto-merge —
-CI green → merged → deploy fires → new build lives on redpanda.
+Dependabot every Monday morning: opens PRs, CI runs, green ones
+auto-merge, deploy fires. Same flow.
 
 ## Rollback
 
-- **Rollback deploy only** (image is bad, code is fine):
-  from the ``Actions → Deploy web`` UI, click ``Run workflow``
-  after ``git reset --hard`` main locally to a prior commit and
-  ``git push --force``. (Force-push to main is blocked by protection,
-  so you'll have to open a "revert" PR.)
-- **Rollback code**: revert the offending commit with ``gh pr create``
-  from a revert branch, wait for CI, let auto-merge fire, deploy
-  workflow ships it.
-- **Emergency** (bypass CI): `Settings → Branches → Edit protection`
-  toggles off the required-checks rule for a minute. Turn it back on
-  after the emergency deploy.
+- **Bad deploy, code is fine (image / dep issue)**: from the
+  ``Actions → Deploy web`` UI, click ``Run workflow`` after resetting
+  ``main`` locally to a prior commit — but force-push to main is
+  blocked by protection, so:
+- **Bad deploy, code is bad**: revert the offending commit via a
+  ``git revert`` + ``scripts/pr-open-and-automerge.sh "revert: …"``.
+  CI green → auto-merge → deploy ships the revert.
+- **Emergency, bypass CI**: temporarily disable required-checks in
+  Settings → Branches → Edit protection, land the fix, turn it back
+  on.
 
-## What the deploy workflow does NOT do
+## Recreating the WIF setup from scratch
 
-- No blue/green — the ``docker compose up`` restarts the ``web``
-  service in-place, so there's a ~5-second window during which
-  requests may drop.
-- No image versioning — ``docker compose build`` produces
-  ``flight-matrix-web:latest`` every time. The previous build is
-  garbage-collected next time ``docker image prune`` runs. If you need
-  hard rollback to a specific image, tag it manually on the VM before
-  the next deploy:
+If the pool / provider / SA are ever deleted, here's the exact
+``gcloud`` sequence that built them:
+
+```bash
+gcloud services enable iam.googleapis.com iamcredentials.googleapis.com \
+    sts.googleapis.com --project=outstandingcandy
+
+gcloud iam workload-identity-pools create github-actions \
+    --location=global --display-name="GitHub Actions"
+
+gcloud iam workload-identity-pools providers create-oidc flight-matrix \
+    --location=global --workload-identity-pool=github-actions \
+    --display-name="flight-matrix repo" \
+    --issuer-uri="https://token.actions.githubusercontent.com" \
+    --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.actor=assertion.actor,attribute.ref=assertion.ref" \
+    --attribute-condition="assertion.repository == 'outstandingcandy/flight-matrix'"
+
+gcloud iam service-accounts create flight-matrix-deploy \
+    --display-name="Flight Matrix CI deploy"
+
+gcloud projects add-iam-policy-binding outstandingcandy \
+    --member="serviceAccount:flight-matrix-deploy@outstandingcandy.iam.gserviceaccount.com" \
+    --role="roles/compute.instanceAdmin.v1"
+
+gcloud iam service-accounts add-iam-policy-binding \
+    flight-matrix-deploy@outstandingcandy.iam.gserviceaccount.com \
+    --role="roles/iam.serviceAccountUser" \
+    --member="serviceAccount:flight-matrix-deploy@outstandingcandy.iam.gserviceaccount.com"
+
+gcloud iam service-accounts add-iam-policy-binding \
+    flight-matrix-deploy@outstandingcandy.iam.gserviceaccount.com \
+    --role="roles/iam.workloadIdentityUser" \
+    --member="principalSet://iam.googleapis.com/projects/699601590181/locations/global/workloadIdentityPools/github-actions/attribute.repository/outstandingcandy/flight-matrix"
+```
+
+Then set the four GitHub-side values back (2 secrets + 3 variables)
+as shown above.
+
+## What this still doesn't do
+
+- **No blue/green**: ``docker compose up`` restarts ``web`` in-place;
+  ~5 s request drop per deploy.
+- **No image versioning**: every build produces ``flight-matrix-web:latest``;
+  the previous image is garbage-collected. If you need hard rollback
+  to a specific image, tag it manually on the VM before the next deploy:
   ```bash
   docker tag flight-matrix-web:latest flight-matrix-web:$(git rev-parse --short HEAD)
   ```
+- **No Slack / Feishu notifications**: workflow failure surfaces via
+  GitHub's default email.
