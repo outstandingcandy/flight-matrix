@@ -79,14 +79,14 @@ class FlightTracker {
             const startTime = document.getElementById('startTime').value;
             const endTime = document.getElementById('endTime').value;
 
-            let trackUrl = `/api/aircraft/tracks/${encodeURIComponent(registration)}?limit=2000`;
+            let trackUrl = `/api/v1/aircraft/tracks/${encodeURIComponent(registration)}?limit=2000`;
             if (startTime) {
                 trackUrl += `&start_time=${encodeURIComponent(startTime)}`;
             }
 
             const [trackResponse, detailsResponse] = await Promise.all([
                 fetch(trackUrl),
-                fetch(`/api/aircraft/${encodeURIComponent(registration)}/details`)
+                fetch(`/api/v1/aircraft/${encodeURIComponent(registration)}/details`)
             ]);
 
             const trackData = await trackResponse.json();

@@ -4,6 +4,12 @@ Stage 0 lift-and-shift. Same delegation pattern as the sibling modules
 — ``get_multi_user_services`` and the helper functions stay on
 ``web_app``, this file only owns the framework layer.
 
+Auth model: every route is gated by ``_require_self_or_admin`` — the
+authenticated caller must either be an admin OR own the ``{email}``
+being read/written. The Flask original had none of that; a public
+network could hit any user's filters. See ``_require_self_or_admin``
+below for the exact check.
+
 Ten endpoints across seven URL paths (some have GET/POST/PUT/DELETE
 variants):
 
@@ -25,12 +31,51 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Body, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from sqlalchemy import text
+
+from src.auth.dependencies import require_login
 
 logger = logging.getLogger("web.user")
 
-router = APIRouter(tags=["user"])
+
+async def _require_self_or_admin(
+    email: str,
+    user: dict[str, Any] = Depends(require_login),
+) -> dict[str, Any]:
+    """Gate every ``/api/v1/user/{email}/*`` route on self-or-admin.
+
+    Every handler in this file scopes to a single user identified by
+    the ``{email}`` path parameter. Two callers may legitimately hit
+    those handlers:
+
+    - the user themselves (their own email matches ``{email}``); or
+    - an admin (member of the ``admins`` group).
+
+    Any other authenticated caller gets a JSON 403. Unauthenticated
+    callers never make it here — ``require_login`` upstream converts
+    them into a 401 (or the browser-redirect equivalent) first.
+
+    Attach as a router-level dependency so the check applies uniformly;
+    every handler in this module already takes ``email`` as its first
+    path parameter, so FastAPI resolves it into the dependency without
+    per-handler wiring.
+    """
+    if user.get("role") == "admin" or "admins" in user.get("groups", []):
+        return user
+    if user.get("email") == email:
+        return user
+    raise HTTPException(
+        status_code=403,
+        detail={"success": False, "error": "forbidden"},
+    )
+
+
+router = APIRouter(
+    prefix="/api/v1",
+    tags=["user"],
+    dependencies=[Depends(_require_self_or_admin)],
+)
 
 
 def _user_or_404(email: str) -> tuple[Any, Any, Any, Any]:
@@ -50,7 +95,7 @@ def _user_or_404(email: str) -> tuple[Any, Any, Any, Any]:
     return us, ss, fs, user
 
 
-@router.get("/api/user/{email}/profile", name="api_user_profile")
+@router.get("/user/{email}/profile", name="api_user_profile")
 async def api_user_profile(email: str) -> dict[str, Any]:
     """User profile + subscription features + active filter count.
 
@@ -68,14 +113,14 @@ async def api_user_profile(email: str) -> dict[str, Any]:
     }
 
 
-@router.get("/api/user/{email}/usage", name="api_user_usage")
+@router.get("/user/{email}/usage", name="api_user_usage")
 async def api_user_usage(email: str) -> dict[str, Any]:
     """User usage statistics. Same as ``web_app.py:4861``."""
     _us, ss, _fs, user = _user_or_404(email)
     return {"success": True, "usage": ss.get_usage_stats(user.id)}
 
 
-@router.put("/api/user/{email}/settings", name="api_user_update_settings")
+@router.put("/user/{email}/settings", name="api_user_update_settings")
 async def api_user_update_settings(
     email: str,
     data: dict[str, Any] = Body(...),
@@ -120,7 +165,7 @@ async def api_user_update_settings(
     )
 
 
-@router.get("/api/user/{email}/cooldowns", name="api_user_cooldowns")
+@router.get("/user/{email}/cooldowns", name="api_user_cooldowns")
 async def api_user_cooldowns(email: str) -> dict[str, Any]:
     """Recent per-aircraft report cooldown windows. Same as ``web_app.py:4930``."""
     from src.web.runtime import db_manager
@@ -164,7 +209,7 @@ async def api_user_cooldowns(email: str) -> dict[str, Any]:
         session.close()
 
 
-@router.get("/api/user/{email}/filters", name="api_user_list_filters")
+@router.get("/user/{email}/filters", name="api_user_list_filters")
 async def api_user_list_filters(
     email: str,
     active_only: str = Query("false", description="'true' filters to active-only"),
@@ -179,7 +224,7 @@ async def api_user_list_filters(
     return {"success": True, "filters": [f.to_dict() for f in filters]}
 
 
-@router.post("/api/user/{email}/filters", name="api_user_create_filter")
+@router.post("/user/{email}/filters", name="api_user_create_filter")
 async def api_user_create_filter(
     email: str,
     data: dict[str, Any] = Body(...),
@@ -226,7 +271,7 @@ async def api_user_create_filter(
     )
 
 
-@router.get("/api/user/{email}/filters/{filter_id}", name="api_user_get_filter")
+@router.get("/user/{email}/filters/{filter_id}", name="api_user_get_filter")
 async def api_user_get_filter(email: str, filter_id: int) -> dict[str, Any]:
     """Get one filter by ID. Same as ``web_app.py:5044``. 404 for a
     filter that isn't the current user's."""
@@ -237,7 +282,7 @@ async def api_user_get_filter(email: str, filter_id: int) -> dict[str, Any]:
     return {"success": True, "filter": user_filter.to_dict()}
 
 
-@router.put("/api/user/{email}/filters/{filter_id}", name="api_user_update_filter")
+@router.put("/user/{email}/filters/{filter_id}", name="api_user_update_filter")
 async def api_user_update_filter(
     email: str,
     filter_id: int,
@@ -264,7 +309,7 @@ async def api_user_update_filter(
     )
 
 
-@router.delete("/api/user/{email}/filters/{filter_id}", name="api_user_delete_filter")
+@router.delete("/user/{email}/filters/{filter_id}", name="api_user_delete_filter")
 async def api_user_delete_filter(email: str, filter_id: int) -> dict[str, Any]:
     """Delete a filter. Same as ``web_app.py:5099``."""
     _us, _ss, fs, user = _user_or_404(email)
@@ -278,7 +323,7 @@ async def api_user_delete_filter(email: str, filter_id: int) -> dict[str, Any]:
     )
 
 
-@router.post("/api/user/{email}/filters/test", name="api_user_test_filter")
+@router.post("/user/{email}/filters/test", name="api_user_test_filter")
 async def api_user_test_filter(
     email: str,
     data: dict[str, Any] = Body(...),

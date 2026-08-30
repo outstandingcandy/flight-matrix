@@ -34,8 +34,8 @@ Page({
     if (!quiet) this.setData({ loading: true, error: null });
     try {
       const [info, schedules] = await Promise.all([
-        apiFetch(`/api/airports/${this.data.airport}`),
-        apiFetch(`/api/flight-schedules?airport=${this.data.airport}&limit=100`),
+        apiFetch(`/api/v1/airports/${this.data.airport}`),
+        apiFetch(`/api/v1/flight-schedules?airport=${this.data.airport}&limit=100`),
       ]);
       this.setData({
         info: info.airport || info.data || info,

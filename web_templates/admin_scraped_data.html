@@ -583,7 +583,7 @@
         // ========== Xiaohongshu ==========
         async function loadXiaohongshuStats() {
             try {
-                const response = await fetch('/api/admin/scraped-data/xiaohongshu/stats');
+                const response = await fetch('/api/v1/admin/scraped-data/xiaohongshu/stats');
                 const data = await response.json();
                 if (data.success) {
                     document.getElementById('xhsNotesCount').textContent = data.notes_count?.toLocaleString() || '0';
@@ -614,7 +614,7 @@
                 if (author) params.append('author', author);
                 if (title) params.append('title', title);
 
-                const response = await fetch(`/api/admin/scraped-data/xiaohongshu/notes?${params}`);
+                const response = await fetch(`/api/v1/admin/scraped-data/xiaohongshu/notes?${params}`);
                 const data = await response.json();
 
                 xhsCurrentTotal = data.total || 0;
@@ -671,7 +671,7 @@
         // ========== FR24 ==========
         async function loadFR24Stats() {
             try {
-                const response = await fetch('/api/admin/scraped-data/fr24/stats');
+                const response = await fetch('/api/v1/admin/scraped-data/fr24/stats');
                 const data = await response.json();
                 if (data.success) {
                     document.getElementById('fr24FlightsCount').textContent = data.flights_count?.toLocaleString() || '0';
@@ -699,7 +699,7 @@
                 if (reg) params.append('registration', reg);
                 if (flightType) params.append('flight_type', flightType);
 
-                const response = await fetch(`/api/admin/scraped-data/fr24/flights?${params}`);
+                const response = await fetch(`/api/v1/admin/scraped-data/fr24/flights?${params}`);
                 const data = await response.json();
 
                 if (data.success && data.flights.length > 0) {
@@ -732,7 +732,7 @@
         // ========== JetPhotos ==========
         async function loadJetPhotosStats() {
             try {
-                const response = await fetch('/api/admin/scraped-data/jetphotos/stats');
+                const response = await fetch('/api/v1/admin/scraped-data/jetphotos/stats');
                 const data = await response.json();
                 if (data.success) {
                     document.getElementById('jpImagesCount').textContent = data.images_count?.toLocaleString() || '0';
@@ -760,7 +760,7 @@
                 if (photographer) params.append('photographer', photographer);
                 if (airport) params.append('airport', airport);
 
-                const response = await fetch(`/api/admin/scraped-data/jetphotos/images?${params}`);
+                const response = await fetch(`/api/v1/admin/scraped-data/jetphotos/images?${params}`);
                 const data = await response.json();
 
                 if (data.success && data.images.length > 0) {
@@ -797,7 +797,7 @@
             modal.show();
 
             try {
-                const response = await fetch(`/api/admin/scraped-data/xiaohongshu/notes/${noteId}`);
+                const response = await fetch(`/api/v1/admin/scraped-data/xiaohongshu/notes/${noteId}`);
                 const data = await response.json();
                 if (data.success) {
                     document.getElementById('xhsNoteDetailTitle').textContent = data.note.title || '笔记详情';

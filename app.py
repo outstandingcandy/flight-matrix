@@ -32,6 +32,7 @@ from src.web.routes.admin_ops_fastapi import import_router as admin_import_route
 from src.web.routes.admin_ops_fastapi import scraper_router as admin_scraper_router
 from src.web.routes.admin_reports_scraped_fastapi import router as admin_reports_scraped_router
 from src.web.routes.admin_users_fastapi import router as admin_users_router
+from src.web.routes.aircraft_fastapi import api_router as aircraft_api_router
 from src.web.routes.aircraft_fastapi import router as aircraft_router
 from src.web.routes.airports_fastapi import router as airports_router
 from src.web.routes.auth_fastapi import router as auth_router
@@ -140,6 +141,7 @@ def create_app() -> FastAPI:
     # Routers ---
     app.include_router(auth_router)
     app.include_router(aircraft_router)
+    app.include_router(aircraft_api_router)
     app.include_router(airports_router)
     app.include_router(search_router)
     app.include_router(flight_schedules_router)

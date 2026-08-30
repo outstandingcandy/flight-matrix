@@ -79,9 +79,9 @@ enum ProviderToken {
 extension APIClient {
   func exchange(_ token: ProviderToken) async throws -> (apiKey: String, user: User) {
     let (path, body): (String, Encodable) = switch token {
-      case .apple(let t):  ("/api/auth/apple/native",  ["identity_token": t])
-      case .google(let t): ("/api/auth/google/native", ["id_token": t])
-      case .wechat(let c): ("/api/auth/wechat/login",  ["code": c, "platform": "app"])
+      case .apple(let t):  ("/api/v1/auth/apple/native",  ["identity_token": t])
+      case .google(let t): ("/api/v1/auth/google/native", ["id_token": t])
+      case .wechat(let c): ("/api/v1/auth/wechat/login",  ["code": c, "platform": "app"])
     }
     let res: AuthResponse = try await post(path, body: body)
     return (res.apiKey, res.user)

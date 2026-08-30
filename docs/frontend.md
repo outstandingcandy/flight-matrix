@@ -82,7 +82,7 @@ Contributions to knock these off are welcome — each one is a small,
 well-scoped PR.
 
 `admin_aircraft.html` is marked *orphaned* because no route renders it: its
-paginated list over `/api/admin/aircraft` now lives in
+paginated list over `/api/v1/admin/aircraft` now lives in
 `admin_aircraft_query.html`, which opens on the list and switches to the
 per-registration detail when a row is picked. Extract that one instead; this
 file is a leftover copy pending deletion.

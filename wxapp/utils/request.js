@@ -38,7 +38,7 @@ function _buildHeader(apiKey, extra) {
 /**
  * Make an authenticated API call.
  *
- * @param {string} path - `/api/...` — combined with API_BASE.
+ * @param {string} path - `/api/v1/...` — combined with API_BASE.
  * @param {object} opts
  * @param {"GET"|"POST"|"PUT"|"DELETE"} [opts.method="GET"]
  * @param {object} [opts.data] - request body (POST/PUT) or query string (GET)

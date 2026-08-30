@@ -22,7 +22,7 @@ Page({
   async loadFilters() {
     try {
       const filters = await apiFetch(
-        `/api/flight-schedules/filter-options?airport=${this.data.airport}`
+        `/api/v1/flight-schedules/filter-options?airport=${this.data.airport}`
       );
       this.setData({ filters });
     } catch (err) {
@@ -39,7 +39,7 @@ Page({
         limit: "200",
       });
       if (this.data.flightType) params.append("flight_type", this.data.flightType);
-      const body = await apiFetch(`/api/flight-schedules?${params.toString()}`);
+      const body = await apiFetch(`/api/v1/flight-schedules?${params.toString()}`);
       this.setData({
         schedules: body.schedules || [],
         loading: false,

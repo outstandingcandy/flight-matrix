@@ -19,7 +19,7 @@ per-user api_key stored in `wx.setStorageSync`.
 ## Login flow
 
 1. `wx.login()` → one-time code from WeChat.
-2. `wx.request` POST to `/api/auth/wechat/login`:
+2. `wx.request` POST to `/api/v1/auth/wechat/login`:
    `{code, platform: "mp"}` → `{api_key, user}`.
 3. `wx.setStorageSync("api_key", ...)` for the session.
 4. `utils/request.js` wraps every subsequent `wx.request` to add
@@ -56,7 +56,7 @@ The backend endpoints below have all been ported to FastAPI on
 - `GET /api/statistics`
 - `GET /api/aircraft/*`
 - `GET /api/airports/*`
-- `GET /api/flight-schedules`, `/api/flight-schedules/filter-options`
+- `GET /api/flight-schedules`, `/api/v1/flight-schedules/filter-options`
 - `GET /api/user/{email}/profile|usage|cooldowns|filters`
 - Filter CRUD: `POST/PUT/DELETE /api/user/{email}/filters[/{id}]`
 

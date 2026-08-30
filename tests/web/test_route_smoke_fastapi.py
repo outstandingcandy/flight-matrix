@@ -49,81 +49,81 @@ def _assert_not_5xx(response: Any, label: str) -> None:
 
 
 AIRCRAFT_GET = [
-    "/api/aircraft/search",
-    "/api/aircraft/search?q=test",
-    "/api/aircraft/tracks/N703PA",
-    "/api/aircraft/recent",
-    "/api/aircraft/types",
-    "/api/aircraft/types/A380",
-    "/api/aircraft/types/A380/instances",
-    "/api/aircraft/unique",
-    "/api/aircraft/static",
-    "/api/aircraft/static/N703PA",
-    "/api/aircraft/static/stats",
-    "/api/aircraft/N703PA/live",
-    "/api/aircraft/N703PA/details",
-    "/api/aircraft/N703PA/history",
-    "/api/aircraft/N703PA/flight-dates",
-    "/api/aircraft/N703PA/recent-flights",
-    "/api/aircraft/N703PA/images",
-    "/api/aircraft/N703PA/static-info",
+    "/api/v1/aircraft/search",
+    "/api/v1/aircraft/search?q=test",
+    "/api/v1/aircraft/tracks/N703PA",
+    "/api/v1/aircraft/recent",
+    "/api/v1/aircraft/types",
+    "/api/v1/aircraft/types/A380",
+    "/api/v1/aircraft/types/A380/instances",
+    "/api/v1/aircraft/unique",
+    "/api/v1/aircraft/static",
+    "/api/v1/aircraft/static/N703PA",
+    "/api/v1/aircraft/static/stats",
+    "/api/v1/aircraft/N703PA/live",
+    "/api/v1/aircraft/N703PA/details",
+    "/api/v1/aircraft/N703PA/history",
+    "/api/v1/aircraft/N703PA/flight-dates",
+    "/api/v1/aircraft/N703PA/recent-flights",
+    "/api/v1/aircraft/N703PA/images",
+    "/api/v1/aircraft/N703PA/static-info",
 ]
 
 AIRPORT_GET = [
-    "/api/statistics",
-    "/api/airports/search?q=JFK",
-    "/api/airports/JFK",
-    "/api/airports/JFK/nearby",
-    "/api/airports/popular",
+    "/api/v1/statistics",
+    "/api/v1/airports/search?q=JFK",
+    "/api/v1/airports/JFK",
+    "/api/v1/airports/JFK/nearby",
+    "/api/v1/airports/popular",
 ]
 
 SEARCH_GET = [
-    "/api/search/unified?q=test",
-    "/api/search/suggestions?q=test",
-    "/api/search/aircraft?q=test",
+    "/api/v1/search/unified?q=test",
+    "/api/v1/search/suggestions?q=test",
+    "/api/v1/search/aircraft?q=test",
 ]
 
 USER_GET = [
-    "/api/user/test@example.com/profile",
-    "/api/user/test@example.com/usage",
-    "/api/user/test@example.com/cooldowns",
-    "/api/user/test@example.com/filters",
+    "/api/v1/user/test@example.com/profile",
+    "/api/v1/user/test@example.com/usage",
+    "/api/v1/user/test@example.com/cooldowns",
+    "/api/v1/user/test@example.com/filters",
 ]
 
 FLIGHT_SCHEDULES_GET = [
-    "/api/flight-schedules",
-    "/api/flight-schedules/filter-options",
+    "/api/v1/flight-schedules",
+    "/api/v1/flight-schedules/filter-options",
 ]
 
 # All admin_* routes are router-level `Depends(require_admin)`-gated.
 # The fixture ships with a mock admin (LOCAL_DEV_GROUPS=admins,...) so
 # these come through under SKIP_AUTH.
 ADMIN_AIRCRAFT_GET = [
-    "/api/admin/aircraft",
-    "/api/admin/aircraft/stats",
-    "/api/admin/aircraft/types",
-    "/api/admin/aircraft/liveries",
-    "/api/admin/aircraft/registrations",
-    "/api/admin/aircraft-query/N703PA",
+    "/api/v1/admin/aircraft",
+    "/api/v1/admin/aircraft/stats",
+    "/api/v1/admin/aircraft/types",
+    "/api/v1/admin/aircraft/liveries",
+    "/api/v1/admin/aircraft/registrations",
+    "/api/v1/admin/aircraft-query/N703PA",
 ]
 
 ADMIN_REPORTS_SCRAPED_GET = [
-    "/api/admin/reports",
-    "/api/admin/reports/stats",
-    "/api/admin/reports/deadbeef/detail",
-    "/api/admin/scraped-data/xiaohongshu/stats",
-    "/api/admin/scraped-data/xiaohongshu/notes",
-    "/api/admin/scraped-data/xiaohongshu/notes/nonexistent-id",
-    "/api/admin/scraped-data/fr24/stats",
-    "/api/admin/scraped-data/fr24/flights",
-    "/api/admin/scraped-data/jetphotos/stats",
-    "/api/admin/scraped-data/jetphotos/images",
+    "/api/v1/admin/reports",
+    "/api/v1/admin/reports/stats",
+    "/api/v1/admin/reports/deadbeef/detail",
+    "/api/v1/admin/scraped-data/xiaohongshu/stats",
+    "/api/v1/admin/scraped-data/xiaohongshu/notes",
+    "/api/v1/admin/scraped-data/xiaohongshu/notes/nonexistent-id",
+    "/api/v1/admin/scraped-data/fr24/stats",
+    "/api/v1/admin/scraped-data/fr24/flights",
+    "/api/v1/admin/scraped-data/jetphotos/stats",
+    "/api/v1/admin/scraped-data/jetphotos/images",
 ]
 
 ADMIN_SCRAPER_GET = [
-    "/api/admin/scraper/stats",
-    "/api/admin/scraper/workers",
-    "/api/admin/scraper/recent-tasks",
+    "/api/v1/admin/scraper/stats",
+    "/api/v1/admin/scraper/workers",
+    "/api/v1/admin/scraper/recent-tasks",
 ]
 
 # HTML shells — 17 pages migrated in batch 7. Empty DB is enough because
@@ -202,9 +202,9 @@ def test_admin_scraper_endpoints_not_5xx(app_client_fastapi: Any, path: str) -> 
 
 
 ADMIN_ROUTER_SENTINELS = [
-    ("GET", "/api/admin/aircraft"),
-    ("GET", "/api/admin/reports"),
-    ("GET", "/api/admin/scraper/stats"),
+    ("GET", "/api/v1/admin/aircraft"),
+    ("GET", "/api/v1/admin/reports"),
+    ("GET", "/api/v1/admin/scraper/stats"),
 ]
 
 
@@ -230,7 +230,7 @@ def test_admin_routers_deny_non_admin(
 def test_aircraft_static_batch_empty_body(app_client_fastapi: Any) -> None:
     """POST /api/aircraft/static/batch with empty registrations list."""
     r = app_client_fastapi.post(
-        "/api/aircraft/static/batch",
+        "/api/v1/aircraft/static/batch",
         json={"registrations": []},
         follow_redirects=False,
     )
@@ -239,7 +239,7 @@ def test_aircraft_static_batch_empty_body(app_client_fastapi: Any) -> None:
 
 def test_aircraft_static_batch_with_value(app_client_fastapi: Any) -> None:
     r = app_client_fastapi.post(
-        "/api/aircraft/static/batch",
+        "/api/v1/aircraft/static/batch",
         json={"registrations": ["N703PA"]},
         follow_redirects=False,
     )

@@ -1556,7 +1556,7 @@
 
             async loadAirportInfo() {
                 try {
-                    const response = await fetch(`/api/airports/${this.airportCode}`);
+                    const response = await fetch(`/api/v1/airports/${this.airportCode}`);
                     const data = await response.json();
                     if (data.success && data.airport) {
                         this.airportLocation = {
@@ -1735,7 +1735,7 @@
 
                     // 使用 realtime-aircraft API 获取航班时刻表中航班的实时位置
                     const flightNumbersParam = Array.from(this.tableFlightNumbers).join(',');
-                    const url = `/api/airports/${this.airportCode}/realtime-aircraft?flight_numbers=${encodeURIComponent(flightNumbersParam)}`;
+                    const url = `/api/v1/airports/${this.airportCode}/realtime-aircraft?flight_numbers=${encodeURIComponent(flightNumbersParam)}`;
 
                     const response = await fetch(url);
                     const data = await response.json();
@@ -2147,7 +2147,7 @@
 
             async loadAircraftDetails(registration) {
                 try {
-                    const res = await fetch(`/api/aircraft/static/${registration}`);
+                    const res = await fetch(`/api/v1/aircraft/static/${registration}`);
                     const data = await res.json();
 
                     if (data.success && data.data) {
@@ -2216,7 +2216,7 @@
 
             async loadAircraftImages(registration) {
                 try {
-                    const res = await fetch(`/api/aircraft/${registration}/images`);
+                    const res = await fetch(`/api/v1/aircraft/${registration}/images`);
                     const data = await res.json();
 
                     if (data.success && data.images_with_metadata && data.images_with_metadata.length > 0) {
@@ -2348,7 +2348,7 @@
             async loadFlightTrackFromFR24(fr24Id, aircraft) {
                 try {
                     console.log('[Track] Loading FR24 trail for:', fr24Id);
-                    const res = await fetch(`/api/flight/trail/${fr24Id}`);
+                    const res = await fetch(`/api/v1/flight/trail/${fr24Id}`);
                     const data = await res.json();
                     console.log('[Track] FR24 API response:', data.success, 'tracks:', data.tracks?.length);
 
@@ -2676,7 +2676,7 @@
             async loadAirportInfo(airportCode) {
                 // Load airport details to display name in header
                 try {
-                    const response = await fetch(`/api/airports/${airportCode}`);
+                    const response = await fetch(`/api/v1/airports/${airportCode}`);
                     const data = await response.json();
                     if (data.success && data.airport) {
                         const airport = data.airport;
@@ -2807,7 +2807,7 @@
                 }
 
                 try {
-                    const response = await fetch(`/api/flight-schedules/filter-options?search=${encodeURIComponent(query)}`);
+                    const response = await fetch(`/api/v1/flight-schedules/filter-options?search=${encodeURIComponent(query)}`);
                     const data = await response.json();
 
                     if (data.success && data.airports && data.airports.length > 0) {
@@ -2901,7 +2901,7 @@
                     // Add cache-busting parameter
                     params.append('_t', Date.now());
 
-                    const url = `/api/flight-schedules/filter-options?${params}`;
+                    const url = `/api/v1/flight-schedules/filter-options?${params}`;
                     console.log('[loadFilterOptions] Fetching:', url);
                     const response = await fetch(url);
                     const data = await response.json();
@@ -3038,7 +3038,7 @@
                     params.append('limit', this.pageSize);
                     params.append('offset', this.currentPage * this.pageSize);
 
-                    const response = await fetch(`/api/flight-schedules?${params}`);
+                    const response = await fetch(`/api/v1/flight-schedules?${params}`);
                     const data = await response.json();
 
                     if (data.success) {
@@ -3400,7 +3400,7 @@
                 if (key === this.typePhotosKey) return;
 
                 try {
-                    const url = `/api/airports/${encodeURIComponent(airportCode)}/type-photos`
+                    const url = `/api/v1/airports/${encodeURIComponent(airportCode)}/type-photos`
                         + `?types=${encodeURIComponent(types.join(','))}`;
                     const response = await fetch(url);
                     const data = await response.json();
@@ -3536,8 +3536,8 @@
 
                 try {
                     const [staticRes, imagesRes] = await Promise.all([
-                        fetch(`/api/aircraft/static/${registration}`),
-                        fetch(`/api/aircraft/${registration}/images`)
+                        fetch(`/api/v1/aircraft/static/${registration}`),
+                        fetch(`/api/v1/aircraft/${registration}/images`)
                     ]);
 
                     const staticData = await staticRes.json();

@@ -48,7 +48,7 @@ class TestHandlerLeak:
         monkeypatch.setattr(runtime_module.db_manager, "get_session", boom)
 
         with caplog.at_level(logging.ERROR):
-            response = app_client.get("/api/admin/reports")
+            response = app_client.get("/api/v1/admin/reports")
 
         assert response.status_code == 500
         body = response.text

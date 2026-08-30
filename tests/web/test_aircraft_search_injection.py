@@ -1,4 +1,4 @@
-"""Tests for `/api/aircraft/search`, whose filters used to be interpolated.
+"""Tests for `/api/v1/aircraft/search`, whose filters used to be interpolated.
 
 The route has no `@login_required`, and it built its WHERE clause with
 f-strings straight from the query string:
@@ -66,8 +66,8 @@ def seeded_client(app_client: Any) -> Any:
 
 
 def _registrations(client: Any, query: str) -> list[str]:
-    """Return the registrations `/api/aircraft/search?<query>` hands back."""
-    response = client.get(f"/api/aircraft/search?{query}")
+    """Return the registrations `/api/v1/aircraft/search?<query>` hands back."""
+    response = client.get(f"/api/v1/aircraft/search?{query}")
     assert response.status_code == 200, response.text[:400]
     payload = response.json()
     assert payload["success"] is True

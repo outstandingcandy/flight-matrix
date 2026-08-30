@@ -19,7 +19,7 @@ Page({
     if (!this.data.query) return;
     this.setData({ loading: true, error: null });
     try {
-      const body = await apiFetch(`/api/aircraft/tracks/${this.data.query}`);
+      const body = await apiFetch(`/api/v1/aircraft/tracks/${this.data.query}`);
       const tracks = body.tracks || [];
       const points = tracks
         .filter((t) => t.latitude && t.longitude)

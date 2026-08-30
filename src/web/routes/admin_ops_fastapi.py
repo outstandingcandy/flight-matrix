@@ -35,11 +35,13 @@ logger = logging.getLogger("web.admin.ops")
 
 # Two routers because two gates. Session-based admin gate for the
 # scraper-monitoring endpoints, header-token gate for bulk import.
-scraper_router = APIRouter(tags=["admin-scraper"], dependencies=[Depends(require_admin)])
-import_router = APIRouter(tags=["admin-import"])
+scraper_router = APIRouter(
+    prefix="/api/v1", tags=["admin-scraper"], dependencies=[Depends(require_admin)]
+)
+import_router = APIRouter(prefix="/api/v1", tags=["admin-import"])
 
 
-@scraper_router.get("/api/admin/scraper/stats", name="api_admin_scraper_stats")
+@scraper_router.get("/admin/scraper/stats", name="api_admin_scraper_stats")
 async def api_admin_scraper_stats() -> dict[str, Any]:
     """Queue depth by status + active-worker count. Same as ``web_app.py:5756``."""
     from src.web.service_factory import get_scraper_db_session
@@ -105,7 +107,7 @@ async def api_admin_scraper_stats() -> dict[str, Any]:
         session.close()
 
 
-@scraper_router.get("/api/admin/scraper/workers", name="api_admin_scraper_workers")
+@scraper_router.get("/admin/scraper/workers", name="api_admin_scraper_workers")
 async def api_admin_scraper_workers() -> dict[str, Any]:
     """Recent-heartbeat worker list. Same as ``web_app.py:5825``."""
     from src.web.service_factory import get_scraper_db_session
@@ -147,7 +149,7 @@ async def api_admin_scraper_workers() -> dict[str, Any]:
         session.close()
 
 
-@scraper_router.get("/api/admin/scraper/recent-tasks", name="api_admin_scraper_recent_tasks")
+@scraper_router.get("/admin/scraper/recent-tasks", name="api_admin_scraper_recent_tasks")
 async def api_admin_scraper_recent_tasks(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=500),
@@ -251,7 +253,7 @@ async def verify_admin_secret(
 
 
 @import_router.post(
-    "/api/admin/import-data",
+    "/admin/import-data",
     name="import_data_api",
     dependencies=[Depends(verify_admin_secret)],
 )

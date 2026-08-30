@@ -29,10 +29,10 @@ from src.auth.dependencies import require_admin
 
 logger = logging.getLogger("web.admin.aircraft")
 
-router = APIRouter(tags=["admin-aircraft"], dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/api/v1", tags=["admin-aircraft"], dependencies=[Depends(require_admin)])
 
 
-@router.get("/api/admin/aircraft", name="api_admin_list_aircraft")
+@router.get("/admin/aircraft", name="api_admin_list_aircraft")
 async def api_admin_list_aircraft(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=500),
@@ -232,7 +232,7 @@ async def api_admin_list_aircraft(
         session.close()
 
 
-@router.get("/api/admin/aircraft/stats", name="api_admin_aircraft_stats")
+@router.get("/admin/aircraft/stats", name="api_admin_aircraft_stats")
 async def api_admin_aircraft_stats() -> dict[str, Any]:
     """Aircraft list header counts. Same as ``web_app.py:3638``."""
     from src.web.helpers import SPECIAL_ATTENTION_LEVELS
@@ -275,7 +275,7 @@ async def api_admin_aircraft_stats() -> dict[str, Any]:
         session.close()
 
 
-@router.get("/api/admin/aircraft/types", name="api_admin_aircraft_types")
+@router.get("/admin/aircraft/types", name="api_admin_aircraft_types")
 async def api_admin_aircraft_types(search: str = Query("")) -> dict[str, Any]:
     """Distinct aircraft types (autocomplete). Same as ``web_app.py:3695``."""
     from src.web.runtime import db_manager
@@ -333,7 +333,7 @@ async def api_admin_aircraft_types(search: str = Query("")) -> dict[str, Any]:
         session.close()
 
 
-@router.get("/api/admin/aircraft/liveries", name="api_admin_aircraft_liveries")
+@router.get("/admin/aircraft/liveries", name="api_admin_aircraft_liveries")
 async def api_admin_aircraft_liveries(search: str = Query("")) -> dict[str, Any]:
     """Distinct liveries (autocomplete). Same as ``web_app.py:3764``."""
     from src.web.runtime import db_manager
@@ -389,7 +389,7 @@ async def api_admin_aircraft_liveries(search: str = Query("")) -> dict[str, Any]
         session.close()
 
 
-@router.get("/api/admin/aircraft/registrations", name="api_admin_aircraft_registrations")
+@router.get("/admin/aircraft/registrations", name="api_admin_aircraft_registrations")
 async def api_admin_aircraft_registrations(search: str = Query("")) -> dict[str, Any]:
     """Registration autocomplete. Same as ``web_app.py:3830``."""
     from src.web.runtime import db_manager
@@ -453,7 +453,7 @@ async def api_admin_aircraft_registrations(search: str = Query("")) -> dict[str,
 
 
 @router.get(
-    "/api/admin/aircraft-query/{registration}",
+    "/admin/aircraft-query/{registration}",
     name="api_admin_aircraft_query",
 )
 async def api_admin_aircraft_query(registration: str) -> dict[str, Any]:
