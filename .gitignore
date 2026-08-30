@@ -38,9 +38,13 @@ htmlcov/
 *.egg-info/
 build/
 dist/
-# uv.lock is intentionally NOT tracked — this is a deployed app, not a
-# published library, and we don't want the lockfile churn in review.
-uv.lock
+# uv.lock IS tracked. Earlier the comment here read "intentionally not
+# tracked … lockfile churn in review", but that policy is incompatible
+# with the shape of the deploy: Dockerfile.web copies uv.lock into the
+# builder stage and runs ``uv sync --frozen`` — no lockfile means the
+# image can't be built at all, and the deploy has been broken because
+# of it. Track the lockfile, accept the churn (usually driven by
+# Dependabot anyway).
 
 # =============================================================================
 # Database & logs
