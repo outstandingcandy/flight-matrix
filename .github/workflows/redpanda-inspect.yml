@@ -1,0 +1,69 @@
+name: Inspect redpanda
+
+# One-shot diagnostic. workflow_dispatch only — nothing schedules this.
+# Runs a read-only inventory over the VM's deploy-adjacent state so we
+# know what to fix (env files, cert dirs, docker volumes, systemd units).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+      - env:
+          VM_NAME: ${{ vars.GCP_VM_NAME }}
+          VM_ZONE: ${{ vars.GCP_VM_ZONE }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          VM_USER: ${{ vars.GCP_VM_USER }}
+        run: |
+          gcloud compute ssh "${VM_USER}@${VM_NAME}" \
+            --zone="$VM_ZONE" --project="$PROJECT_ID" \
+            --ssh-key-expire-after=5m \
+            --command='
+              set +e
+              echo "===== host + user ====="
+              hostname; whoami; id
+              echo
+              echo "===== ~/flight-matrix ====="
+              ls -la ~/flight-matrix 2>&1 | head -20
+              echo
+              echo "===== ~/flight-matrix/.env ====="
+              [ -f ~/flight-matrix/.env ] && cat ~/flight-matrix/.env || echo "MISSING"
+              echo
+              echo "===== /etc/flight-matrix/ ====="
+              sudo ls -la /etc/flight-matrix/ 2>&1
+              echo "-- env.docker head (masked): --"
+              sudo grep -vE "SECRET|PASSWORD|KEY|TOKEN|JWKS" /etc/flight-matrix/env.docker 2>&1 | head -30
+              echo
+              echo "===== /etc/letsencrypt/live/ ====="
+              sudo ls -la /etc/letsencrypt/live/ 2>&1
+              echo
+              echo "===== docker volumes ====="
+              docker volume ls 2>&1
+              echo
+              echo "===== docker containers (all) ====="
+              docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>&1
+              echo
+              echo "===== systemd units for flight-matrix ====="
+              systemctl list-units --all --type=service 2>&1 | grep -i flight | head
+              echo
+              echo "===== listening ports (relevant) ====="
+              ss -tlnp 2>&1 | grep -E ":80\s|:443\s|:8443\s|:8000\s|:5433\s" | head
+              echo
+              echo "===== port 8443 external test ====="
+              curl -sk --max-time 3 -o /dev/null -w "https_8443=%{http_code}\n" https://127.0.0.1:8443/ 2>&1
+              curl -s --max-time 3 -o /dev/null -w "http_8000_web=%{http_code}\n" http://127.0.0.1:8000/ 2>&1
+              echo "===== END ====="
+            '
