@@ -29,10 +29,13 @@ on:
   # main. Useful right after enabling this workflow the first time.
   workflow_dispatch:
 
-# ``pull-requests: write`` is what ``update-branch`` needs.
-# ``contents: read`` is default; explicit.
+# ``update-branch`` pushes a merge commit onto the PR's head branch,
+# so ``contents: write`` is required — ``pull-requests: write`` alone
+# only lets us change PR metadata (labels, title, etc.) and isn't
+# enough to write to the branch. The first version of this workflow
+# used ``contents: read`` and 403'd on every PR.
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 
 # Only one sweep at a time. If two merges land in quick succession
