@@ -26,8 +26,8 @@ class AircraftDetailPage {
         try {
             // 并行加载静态信息和图片
             const [staticResponse, imagesResponse] = await Promise.all([
-                fetch(`/api/aircraft/static/${encodeURIComponent(this.registration)}`),
-                fetch(`/api/aircraft/${encodeURIComponent(this.registration)}/images`)
+                fetch(`/api/v1/aircraft/static/${encodeURIComponent(this.registration)}`),
+                fetch(`/api/v1/aircraft/${encodeURIComponent(this.registration)}/images`)
             ]);
 
             const staticData = await staticResponse.json();
@@ -70,7 +70,7 @@ class AircraftDetailPage {
         const empty = document.getElementById('recentFlightsEmpty');
 
         try {
-            const response = await fetch(`/api/aircraft/${encodeURIComponent(this.registration)}/recent-flights`);
+            const response = await fetch(`/api/v1/aircraft/${encodeURIComponent(this.registration)}/recent-flights`);
             const data = await response.json();
 
             if (loading) loading.classList.add('d-none');

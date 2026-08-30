@@ -25,7 +25,7 @@ from src.web.time_helpers import naive_utc_now
 
 logger = logging.getLogger("web.airports")
 
-router = APIRouter(tags=["airports"])
+router = APIRouter(prefix="/api/v1", tags=["airports"])
 
 
 MAX_TYPE_PHOTO_TYPES = 40
@@ -34,7 +34,7 @@ DEFAULT_TYPE_PHOTOS_PER_TYPE = 8
 TYPE_PHOTOS_CACHE_TTL = 1800
 
 
-@router.get("/api/statistics", name="get_statistics")
+@router.get("/statistics", name="get_statistics")
 async def get_statistics() -> dict[str, Any]:
     """Same as ``web_app.py:1098``. ``DatabaseManager.get_statistics()``
     already returns the shape the frontend expects."""
@@ -43,7 +43,7 @@ async def get_statistics() -> dict[str, Any]:
     return {"success": True, "statistics": db_manager.get_statistics()}
 
 
-@router.get("/api/airports/search", name="search_airports")
+@router.get("/airports/search", name="search_airports")
 async def search_airports(
     q: str = Query("", description="Search text (name / IATA / ICAO / city)"),
     limit: int = Query(20, ge=1, le=100),
@@ -71,7 +71,7 @@ async def search_airports(
         session.close()
 
 
-@router.get("/api/airports/popular", name="get_popular_airports")
+@router.get("/airports/popular", name="get_popular_airports")
 async def get_popular_airports(
     country: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
@@ -93,7 +93,7 @@ async def get_popular_airports(
         session.close()
 
 
-@router.get("/api/airports/{airport_code}", name="get_airport")
+@router.get("/airports/{airport_code}", name="get_airport")
 async def get_airport(airport_code: str) -> dict[str, Any]:
     """Same as ``web_app.py:1751``. 404 when no matching row."""
     from src.services.airport_service import AirportService
@@ -113,7 +113,7 @@ async def get_airport(airport_code: str) -> dict[str, Any]:
         session.close()
 
 
-@router.get("/api/airports/{airport_code}/nearby", name="get_aircraft_near_airport")
+@router.get("/airports/{airport_code}/nearby", name="get_aircraft_near_airport")
 async def get_aircraft_near_airport(
     airport_code: str,
     radius_km: float = Query(1000, gt=0, le=10000),
@@ -142,7 +142,7 @@ async def get_aircraft_near_airport(
 
 
 @router.get(
-    "/api/airports/{airport_code}/realtime-aircraft",
+    "/airports/{airport_code}/realtime-aircraft",
     name="get_realtime_aircraft_near_airport",
 )
 async def get_realtime_aircraft_near_airport(
@@ -381,7 +381,7 @@ async def get_realtime_aircraft_near_airport(
 
 
 @router.get(
-    "/api/airports/{airport_code}/type-photos",
+    "/airports/{airport_code}/type-photos",
     name="get_airport_type_photos",
 )
 async def get_airport_type_photos(

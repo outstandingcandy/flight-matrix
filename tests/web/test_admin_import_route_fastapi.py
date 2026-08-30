@@ -31,13 +31,13 @@ LEGACY_SECRET = "flight-matrix-admin-2026"
 
 class TestAdminSecretGate:
     def test_reject_missing_header(self, app_client_fastapi: Any) -> None:
-        r = app_client_fastapi.post("/api/admin/import-data", json={"airports": []})
+        r = app_client_fastapi.post("/api/v1/admin/import-data", json={"airports": []})
         assert r.status_code == 401
         assert r.json() == {"success": False, "error": "Unauthorized"}
 
     def test_reject_empty_header(self, app_client_fastapi: Any) -> None:
         r = app_client_fastapi.post(
-            "/api/admin/import-data",
+            "/api/v1/admin/import-data",
             headers={"X-Admin-Secret": ""},
             json={"airports": []},
         )
@@ -45,7 +45,7 @@ class TestAdminSecretGate:
 
     def test_reject_wrong_secret(self, app_client_fastapi: Any) -> None:
         r = app_client_fastapi.post(
-            "/api/admin/import-data",
+            "/api/v1/admin/import-data",
             headers={"X-Admin-Secret": "obviously-not-the-secret"},
             json={"airports": []},
         )
@@ -57,7 +57,7 @@ class TestAdminSecretGate:
         different auth gate than ``require_admin``.
         """
         # The fixture already provides an admin session.
-        r = app_client_fastapi.post("/api/admin/import-data", json={"airports": []})
+        r = app_client_fastapi.post("/api/v1/admin/import-data", json={"airports": []})
         assert r.status_code == 401
 
 
@@ -91,7 +91,7 @@ class TestImportHappyPath:
             ]
         }
         r_import = app_client_fastapi.post(
-            "/api/admin/import-data",
+            "/api/v1/admin/import-data",
             headers={"X-Admin-Secret": secret},
             json=payload,
         )
@@ -105,7 +105,7 @@ class TestImportHappyPath:
         }
 
         # And it survives — the read-side endpoint should now find it.
-        r_read = app_client_fastapi.get("/api/airports/ZZZ")
+        r_read = app_client_fastapi.get("/api/v1/airports/ZZZ")
         assert r_read.status_code == 200
 
     def test_unknown_table_is_skipped_not_errored(
@@ -116,7 +116,7 @@ class TestImportHappyPath:
         as errors.
         """
         r = app_client_fastapi.post(
-            "/api/admin/import-data",
+            "/api/v1/admin/import-data",
             headers={"X-Admin-Secret": secret},
             json={"not_a_real_table": [{"x": 1}]},
         )
@@ -129,7 +129,7 @@ class TestImportHappyPath:
 
     def test_empty_body_rejected(self, app_client_fastapi: Any, secret: str) -> None:
         r = app_client_fastapi.post(
-            "/api/admin/import-data",
+            "/api/v1/admin/import-data",
             headers={"X-Admin-Secret": secret},
             json={},
         )
@@ -163,7 +163,7 @@ class TestImportHappyPath:
             ]
         }
         r = app_client_fastapi.post(
-            "/api/admin/import-data",
+            "/api/v1/admin/import-data",
             headers={"X-Admin-Secret": secret},
             json=payload,
         )

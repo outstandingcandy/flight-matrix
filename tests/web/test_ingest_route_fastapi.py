@@ -46,7 +46,7 @@ A_FLIGHT = {
 
 def post(client: Any, body: Any, token: str | None = TOKEN) -> Any:
     headers = {"X-Ingest-Token": token} if token is not None else {}
-    return client.post("/api/ingest/flight-schedules", json=body, headers=headers)
+    return client.post("/api/v1/ingest/flight-schedules", json=body, headers=headers)
 
 
 @pytest.fixture

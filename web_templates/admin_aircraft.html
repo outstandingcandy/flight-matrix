@@ -344,7 +344,7 @@
 
         async function loadStats() {
             try {
-                const response = await fetch('/api/admin/aircraft/stats');
+                const response = await fetch('/api/v1/admin/aircraft/stats');
                 const data = await response.json();
                 if (data.success) {
                     document.getElementById('totalAircraft').textContent = data.stats.total.toLocaleString();
@@ -362,7 +362,7 @@
 
         async function searchRegistrations(query) {
             try {
-                const response = await fetch(`/api/admin/aircraft/registrations?search=${encodeURIComponent(query)}`);
+                const response = await fetch(`/api/v1/admin/aircraft/registrations?search=${encodeURIComponent(query)}`);
                 const data = await response.json();
                 if (data.success && data.registrations && data.registrations.length > 0) {
                     const dropdown = document.getElementById('searchSuggestions');
@@ -394,7 +394,7 @@
 
         async function searchTypes(query) {
             try {
-                const response = await fetch(`/api/admin/aircraft/types?search=${encodeURIComponent(query)}`);
+                const response = await fetch(`/api/v1/admin/aircraft/types?search=${encodeURIComponent(query)}`);
                 const data = await response.json();
                 if (data.success && data.types && data.types.length > 0) {
                     const dropdown = document.getElementById('typeSuggestions');
@@ -427,7 +427,7 @@
 
         async function searchLiveries(query) {
             try {
-                const response = await fetch(`/api/admin/aircraft/liveries?search=${encodeURIComponent(query)}`);
+                const response = await fetch(`/api/v1/admin/aircraft/liveries?search=${encodeURIComponent(query)}`);
                 const data = await response.json();
                 if (data.success && data.liveries && data.liveries.length > 0) {
                     const dropdown = document.getElementById('liverySuggestions');
@@ -474,7 +474,7 @@
                 if (livery) params.append('livery', livery);
                 if (category) params.append('category', category);
 
-                const response = await fetch(`/api/admin/aircraft?${params}`);
+                const response = await fetch(`/api/v1/admin/aircraft?${params}`);
                 const data = await response.json();
 
                 if (data.success) {

@@ -212,11 +212,11 @@ def _assert_timestamp(value: Any, field: str) -> None:
 
 
 class TestAircraftQuery:
-    """`/api/admin/aircraft-query/<registration>` — 18 timestamp conversions."""
+    """`/api/v1/admin/aircraft-query/<registration>` — 18 timestamp conversions."""
 
     @pytest.fixture
     def body(self, seeded_client: Any) -> dict[str, Any]:
-        path = f"/api/admin/aircraft-query/{REGISTRATION}"
+        path = f"/api/v1/admin/aircraft-query/{REGISTRATION}"
         return _payload(seeded_client.get(path), path)
 
     def test_static_info_timestamps(self, body: dict[str, Any]) -> None:
@@ -262,14 +262,14 @@ class TestAircraftQuery:
 
 
 class TestReportDetail:
-    """`/api/admin/reports/<hex>/detail` — timestamps also feed a Beijing conversion.
+    """`/api/v1/admin/reports/<hex>/detail` — timestamps also feed a Beijing conversion.
 
     `convert_utc_to_beijing(value.isoformat())` fails twice over on a string:
     the attribute lookup raises first, and the conversion needs a string anyway.
     """
 
     def test_multi_user_mode(self, seeded_client: Any) -> None:
-        path = f"/api/admin/reports/{HEX}/detail"
+        path = f"/api/v1/admin/reports/{HEX}/detail"
         body = _payload(seeded_client.get(path), path)
 
         cooldown = body["detail"]["cooldown"]
@@ -285,7 +285,7 @@ class TestReportDetail:
         monkeypatch.setattr(
             seeded_client.application_module.config, "is_multi_user_enabled", lambda: False
         )
-        path = f"/api/admin/reports/{HEX}/detail"
+        path = f"/api/v1/admin/reports/{HEX}/detail"
         body = _payload(seeded_client.get(path), path)
 
         cooldown = body["detail"]["cooldown"]
@@ -294,10 +294,10 @@ class TestReportDetail:
 
 
 class TestFR24Flights:
-    """`/api/admin/scraped-data/fr24/flights` — two conversions in the row loop."""
+    """`/api/v1/admin/scraped-data/fr24/flights` — two conversions in the row loop."""
 
     def test_flight_timestamps(self, seeded_client: Any) -> None:
-        path = "/api/admin/scraped-data/fr24/flights"
+        path = "/api/v1/admin/scraped-data/fr24/flights"
         body = _payload(seeded_client.get(path), path)
 
         assert len(body["flights"]) == 1
@@ -306,10 +306,10 @@ class TestFR24Flights:
 
 
 class TestScraperWorkers:
-    """`/api/admin/scraper/workers` — already string-safe; guards it staying so."""
+    """`/api/v1/admin/scraper/workers` — already string-safe; guards it staying so."""
 
     def test_heartbeat_timestamp(self, seeded_client: Any) -> None:
-        path = "/api/admin/scraper/workers"
+        path = "/api/v1/admin/scraper/workers"
         body = _payload(seeded_client.get(path), path)
 
         assert len(body["workers"]) == 1
@@ -328,7 +328,7 @@ class TestTimestampArithmetic:
     """
 
     def test_user_cooldowns_report_an_age(self, seeded_client: Any) -> None:
-        path = "/api/user/test@example.com/cooldowns"
+        path = "/api/v1/user/test@example.com/cooldowns"
         body = _payload(seeded_client.get(path), path)
 
         assert len(body["cooldowns"]) == 1
@@ -346,14 +346,14 @@ class TestRemainingRawSQLRoutes:
     """
 
     def test_aircraft_recent_flights(self, seeded_client: Any) -> None:
-        path = f"/api/aircraft/{REGISTRATION}/recent-flights"
+        path = f"/api/v1/aircraft/{REGISTRATION}/recent-flights"
         body = _payload(seeded_client.get(path), path)
 
         assert len(body["flights"]) == 1
         _assert_timestamp(body["flights"][0]["scheduled_time"], "scheduled_time")
 
     def test_aircraft_images(self, seeded_client: Any) -> None:
-        path = f"/api/aircraft/{REGISTRATION}/images"
+        path = f"/api/v1/aircraft/{REGISTRATION}/images"
         body = _payload(seeded_client.get(path), path)
 
         images = body["images_with_metadata"]
@@ -362,14 +362,14 @@ class TestRemainingRawSQLRoutes:
         assert images[0]["upload_date"] == "2026-01-02"
 
     def test_admin_aircraft_list(self, seeded_client: Any) -> None:
-        path = "/api/admin/aircraft"
+        path = "/api/v1/admin/aircraft"
         body = _payload(seeded_client.get(path), path)
 
         assert len(body["aircraft"]) == 1
         _assert_timestamp(body["aircraft"][0]["last_updated"], "last_updated")
 
     def test_admin_xhs_notes(self, seeded_client: Any) -> None:
-        path = "/api/admin/scraped-data/xiaohongshu/notes"
+        path = "/api/v1/admin/scraped-data/xiaohongshu/notes"
         body = _payload(seeded_client.get(path), path)
 
         assert len(body["notes"]) == 1
@@ -377,14 +377,14 @@ class TestRemainingRawSQLRoutes:
         _assert_timestamp(body["notes"][0]["updated_at"], "updated_at")
 
     def test_admin_xhs_note_detail(self, seeded_client: Any) -> None:
-        path = "/api/admin/scraped-data/xiaohongshu/notes/note1"
+        path = "/api/v1/admin/scraped-data/xiaohongshu/notes/note1"
         body = _payload(seeded_client.get(path), path)
 
         _assert_timestamp(body["note"]["scraped_at"], "scraped_at")
         _assert_timestamp(body["note"]["note_created_at"], "note_created_at")
 
     def test_admin_jetphotos_images(self, seeded_client: Any) -> None:
-        path = "/api/admin/scraped-data/jetphotos/images"
+        path = "/api/v1/admin/scraped-data/jetphotos/images"
         body = _payload(seeded_client.get(path), path)
 
         assert len(body["images"]) == 1
@@ -392,7 +392,7 @@ class TestRemainingRawSQLRoutes:
         _assert_timestamp(body["images"][0]["created_at"], "created_at")
 
     def test_admin_scraper_recent_tasks(self, seeded_client: Any) -> None:
-        path = "/api/admin/scraper/recent-tasks"
+        path = "/api/v1/admin/scraper/recent-tasks"
         body = _payload(seeded_client.get(path), path)
 
         assert len(body["tasks"]) == 1

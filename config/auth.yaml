@@ -39,7 +39,7 @@ auth:
 
     # Native-client audiences. iOS / Android sign-ins target their own
     # client_id (Google requires it); listing them here lets
-    # `/api/auth/google/native` verify tokens minted for either platform
+    # `/api/v1/auth/google/native` verify tokens minted for either platform
     # against this same GoogleAuth instance — the signing keys and
     # issuer are the same as the web client's.
     ios_client_id: "${GOOGLE_OAUTH_IOS_CLIENT_ID}"

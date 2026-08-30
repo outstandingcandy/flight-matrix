@@ -34,7 +34,7 @@ from src.data.flight_schedule_repo import (
 
 logger = logging.getLogger("web.ingest")
 
-router = APIRouter(prefix="/api/ingest", tags=["ingest"])
+router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
 
 TOKEN_HEADER = "X-Ingest-Token"
 

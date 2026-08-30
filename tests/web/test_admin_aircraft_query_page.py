@@ -2,7 +2,7 @@
 
 The page used to be search-only: it rendered nothing until an admin typed a
 full registration. The paginated list it now opens on was already implemented
-server-side — `/api/admin/aircraft` plus the three autocomplete endpoints — but
+server-side — `/api/v1/admin/aircraft` plus the three autocomplete endpoints — but
 no template rendered it, so the whole feature was unreachable and nothing tested
 that the two halves fit together.
 
@@ -28,7 +28,7 @@ from sqlalchemy import text
 NOW = datetime.now(UTC).replace(tzinfo=None, microsecond=0)
 
 PAGE_PATH = "/admin/aircraft-query"
-LIST_PATH = "/api/admin/aircraft"
+LIST_PATH = "/api/v1/admin/aircraft"
 
 
 def _image(
@@ -140,14 +140,14 @@ class TestPageWiring:
 
     def test_the_list_is_wired_to_the_paginated_api(self, html: str) -> None:
         for fragment in (
-            "/api/admin/aircraft?",  # the list fetch
+            "/api/v1/admin/aircraft?",  # the list fetch
             'id="aircraftTableBody"',  # where rows land
             'id="pagination"',  # the pager
         ):
             assert fragment in html, f"the list view is missing {fragment}"
 
     def test_the_detail_view_is_still_wired(self, html: str) -> None:
-        assert "/api/admin/aircraft-query/" in html, (
+        assert "/api/v1/admin/aircraft-query/" in html, (
             "merging the list in must not drop the per-registration lookup"
         )
 
@@ -167,10 +167,10 @@ class TestPageWiring:
 
     def test_the_filter_endpoints_are_wired(self, html: str) -> None:
         for path in (
-            "/api/admin/aircraft/stats",
-            "/api/admin/aircraft/types?search=",
-            "/api/admin/aircraft/liveries?search=",
-            "/api/admin/aircraft/registrations?search=",
+            "/api/v1/admin/aircraft/stats",
+            "/api/v1/admin/aircraft/types?search=",
+            "/api/v1/admin/aircraft/liveries?search=",
+            "/api/v1/admin/aircraft/registrations?search=",
         ):
             assert path in html, f"the list view is missing {path}"
 
@@ -353,26 +353,26 @@ class TestFilterEndpointShapes:
     """The suggestion dropdowns and stat cards read specific key names."""
 
     def test_stats_feed_the_three_cards(self, seeded_client: Any) -> None:
-        path = "/api/admin/aircraft/stats"
+        path = "/api/v1/admin/aircraft/stats"
         stats = _payload(seeded_client.get(path), path)["stats"]
         assert stats["total"] == 2
         assert stats["with_images"] == 1
         assert stats["special"] == 1
 
     def test_type_suggestions(self, seeded_client: Any) -> None:
-        path = "/api/admin/aircraft/types?search=A3"
+        path = "/api/v1/admin/aircraft/types?search=A3"
         types = _payload(seeded_client.get(path), path)["types"]
         assert types == [{"code": "A320", "full_name": "A320", "count": 1}]
 
     def test_livery_suggestions(self, seeded_client: Any) -> None:
-        path = "/api/admin/aircraft/liveries?search=Retro"
+        path = "/api/v1/admin/aircraft/liveries?search=Retro"
         liveries = _payload(seeded_client.get(path), path)["liveries"]
         assert liveries == [{"name": "Retro Livery", "count": 1}]
 
     def test_registration_suggestions_carry_what_the_dropdown_shows(
         self, seeded_client: Any
     ) -> None:
-        path = "/api/admin/aircraft/registrations?search=N12"
+        path = "/api/v1/admin/aircraft/registrations?search=N12"
         registrations = _payload(seeded_client.get(path), path)["registrations"]
         assert registrations == [
             {"registration": "N12345", "hex_code": "abc123", "aircraft_type": "B738"}
@@ -381,5 +381,5 @@ class TestFilterEndpointShapes:
     def test_a_one_character_query_suggests_nothing(self, seeded_client: Any) -> None:
         # The input only calls out at two characters; the endpoint agrees, so a
         # stray single-character fetch cannot return the whole table.
-        path = "/api/admin/aircraft/registrations?search=N"
+        path = "/api/v1/admin/aircraft/registrations?search=N"
         assert _payload(seeded_client.get(path), path)["registrations"] == []

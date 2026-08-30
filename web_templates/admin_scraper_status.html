@@ -268,7 +268,7 @@
 
         async function loadStats() {
             try {
-                const response = await fetch('/api/admin/scraper/stats');
+                const response = await fetch('/api/v1/admin/scraper/stats');
                 const data = await response.json();
 
                 if (data.success) {
@@ -319,7 +319,7 @@
 
         async function loadWorkers() {
             try {
-                const response = await fetch('/api/admin/scraper/workers');
+                const response = await fetch('/api/v1/admin/scraper/workers');
                 const data = await response.json();
 
                 const tbody = document.getElementById('workersTableBody');
@@ -354,7 +354,7 @@
             const status = document.getElementById('statusFilter').value;
 
             try {
-                let url = `/api/admin/scraper/recent-tasks?page=${page}&limit=15`;
+                let url = `/api/v1/admin/scraper/recent-tasks?page=${page}&limit=15`;
                 if (status) url += `&status=${status}`;
 
                 const response = await fetch(url);

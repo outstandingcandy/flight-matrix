@@ -889,7 +889,7 @@
             document.getElementById('noResultsMessage').style.display = 'none';
 
             try {
-                const response = await fetch(`/api/admin/aircraft-query/${encodeURIComponent(registration)}`);
+                const response = await fetch(`/api/v1/admin/aircraft-query/${encodeURIComponent(registration)}`);
                 const data = await response.json();
 
                 document.getElementById('loadingState').style.display = 'none';
@@ -976,7 +976,7 @@
 
         async function loadStats() {
             try {
-                const response = await fetch('/api/admin/aircraft/stats');
+                const response = await fetch('/api/v1/admin/aircraft/stats');
                 const data = await response.json();
                 if (data.success) {
                     document.getElementById('statTotal').textContent = data.stats.total.toLocaleString();
@@ -1005,7 +1005,7 @@
             if (category) params.append('category', category);
 
             try {
-                const response = await fetch(`/api/admin/aircraft?${params}`);
+                const response = await fetch(`/api/v1/admin/aircraft?${params}`);
                 const data = await response.json();
 
                 if (!data.success) {
@@ -1294,7 +1294,7 @@
 
         async function suggestRegistrations(query) {
             try {
-                const response = await fetch(`/api/admin/aircraft/registrations?search=${encodeURIComponent(query)}`);
+                const response = await fetch(`/api/v1/admin/aircraft/registrations?search=${encodeURIComponent(query)}`);
                 const data = await response.json();
                 if (!data.success) {
                     return;
@@ -1313,7 +1313,7 @@
 
         async function suggestTypes(query) {
             try {
-                const response = await fetch(`/api/admin/aircraft/types?search=${encodeURIComponent(query)}`);
+                const response = await fetch(`/api/v1/admin/aircraft/types?search=${encodeURIComponent(query)}`);
                 const data = await response.json();
                 if (!data.success) {
                     return;
@@ -1330,7 +1330,7 @@
 
         async function suggestLiveries(query) {
             try {
-                const response = await fetch(`/api/admin/aircraft/liveries?search=${encodeURIComponent(query)}`);
+                const response = await fetch(`/api/v1/admin/aircraft/liveries?search=${encodeURIComponent(query)}`);
                 const data = await response.json();
                 if (!data.success) {
                     return;

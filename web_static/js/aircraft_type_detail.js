@@ -32,8 +32,8 @@ class AircraftTypeDetailPage {
         try {
             // Load type info and first page of aircraft in parallel
             const [typeInfoResponse, aircraftResponse] = await Promise.all([
-                fetch(`/api/aircraft/types/${this.typeCode}`),
-                fetch(`/api/aircraft/types/${this.typeCode}/instances?offset=0&limit=${this.limit}`)
+                fetch(`/api/v1/aircraft/types/${this.typeCode}`),
+                fetch(`/api/v1/aircraft/types/${this.typeCode}/instances?offset=0&limit=${this.limit}`)
             ]);
 
             const typeInfo = await typeInfoResponse.json();
@@ -114,7 +114,7 @@ class AircraftTypeDetailPage {
 
         try {
             const response = await fetch(
-                `/api/aircraft/types/${this.typeCode}/instances?offset=${this.offset}&limit=${this.limit}`
+                `/api/v1/aircraft/types/${this.typeCode}/instances?offset=${this.offset}&limit=${this.limit}`
             );
             const data = await response.json();
 

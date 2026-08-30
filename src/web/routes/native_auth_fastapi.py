@@ -52,7 +52,7 @@ from src.auth.dependencies import require_login
 
 logger = logging.getLogger("web.native_auth")
 
-router = APIRouter(prefix="/api", tags=["auth-native"])
+router = APIRouter(prefix="/api/v1", tags=["auth-native"])
 
 
 # ---------- Request bodies -----------------------------------------------

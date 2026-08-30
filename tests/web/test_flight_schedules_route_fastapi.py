@@ -1,4 +1,4 @@
-"""Semantic coverage for the ``/api/flight-schedules*`` routes.
+"""Semantic coverage for the ``/api/v1/flight-schedules*`` routes.
 
 The main endpoint is the heaviest handler in the app (airport board
 polled every 30 s by the frontend). The smoke sweep already asserts
@@ -22,7 +22,7 @@ from typing import Any
 
 class TestFlightSchedules:
     def test_missing_airport_returns_400(self, app_client_fastapi: Any) -> None:
-        r = app_client_fastapi.get("/api/flight-schedules")
+        r = app_client_fastapi.get("/api/v1/flight-schedules")
         assert r.status_code == 400
         assert r.json() == {"success": False, "error": "Airport code is required"}
 
@@ -31,7 +31,7 @@ class TestFlightSchedules:
         the frontend depends on. Assert the top-level keys, not the
         counts.
         """
-        r = app_client_fastapi.get("/api/flight-schedules", params={"airport": "PEK"})
+        r = app_client_fastapi.get("/api/v1/flight-schedules", params={"airport": "PEK"})
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["success"] is True
@@ -49,14 +49,14 @@ class TestFlightSchedules:
         we want visible.
         """
         r = app_client_fastapi.get(
-            "/api/flight-schedules",
+            "/api/v1/flight-schedules",
             params={"airport": "PEK", "limit": 1000},
         )
         assert r.status_code == 422
 
     def test_limit_below_one_rejected(self, app_client_fastapi: Any) -> None:
         r = app_client_fastapi.get(
-            "/api/flight-schedules",
+            "/api/v1/flight-schedules",
             params={"airport": "PEK", "limit": 0},
         )
         assert r.status_code == 422
@@ -64,7 +64,7 @@ class TestFlightSchedules:
     def test_flight_type_filter_accepted(self, app_client_fastapi: Any) -> None:
         for ft in ("arrival", "departure", ""):
             r = app_client_fastapi.get(
-                "/api/flight-schedules",
+                "/api/v1/flight-schedules",
                 params={"airport": "PEK", "flight_type": ft},
             )
             assert r.status_code == 200, (ft, r.text)
@@ -72,7 +72,7 @@ class TestFlightSchedules:
     def test_date_query_accepts_iso_and_recent(self, app_client_fastapi: Any) -> None:
         for date in ("2026-01-01", "recent", ""):
             r = app_client_fastapi.get(
-                "/api/flight-schedules",
+                "/api/v1/flight-schedules",
                 params={"airport": "PEK", "date": date},
             )
             assert r.status_code == 200, (date, r.text)
@@ -87,7 +87,7 @@ class TestFilterOptions:
         """Empty query — the "no search" fast path returns an empty
         airports list along with the standard four top-level keys.
         """
-        r = app_client_fastapi.get("/api/flight-schedules/filter-options")
+        r = app_client_fastapi.get("/api/v1/flight-schedules/filter-options")
         assert r.status_code == 200, r.text
         body = r.json()
         for key in ("airports", "aircraft_types", "liveries", "available_dates"):
@@ -98,7 +98,7 @@ class TestFilterOptions:
 
     def test_airport_narrows_types_and_dates(self, app_client_fastapi: Any) -> None:
         r = app_client_fastapi.get(
-            "/api/flight-schedules/filter-options",
+            "/api/v1/flight-schedules/filter-options",
             params={"airport": "PEK"},
         )
         assert r.status_code == 200
@@ -113,7 +113,7 @@ class TestFilterOptions:
         list (never null / missing) — the frontend indexes into it.
         """
         r = app_client_fastapi.get(
-            "/api/flight-schedules/filter-options",
+            "/api/v1/flight-schedules/filter-options",
             params={"search": "PEK"},
         )
         assert r.status_code == 200

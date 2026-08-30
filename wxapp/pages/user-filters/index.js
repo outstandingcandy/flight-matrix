@@ -27,7 +27,7 @@ Page({
     if (!this.data.email) return;
     this.setData({ loading: true, error: null });
     try {
-      const body = await apiFetch(`/api/user/${encodeURIComponent(this.data.email)}/filters`);
+      const body = await apiFetch(`/api/v1/user/${encodeURIComponent(this.data.email)}/filters`);
       this.setData({ filters: body.filters || [], loading: false });
     } catch (err) {
       this.setData({ error: err.message, loading: false });
@@ -47,7 +47,7 @@ Page({
       return;
     }
     try {
-      await apiFetch(`/api/user/${encodeURIComponent(this.data.email)}/filters`, {
+      await apiFetch(`/api/v1/user/${encodeURIComponent(this.data.email)}/filters`, {
         method: "POST",
         data: { name: this.data.newName, filter_sql: this.data.newSql },
       });
@@ -62,7 +62,7 @@ Page({
     const id = e.currentTarget.dataset.id;
     try {
       await apiFetch(
-        `/api/user/${encodeURIComponent(this.data.email)}/filters/${id}`,
+        `/api/v1/user/${encodeURIComponent(this.data.email)}/filters/${id}`,
         { method: "DELETE" }
       );
       this.refresh();

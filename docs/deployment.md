@@ -191,5 +191,5 @@ A separate `docker-compose.scraper.yml` runs the scraper worker with its
 Chromium + Xvfb image (`Dockerfile.scraper`). It can run on the same host
 as the web stack or on a workstation; Cloudflare-heavy scrapers
 (`fr24_airport`) typically run on a workstation and post rows back to the
-web app via `/api/ingest/flight-schedules` (auth: `api.ingest_token`
+web app via `/api/v1/ingest/flight-schedules` (auth: `api.ingest_token`
 shared secret).

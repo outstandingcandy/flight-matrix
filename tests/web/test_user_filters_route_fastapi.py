@@ -1,4 +1,4 @@
-"""Filter-CRUD coverage for the ``/api/user/{email}/filters*`` routes.
+"""Filter-CRUD coverage for the ``/api/v1/user/{email}/filters*`` routes.
 
 The user route file is 10 endpoints across 7 paths — the smoke sweep in
 :mod:`tests.web.test_route_smoke_fastapi` covers the read-only GETs.
@@ -30,7 +30,7 @@ def _seed_user(client: Any, email: str, *, tier: str = "premium") -> int:
     cap itself is exercised in :func:`test_max_filters_cap_rejects_over_limit`.
     """
     r = client.post(
-        "/api/admin/users",
+        "/api/v1/admin/users",
         json={"email": email, "tier": tier, "generate_api_key": False},
     )
     assert r.status_code == 200, r.text
@@ -50,7 +50,7 @@ def _valid_filter_sql() -> str:
 
 
 def test_missing_user_returns_404(app_client_fastapi: Any) -> None:
-    r = app_client_fastapi.get("/api/user/ghost@example.com/profile")
+    r = app_client_fastapi.get("/api/v1/user/ghost@example.com/profile")
     assert r.status_code == 404
     assert r.json() == {"success": False, "error": "User not found"}
 
@@ -65,7 +65,7 @@ class TestFilterCRUD:
         _seed_user(app_client_fastapi, email)
 
         r_create = app_client_fastapi.post(
-            f"/api/user/{email}/filters",
+            f"/api/v1/user/{email}/filters",
             json={
                 "name": "military",
                 "filter_sql": _valid_filter_sql(),
@@ -79,7 +79,7 @@ class TestFilterCRUD:
         assert created["priority"] == 5
         filter_id = created["id"]
 
-        r_list = app_client_fastapi.get(f"/api/user/{email}/filters")
+        r_list = app_client_fastapi.get(f"/api/v1/user/{email}/filters")
         assert r_list.status_code == 200
         assert any(f["id"] == filter_id for f in r_list.json()["filters"])
 
@@ -87,7 +87,7 @@ class TestFilterCRUD:
         email = "missing@example.com"
         _seed_user(app_client_fastapi, email)
 
-        r = app_client_fastapi.post(f"/api/user/{email}/filters", json={"name": "only-name"})
+        r = app_client_fastapi.post(f"/api/v1/user/{email}/filters", json={"name": "only-name"})
         assert r.status_code == 400
         assert r.json() == {
             "success": False,
@@ -99,7 +99,7 @@ class TestFilterCRUD:
         _seed_user(app_client_fastapi, email)
 
         r = app_client_fastapi.post(
-            f"/api/user/{email}/filters",
+            f"/api/v1/user/{email}/filters",
             json={"name": "evil", "filter_sql": "1=1; DROP TABLE users"},
         )
         assert r.status_code == 400
@@ -111,19 +111,19 @@ class TestFilterCRUD:
         email = "update@example.com"
         _seed_user(app_client_fastapi, email)
         create = app_client_fastapi.post(
-            f"/api/user/{email}/filters",
+            f"/api/v1/user/{email}/filters",
             json={"name": "orig", "filter_sql": _valid_filter_sql()},
         )
         filter_id = create.json()["filter"]["id"]
 
         r_upd = app_client_fastapi.put(
-            f"/api/user/{email}/filters/{filter_id}",
+            f"/api/v1/user/{email}/filters/{filter_id}",
             json={"name": "renamed", "is_active": False, "priority": 9},
         )
         assert r_upd.status_code == 200
         assert r_upd.json() == {"success": True}
 
-        r_get = app_client_fastapi.get(f"/api/user/{email}/filters/{filter_id}")
+        r_get = app_client_fastapi.get(f"/api/v1/user/{email}/filters/{filter_id}")
         got = r_get.json()["filter"]
         assert got["name"] == "renamed"
         assert got["priority"] == 9
@@ -133,16 +133,16 @@ class TestFilterCRUD:
         email = "delete@example.com"
         _seed_user(app_client_fastapi, email)
         create = app_client_fastapi.post(
-            f"/api/user/{email}/filters",
+            f"/api/v1/user/{email}/filters",
             json={"name": "doomed", "filter_sql": _valid_filter_sql()},
         )
         filter_id = create.json()["filter"]["id"]
 
-        r_del = app_client_fastapi.delete(f"/api/user/{email}/filters/{filter_id}")
+        r_del = app_client_fastapi.delete(f"/api/v1/user/{email}/filters/{filter_id}")
         assert r_del.status_code == 200
 
         # 404 on subsequent GET.
-        r_get = app_client_fastapi.get(f"/api/user/{email}/filters/{filter_id}")
+        r_get = app_client_fastapi.get(f"/api/v1/user/{email}/filters/{filter_id}")
         assert r_get.status_code == 404
 
     def test_cross_user_filter_access_returns_404(self, app_client_fastapi: Any) -> None:
@@ -156,29 +156,29 @@ class TestFilterCRUD:
         _seed_user(app_client_fastapi, "outsider@example.com")
 
         create = app_client_fastapi.post(
-            "/api/user/owner@example.com/filters",
+            "/api/v1/user/owner@example.com/filters",
             json={"name": "mine", "filter_sql": _valid_filter_sql()},
         )
         assert create.status_code == 200
         filter_id = create.json()["filter"]["id"]
 
         # Outsider fetches → 404 (never 200, never someone-else's-data).
-        r_get = app_client_fastapi.get(f"/api/user/outsider@example.com/filters/{filter_id}")
+        r_get = app_client_fastapi.get(f"/api/v1/user/outsider@example.com/filters/{filter_id}")
         assert r_get.status_code == 404
 
         # Outsider PUT → 404
         r_put = app_client_fastapi.put(
-            f"/api/user/outsider@example.com/filters/{filter_id}",
+            f"/api/v1/user/outsider@example.com/filters/{filter_id}",
             json={"name": "hijacked"},
         )
         assert r_put.status_code == 404
 
         # Outsider DELETE → 404
-        r_del = app_client_fastapi.delete(f"/api/user/outsider@example.com/filters/{filter_id}")
+        r_del = app_client_fastapi.delete(f"/api/v1/user/outsider@example.com/filters/{filter_id}")
         assert r_del.status_code == 404
 
         # Owner still sees intact filter.
-        r_owner = app_client_fastapi.get(f"/api/user/owner@example.com/filters/{filter_id}")
+        r_owner = app_client_fastapi.get(f"/api/v1/user/owner@example.com/filters/{filter_id}")
         assert r_owner.status_code == 200
         assert r_owner.json()["filter"]["name"] == "mine"
 
@@ -205,21 +205,21 @@ def test_max_filters_cap_rejects_over_limit(app_client_fastapi: Any) -> None:
 
     # Pin the cap explicitly to 3 via the admin PUT.
     r_cap = app_client_fastapi.put(
-        f"/api/admin/users/{user_id}",
+        f"/api/v1/admin/users/{user_id}",
         json={"subscription": {"max_filters": 3}},
     )
     assert r_cap.status_code == 200, r_cap.text
 
     for i in range(3):
         r = app_client_fastapi.post(
-            f"/api/user/{email}/filters",
+            f"/api/v1/user/{email}/filters",
             json={"name": f"cap-{i}", "filter_sql": _valid_filter_sql()},
         )
         assert r.status_code == 200, f"filter {i}: {r.text}"
 
     # Fourth create must trip the cap.
     r_over = app_client_fastapi.post(
-        f"/api/user/{email}/filters",
+        f"/api/v1/user/{email}/filters",
         json={"name": "cap-3", "filter_sql": _valid_filter_sql()},
     )
     assert r_over.status_code == 400
@@ -235,7 +235,7 @@ def test_filter_dry_run_accepts_valid_sql(app_client_fastapi: Any) -> None:
     _seed_user(app_client_fastapi, email)
 
     r = app_client_fastapi.post(
-        f"/api/user/{email}/filters/test",
+        f"/api/v1/user/{email}/filters/test",
         json={"filter_sql": _valid_filter_sql(), "limit": 5},
     )
     assert r.status_code == 200
@@ -250,7 +250,7 @@ def test_filter_dry_run_rejects_bad_sql(app_client_fastapi: Any) -> None:
     _seed_user(app_client_fastapi, email)
 
     r = app_client_fastapi.post(
-        f"/api/user/{email}/filters/test",
+        f"/api/v1/user/{email}/filters/test",
         json={"filter_sql": "SELECT * FROM users; DROP TABLE users"},
     )
     assert r.status_code == 400
@@ -261,7 +261,7 @@ def test_filter_dry_run_missing_sql_returns_400(app_client_fastapi: Any) -> None
     email = "dryrun-empty@example.com"
     _seed_user(app_client_fastapi, email)
 
-    r = app_client_fastapi.post(f"/api/user/{email}/filters/test", json={"limit": 5})
+    r = app_client_fastapi.post(f"/api/v1/user/{email}/filters/test", json={"limit": 5})
     assert r.status_code == 400
     assert r.json() == {"success": False, "error": "filter_sql is required"}
 
@@ -275,7 +275,7 @@ def test_settings_put_updates_features(app_client_fastapi: Any) -> None:
     _seed_user(app_client_fastapi, email)
 
     r = app_client_fastapi.put(
-        f"/api/user/{email}/settings",
+        f"/api/v1/user/{email}/settings",
         json={
             "enable_maps": True,
             "enable_aircraft_images": False,
@@ -287,7 +287,7 @@ def test_settings_put_updates_features(app_client_fastapi: Any) -> None:
     assert r.json() == {"success": True}
 
     # Re-fetch profile — the returned features reflect the update.
-    r_profile = app_client_fastapi.get(f"/api/user/{email}/profile")
+    r_profile = app_client_fastapi.get(f"/api/v1/user/{email}/profile")
     assert r_profile.status_code == 200
     features = r_profile.json()["features"]
     assert features["enable_maps"] is True
@@ -298,7 +298,7 @@ def test_settings_put_updates_features(app_client_fastapi: Any) -> None:
 
 def test_settings_put_missing_user_returns_404(app_client_fastapi: Any) -> None:
     r = app_client_fastapi.put(
-        "/api/user/nobody@example.com/settings",
+        "/api/v1/user/nobody@example.com/settings",
         json={"enable_maps": True},
     )
     assert r.status_code == 404

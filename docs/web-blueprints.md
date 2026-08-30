@@ -10,15 +10,15 @@ each slice of the URL tree lives in its own module.
 | Blueprint (target file)                   | Prefix / routes                       | Status      |
 |-------------------------------------------|---------------------------------------|-------------|
 | `src/web/routes/auth.py`                  | `/login`, `/logout`, `/auth/*`        | done        |
-| `src/web/routes/ingest.py`                | `/api/ingest/*` (scraper write path)  | done        |
+| `src/web/routes/ingest.py`                | `/api/v1/ingest/*` (scraper write path)  | done        |
 | `src/web/routes/pages.py`                 | `/`, `/dashboard`, `/aircraft/…`, `/admin/…` HTML pages | to do |
-| `src/web/routes/api_aircraft.py`          | `/api/aircraft/*`                     | to do       |
-| `src/web/routes/api_airports.py`          | `/api/airports/*`                     | to do       |
-| `src/web/routes/api_search.py`            | `/api/search/*`                       | to do       |
-| `src/web/routes/api_user.py`              | `/api/user/*`                         | to do       |
-| `src/web/routes/api_admin.py`             | `/api/admin/*`                        | to do       |
-| `src/web/routes/api_flight_schedules.py`  | `/api/flight-schedules*`, `/api/flight/*` | to do   |
-| `src/web/routes/api_stats.py`             | `/api/statistics`                     | to do       |
+| `src/web/routes/api_aircraft.py`          | `/api/v1/aircraft/*`                     | to do       |
+| `src/web/routes/api_airports.py`          | `/api/v1/airports/*`                     | to do       |
+| `src/web/routes/api_search.py`            | `/api/v1/search/*`                       | to do       |
+| `src/web/routes/api_user.py`              | `/api/v1/user/*`                         | to do       |
+| `src/web/routes/api_admin.py`             | `/api/v1/admin/*`                        | to do       |
+| `src/web/routes/api_flight_schedules.py`  | `/api/v1/flight-schedules*`, `/api/v1/flight/*` | to do   |
+| `src/web/routes/api_stats.py`             | `/api/v1/statistics`                     | to do       |
 
 Infrastructure that was module-level in `web_app.py` already lives in
 `src/web/`:

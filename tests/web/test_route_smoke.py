@@ -73,24 +73,24 @@ def test_page_route_renders(app_client, path: str) -> None:
 
 
 API_AIRCRAFT_GET_ROUTES = [
-    "/api/aircraft/search",
-    "/api/aircraft/search?q=test",
-    "/api/aircraft/tracks/N703PA",
-    "/api/aircraft/recent",
-    "/api/aircraft/types",
-    "/api/aircraft/types/A380",
-    "/api/aircraft/types/A380/instances",
-    "/api/aircraft/unique",
-    "/api/aircraft/static",
-    "/api/aircraft/static/N703PA",
-    "/api/aircraft/static/stats",
-    "/api/aircraft/N703PA/live",
-    "/api/aircraft/N703PA/details",
-    "/api/aircraft/N703PA/history",
-    "/api/aircraft/N703PA/flight-dates",
-    "/api/aircraft/N703PA/recent-flights",
-    "/api/aircraft/N703PA/images",
-    "/api/aircraft/N703PA/static-info",
+    "/api/v1/aircraft/search",
+    "/api/v1/aircraft/search?q=test",
+    "/api/v1/aircraft/tracks/N703PA",
+    "/api/v1/aircraft/recent",
+    "/api/v1/aircraft/types",
+    "/api/v1/aircraft/types/A380",
+    "/api/v1/aircraft/types/A380/instances",
+    "/api/v1/aircraft/unique",
+    "/api/v1/aircraft/static",
+    "/api/v1/aircraft/static/N703PA",
+    "/api/v1/aircraft/static/stats",
+    "/api/v1/aircraft/N703PA/live",
+    "/api/v1/aircraft/N703PA/details",
+    "/api/v1/aircraft/N703PA/history",
+    "/api/v1/aircraft/N703PA/flight-dates",
+    "/api/v1/aircraft/N703PA/recent-flights",
+    "/api/v1/aircraft/N703PA/images",
+    "/api/v1/aircraft/N703PA/static-info",
 ]
 
 
@@ -103,18 +103,18 @@ def test_api_aircraft_get(app_client, path: str) -> None:
 def test_api_aircraft_static_batch_empty(app_client) -> None:
     # POST /api/aircraft/static/batch expects a JSON body with registrations.
     r = app_client.post(
-        "/api/aircraft/static/batch", json={"registrations": []}, follow_redirects=False
+        "/api/v1/aircraft/static/batch", json={"registrations": []}, follow_redirects=False
     )
-    _assert_not_5xx(r, "POST", "/api/aircraft/static/batch")
+    _assert_not_5xx(r, "POST", "/api/v1/aircraft/static/batch")
 
 
 def test_api_aircraft_static_batch_with_value(app_client) -> None:
     r = app_client.post(
-        "/api/aircraft/static/batch",
+        "/api/v1/aircraft/static/batch",
         json={"registrations": ["N703PA"]},
         follow_redirects=False,
     )
-    _assert_not_5xx(r, "POST", "/api/aircraft/static/batch")
+    _assert_not_5xx(r, "POST", "/api/v1/aircraft/static/batch")
 
 
 # ---------------------------------------------------------------------------
@@ -123,11 +123,11 @@ def test_api_aircraft_static_batch_with_value(app_client) -> None:
 
 
 API_AIRPORT_GET_ROUTES = [
-    "/api/airports/search?q=JFK",
-    "/api/airports/JFK",
-    "/api/airports/JFK/nearby",
-    "/api/airports/JFK/realtime-aircraft",
-    "/api/airports/popular",
+    "/api/v1/airports/search?q=JFK",
+    "/api/v1/airports/JFK",
+    "/api/v1/airports/JFK/nearby",
+    "/api/v1/airports/JFK/realtime-aircraft",
+    "/api/v1/airports/popular",
 ]
 
 
@@ -143,9 +143,9 @@ def test_api_airport_get(app_client, path: str) -> None:
 
 
 API_SEARCH_GET_ROUTES = [
-    "/api/search/unified?q=test",
-    "/api/search/suggestions?q=test",
-    "/api/search/aircraft?q=test",
+    "/api/v1/search/unified?q=test",
+    "/api/v1/search/suggestions?q=test",
+    "/api/v1/search/aircraft?q=test",
 ]
 
 
@@ -164,18 +164,18 @@ def test_api_search_get(app_client, path: str) -> None:
 # when a required query parameter is missing, and 400 is in `OK` above. That
 # combination hid four Postgres-only queries from this suite for a year -- the
 # probe below used to pass `?airport_code=`, which
-# `/api/flight-schedules` does not read (it reads `airport`), so the SQL never
+# `/api/v1/flight-schedules` does not read (it reads `airport`), so the SQL never
 # ran. Probes here must carry whatever parameters get the handler past its
 # validation and into its query.
 API_MISC_GET_ROUTES = [
-    "/api/statistics",
-    "/api/flight-schedules",
-    "/api/flight-schedules?airport=JFK",
-    "/api/flight-schedules?airport=JFK&date=2026-01-02",
+    "/api/v1/statistics",
+    "/api/v1/flight-schedules",
+    "/api/v1/flight-schedules?airport=JFK",
+    "/api/v1/flight-schedules?airport=JFK&date=2026-01-02",
     # filter-options skips all of its SQL unless `airport` or `search` is given.
-    "/api/flight-schedules/filter-options",
-    "/api/flight-schedules/filter-options?airport=JFK&search=JFK",
-    # NOTE: `/api/flight/trail/<fr24_id>` intentionally omitted. It proxies
+    "/api/v1/flight-schedules/filter-options",
+    "/api/v1/flight-schedules/filter-options?airport=JFK&search=JFK",
+    # NOTE: `/api/v1/flight/trail/<fr24_id>` intentionally omitted. It proxies
     # to FR24's clickhandler, which returns 403 for bogus IDs in test —
     # and the handler correctly translates that upstream failure to 502
     # (Bad Gateway). The not-5xx contract of this suite doesn't apply to
@@ -199,11 +199,11 @@ def test_api_misc_get(app_client, path: str) -> None:
 EMAIL = "test@example.com"
 
 API_USER_GET_ROUTES = [
-    f"/api/user/{EMAIL}/profile",
-    f"/api/user/{EMAIL}/usage",
-    f"/api/user/{EMAIL}/cooldowns",
-    f"/api/user/{EMAIL}/filters",
-    f"/api/user/{EMAIL}/filters/1",
+    f"/api/v1/user/{EMAIL}/profile",
+    f"/api/v1/user/{EMAIL}/usage",
+    f"/api/v1/user/{EMAIL}/cooldowns",
+    f"/api/v1/user/{EMAIL}/filters",
+    f"/api/v1/user/{EMAIL}/filters/1",
 ]
 
 
@@ -214,40 +214,42 @@ def test_api_user_get(app_client, path: str) -> None:
 
 
 def test_api_user_settings_put(app_client) -> None:
-    r = app_client.put(f"/api/user/{EMAIL}/settings", json={"name": "Test"}, follow_redirects=False)
-    _assert_not_5xx(r, "PUT", f"/api/user/{EMAIL}/settings")
+    r = app_client.put(
+        f"/api/v1/user/{EMAIL}/settings", json={"name": "Test"}, follow_redirects=False
+    )
+    _assert_not_5xx(r, "PUT", f"/api/v1/user/{EMAIL}/settings")
 
 
 def test_api_user_create_filter(app_client) -> None:
     r = app_client.post(
-        f"/api/user/{EMAIL}/filters",
+        f"/api/v1/user/{EMAIL}/filters",
         json={"name": "test", "filter_sql": "is_military = 1"},
         follow_redirects=False,
     )
-    _assert_not_5xx(r, "POST", f"/api/user/{EMAIL}/filters")
+    _assert_not_5xx(r, "POST", f"/api/v1/user/{EMAIL}/filters")
 
 
 def test_api_user_update_filter(app_client) -> None:
     r = app_client.put(
-        f"/api/user/{EMAIL}/filters/999",
+        f"/api/v1/user/{EMAIL}/filters/999",
         json={"name": "updated"},
         follow_redirects=False,
     )
-    _assert_not_5xx(r, "PUT", f"/api/user/{EMAIL}/filters/999")
+    _assert_not_5xx(r, "PUT", f"/api/v1/user/{EMAIL}/filters/999")
 
 
 def test_api_user_delete_filter(app_client) -> None:
-    r = app_client.delete(f"/api/user/{EMAIL}/filters/999", follow_redirects=False)
-    _assert_not_5xx(r, "DELETE", f"/api/user/{EMAIL}/filters/999")
+    r = app_client.delete(f"/api/v1/user/{EMAIL}/filters/999", follow_redirects=False)
+    _assert_not_5xx(r, "DELETE", f"/api/v1/user/{EMAIL}/filters/999")
 
 
 def test_api_user_test_filter(app_client) -> None:
     r = app_client.post(
-        f"/api/user/{EMAIL}/filters/test",
+        f"/api/v1/user/{EMAIL}/filters/test",
         json={"filter_sql": "is_military = 1"},
         follow_redirects=False,
     )
-    _assert_not_5xx(r, "POST", f"/api/user/{EMAIL}/filters/test")
+    _assert_not_5xx(r, "POST", f"/api/v1/user/{EMAIL}/filters/test")
 
 
 # ---------------------------------------------------------------------------
@@ -256,28 +258,28 @@ def test_api_user_test_filter(app_client) -> None:
 
 
 API_ADMIN_GET_ROUTES = [
-    "/api/admin/aircraft-query/N703PA",
-    "/api/admin/users",
-    "/api/admin/users/stats",
-    "/api/admin/users/999",
-    "/api/admin/aircraft",
-    "/api/admin/aircraft/stats",
-    "/api/admin/aircraft/types",
-    "/api/admin/aircraft/liveries",
-    "/api/admin/aircraft/registrations",
-    "/api/admin/reports",
-    "/api/admin/reports/stats",
-    "/api/admin/reports/abc123/detail",
-    "/api/admin/scraped-data/xiaohongshu/stats",
-    "/api/admin/scraped-data/xiaohongshu/notes",
-    "/api/admin/scraped-data/xiaohongshu/notes/note123",
-    "/api/admin/scraped-data/fr24/stats",
-    "/api/admin/scraped-data/fr24/flights",
-    "/api/admin/scraped-data/jetphotos/stats",
-    "/api/admin/scraped-data/jetphotos/images",
-    "/api/admin/scraper/stats",
-    "/api/admin/scraper/workers",
-    "/api/admin/scraper/recent-tasks",
+    "/api/v1/admin/aircraft-query/N703PA",
+    "/api/v1/admin/users",
+    "/api/v1/admin/users/stats",
+    "/api/v1/admin/users/999",
+    "/api/v1/admin/aircraft",
+    "/api/v1/admin/aircraft/stats",
+    "/api/v1/admin/aircraft/types",
+    "/api/v1/admin/aircraft/liveries",
+    "/api/v1/admin/aircraft/registrations",
+    "/api/v1/admin/reports",
+    "/api/v1/admin/reports/stats",
+    "/api/v1/admin/reports/abc123/detail",
+    "/api/v1/admin/scraped-data/xiaohongshu/stats",
+    "/api/v1/admin/scraped-data/xiaohongshu/notes",
+    "/api/v1/admin/scraped-data/xiaohongshu/notes/note123",
+    "/api/v1/admin/scraped-data/fr24/stats",
+    "/api/v1/admin/scraped-data/fr24/flights",
+    "/api/v1/admin/scraped-data/jetphotos/stats",
+    "/api/v1/admin/scraped-data/jetphotos/images",
+    "/api/v1/admin/scraper/stats",
+    "/api/v1/admin/scraper/workers",
+    "/api/v1/admin/scraper/recent-tasks",
 ]
 
 
@@ -289,35 +291,35 @@ def test_api_admin_get(app_client, path: str) -> None:
 
 def test_api_admin_create_user(app_client) -> None:
     r = app_client.post(
-        "/api/admin/users",
+        "/api/v1/admin/users",
         json={"email": "new@example.com", "name": "New"},
         follow_redirects=False,
     )
-    _assert_not_5xx(r, "POST", "/api/admin/users")
+    _assert_not_5xx(r, "POST", "/api/v1/admin/users")
 
 
 def test_api_admin_update_user(app_client) -> None:
-    r = app_client.put("/api/admin/users/999", json={"name": "updated"}, follow_redirects=False)
-    _assert_not_5xx(r, "PUT", "/api/admin/users/999")
+    r = app_client.put("/api/v1/admin/users/999", json={"name": "updated"}, follow_redirects=False)
+    _assert_not_5xx(r, "PUT", "/api/v1/admin/users/999")
 
 
 def test_api_admin_delete_user(app_client) -> None:
-    r = app_client.delete("/api/admin/users/999", follow_redirects=False)
-    _assert_not_5xx(r, "DELETE", "/api/admin/users/999")
+    r = app_client.delete("/api/v1/admin/users/999", follow_redirects=False)
+    _assert_not_5xx(r, "DELETE", "/api/v1/admin/users/999")
 
 
 def test_api_admin_regenerate_api_key(app_client) -> None:
-    r = app_client.post("/api/admin/users/999/api-key", follow_redirects=False)
-    _assert_not_5xx(r, "POST", "/api/admin/users/999/api-key")
+    r = app_client.post("/api/v1/admin/users/999/api-key", follow_redirects=False)
+    _assert_not_5xx(r, "POST", "/api/v1/admin/users/999/api-key")
 
 
 def test_api_admin_import_data(app_client) -> None:
     r = app_client.post(
-        "/api/admin/import-data",
+        "/api/v1/admin/import-data",
         json={"snapshots": []},
         follow_redirects=False,
     )
-    _assert_not_5xx(r, "POST", "/api/admin/import-data")
+    _assert_not_5xx(r, "POST", "/api/v1/admin/import-data")
 
 
 # ---------------------------------------------------------------------------

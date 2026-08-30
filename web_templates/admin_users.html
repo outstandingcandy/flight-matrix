@@ -339,7 +339,7 @@
 
         async function loadStats() {
             try {
-                const response = await fetch('/api/admin/users/stats');
+                const response = await fetch('/api/v1/admin/users/stats');
                 const data = await response.json();
                 if (data.success) {
                     document.getElementById('totalUsers').textContent = data.stats.total || 0;
@@ -366,7 +366,7 @@
                 if (status) params.append('status', status);
                 if (tier) params.append('tier', tier);
 
-                const response = await fetch(`/api/admin/users?${params}`);
+                const response = await fetch(`/api/v1/admin/users?${params}`);
                 const data = await response.json();
 
                 if (data.success) {
@@ -469,7 +469,7 @@
             }
 
             try {
-                const response = await fetch('/api/admin/users', {
+                const response = await fetch('/api/v1/admin/users', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, name, tier, generate_api_key: generateApiKey })
@@ -507,7 +507,7 @@
 
         async function editUser(userId) {
             try {
-                const response = await fetch(`/api/admin/users/${userId}`);
+                const response = await fetch(`/api/v1/admin/users/${userId}`);
                 const data = await response.json();
 
                 if (data.success) {
@@ -571,7 +571,7 @@
             const monthlyLimit = document.getElementById('editMonthlyLimit').value;
 
             try {
-                const response = await fetch(`/api/admin/users/${userId}`, {
+                const response = await fetch(`/api/v1/admin/users/${userId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -608,7 +608,7 @@
             if (!confirm('Are you sure you want to delete this user?')) return;
 
             try {
-                const response = await fetch(`/api/admin/users/${userId}`, {
+                const response = await fetch(`/api/v1/admin/users/${userId}`, {
                     method: 'DELETE'
                 });
 
@@ -632,7 +632,7 @@
             if (!confirm('Are you sure you want to regenerate the API key?')) return;
 
             try {
-                const response = await fetch(`/api/admin/users/${userId}/api-key`, {
+                const response = await fetch(`/api/v1/admin/users/${userId}/api-key`, {
                     method: 'POST'
                 });
 

@@ -27,8 +27,8 @@ Page({
     this.setData({ loading: true, error: null });
     try {
       const [profile, usage] = await Promise.all([
-        apiFetch(`/api/user/${encodeURIComponent(this.data.email)}/profile`),
-        apiFetch(`/api/user/${encodeURIComponent(this.data.email)}/usage`),
+        apiFetch(`/api/v1/user/${encodeURIComponent(this.data.email)}/profile`),
+        apiFetch(`/api/v1/user/${encodeURIComponent(this.data.email)}/usage`),
       ]);
       this.setData({
         profile: profile.user,

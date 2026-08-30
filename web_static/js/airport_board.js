@@ -74,7 +74,7 @@ class AirportBoard {
 
         this.searchTimeout = setTimeout(async () => {
             try {
-                const response = await fetch(`/api/airports/search?q=${encodeURIComponent(query)}&limit=10`);
+                const response = await fetch(`/api/v1/airports/search?q=${encodeURIComponent(query)}&limit=10`);
                 const data = await response.json();
 
                 if (data.success && data.airports.length > 0) {
@@ -108,7 +108,7 @@ class AirportBoard {
 
     async selectAirportByCode(code) {
         try {
-            const response = await fetch(`/api/airports/${code}`);
+            const response = await fetch(`/api/v1/airports/${code}`);
             const data = await response.json();
 
             if (data.success && data.airport) {
@@ -211,7 +211,7 @@ class AirportBoard {
             this.showLoading(true);
 
             const response = await fetch(
-                `/api/airports/${this.selectedAirport.icao_code}/realtime-aircraft?radius_km=${radius}`
+                `/api/v1/airports/${this.selectedAirport.icao_code}/realtime-aircraft?radius_km=${radius}`
             );
             const data = await response.json();
 

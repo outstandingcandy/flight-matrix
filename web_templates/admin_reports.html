@@ -310,7 +310,7 @@
         // Load stats
         async function loadStats() {
             try {
-                const response = await fetch('/api/admin/reports/stats');
+                const response = await fetch('/api/v1/admin/reports/stats');
                 const data = await response.json();
 
                 if (data.success) {
@@ -333,7 +333,7 @@
             tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>';
 
             try {
-                let url = `/api/admin/reports?page=${page}&limit=15`;
+                let url = `/api/v1/admin/reports?page=${page}&limit=15`;
                 if (search) {
                     url += `&search=${encodeURIComponent(search)}`;
                 }
@@ -422,7 +422,7 @@
             detailPanel.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-success" role="status"></div></div>';
 
             try {
-                const response = await fetch(`/api/admin/reports/${aircraftHex}/detail`);
+                const response = await fetch(`/api/v1/admin/reports/${aircraftHex}/detail`);
                 const data = await response.json();
 
                 if (data.success) {
@@ -571,7 +571,7 @@
 
             try {
                 // Fetch track history data
-                const response = await fetch(`/api/aircraft/${aircraftHex}/history?limit=500`);
+                const response = await fetch(`/api/v1/aircraft/${aircraftHex}/history?limit=500`);
                 const data = await response.json();
 
                 if (loadingEl) loadingEl.style.display = 'none';
