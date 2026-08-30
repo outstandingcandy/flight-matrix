@@ -1,7 +1,7 @@
 """Integration coverage for the stage 1d native login endpoints.
 
-Exercises the five endpoints mounted at ``/api/auth/*``, ``/api/me`` and
-``/api/me/api-key/rotate`` under the FastAPI ``app_client_fastapi``
+Exercises the five endpoints mounted at ``/api/v1/auth/*``, ``/api/v1/me`` and
+``/api/v1/me/api-key/rotate`` under the FastAPI ``app_client_fastapi``
 fixture. The identity providers themselves are exercised in
 ``tests/auth/`` — this file tests the wire-up (request shape, DB row
 creation, api_key rotation) with the providers monkey-patched.
@@ -107,7 +107,7 @@ class TestWechatLogin:
         monkeypatch.setattr(factory, "_wechat_auth", _FakeWechatAuth(openid="wx-1"))
 
         r1 = app_client_fastapi.post(
-            "/api/auth/wechat/login",
+            "/api/v1/auth/wechat/login",
             json={"code": "good-code", "platform": "mp"},
         )
         assert r1.status_code == 200, r1.text
@@ -120,7 +120,7 @@ class TestWechatLogin:
 
         # Second login with the same openid reuses the row (same id, same key).
         r2 = app_client_fastapi.post(
-            "/api/auth/wechat/login",
+            "/api/v1/auth/wechat/login",
             json={"code": "good-code", "platform": "mp"},
         )
         assert r2.status_code == 200
@@ -136,7 +136,7 @@ class TestWechatLogin:
         monkeypatch.setattr(factory, "_wechat_auth", _FakeWechatAuth())
 
         r = app_client_fastapi.post(
-            "/api/auth/wechat/login",
+            "/api/v1/auth/wechat/login",
             json={"code": "wrong-code", "platform": "mp"},
         )
         assert r.status_code == 401
@@ -146,7 +146,7 @@ class TestWechatLogin:
         # `_wechat_auth` is None from teardown; `get_wechat_auth` falls
         # through to the YAML path which finds no AppID in the test config.
         r = app_client_fastapi.post(
-            "/api/auth/wechat/login",
+            "/api/v1/auth/wechat/login",
             json={"code": "any", "platform": "mp"},
         )
         assert r.status_code == 503
@@ -170,7 +170,7 @@ class TestGoogleNative:
         )
 
         r = app_client_fastapi.post(
-            "/api/auth/google/native",
+            "/api/v1/auth/google/native",
             json={"id_token": "good-google"},
         )
         assert r.status_code == 200, r.text
@@ -187,7 +187,7 @@ class TestGoogleNative:
         monkeypatch.setattr(factory, "_google_auth", _FakeGoogleAuth())
 
         r = app_client_fastapi.post(
-            "/api/auth/google/native",
+            "/api/v1/auth/google/native",
             json={"id_token": "bogus"},
         )
         assert r.status_code == 401
@@ -211,7 +211,7 @@ class TestAppleNative:
         )
 
         r = app_client_fastapi.post(
-            "/api/auth/apple/native",
+            "/api/v1/auth/apple/native",
             json={"identity_token": "good-apple", "name": "Bob"},
         )
         assert r.status_code == 200, r.text
@@ -236,7 +236,7 @@ class TestAppleNative:
             _FakeAppleAuth(sub="asub-2", email="first@example.com"),
         )
         r1 = app_client_fastapi.post(
-            "/api/auth/apple/native", json={"identity_token": "good-apple"}
+            "/api/v1/auth/apple/native", json={"identity_token": "good-apple"}
         )
         assert r1.status_code == 200
         first_id = r1.json()["user"]["id"]
@@ -244,7 +244,7 @@ class TestAppleNative:
         # Second login — email absent, same sub. Should hit apple_sub lookup.
         monkeypatch.setattr(factory, "_apple_auth", _FakeAppleAuth(sub="asub-2", email=None))
         r2 = app_client_fastapi.post(
-            "/api/auth/apple/native", json={"identity_token": "good-apple"}
+            "/api/v1/auth/apple/native", json={"identity_token": "good-apple"}
         )
         assert r2.status_code == 200
         assert r2.json()["user"]["id"] == first_id
@@ -273,7 +273,7 @@ class TestMeAndRotate:
             "_apple_auth",
             _FakeAppleAuth(sub="asub-me-1", email="me@example.com"),
         )
-        r = app_client_fastapi.post("/api/auth/apple/native", json={"identity_token": "good-apple"})
+        r = app_client_fastapi.post("/api/v1/auth/apple/native", json={"identity_token": "good-apple"})
         assert r.status_code == 200, r.text
         body = r.json()
         return body["api_key"], body["user"]
@@ -291,7 +291,7 @@ class TestMeAndRotate:
         monkeypatch.setenv("SKIP_AUTH", "false")
 
         r = app_client_fastapi.get(
-            "/api/me",
+            "/api/v1/me",
             headers={"Authorization": f"Bearer {api_key}"},
         )
         assert r.status_code == 200, r.text
@@ -307,7 +307,7 @@ class TestMeAndRotate:
         monkeypatch.setenv("SKIP_AUTH", "false")
 
         r = app_client_fastapi.post(
-            "/api/me/api-key/rotate",
+            "/api/v1/me/api-key/rotate",
             headers={"Authorization": f"Bearer {old_key}"},
         )
         assert r.status_code == 200, r.text
@@ -317,14 +317,14 @@ class TestMeAndRotate:
 
         # Old key is dead — hitting /api/me with it now 401s.
         r_old = app_client_fastapi.get(
-            "/api/me",
+            "/api/v1/me",
             headers={"Authorization": f"Bearer {old_key}"},
         )
         assert r_old.status_code == 401
 
         # New key still works.
         r_new = app_client_fastapi.get(
-            "/api/me",
+            "/api/v1/me",
             headers={"Authorization": f"Bearer {new_key}"},
         )
         assert r_new.status_code == 200
@@ -341,7 +341,7 @@ class TestJsonVsHtmlUnauthenticated:
     ) -> None:
         monkeypatch.setenv("SKIP_AUTH", "false")
 
-        r = app_client_fastapi.get("/api/me", follow_redirects=False)
+        r = app_client_fastapi.get("/api/v1/me", follow_redirects=False)
         assert r.status_code == 401
         assert r.json() == {"success": False, "error": "unauthenticated"}
 
@@ -351,7 +351,7 @@ class TestJsonVsHtmlUnauthenticated:
         monkeypatch.setenv("SKIP_AUTH", "false")
 
         r = app_client_fastapi.get(
-            "/api/me",
+            "/api/v1/me",
             headers={"Authorization": "Bearer " + ("f" * 40)},  # syntactically valid hex, not in DB
             follow_redirects=False,
         )

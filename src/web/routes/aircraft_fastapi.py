@@ -40,9 +40,14 @@ from src.auth.dependencies import require_login
 logger = logging.getLogger("web.aircraft")
 
 router = APIRouter(tags=["aircraft"])
+# JSON API — versioned surface consumed by the web frontend and the
+# forthcoming WeChat mini program. Page-rendering routes stay on
+# ``router`` above (they render Jinja templates on the top-level URL
+# tree and should not be versioned).
+api_router = APIRouter(prefix="/api/v1", tags=["aircraft"])
 
 
-@router.get("/api/aircraft/recent", name="aircraft_recent")
+@api_router.get("/aircraft/recent", name="aircraft_recent")
 async def get_recent_aircraft(
     hours: int = Query(1, ge=1, le=168),
     limit: int = Query(50, ge=1, le=1000),
@@ -80,7 +85,7 @@ async def get_recent_aircraft(
     return {"success": True, "data": results, "count": len(results)}
 
 
-@router.get("/api/aircraft/search", name="aircraft_search")
+@api_router.get("/aircraft/search", name="aircraft_search")
 async def search_aircraft(
     request: Request,
     registration: str = Query("", description="Registration substring (LIKE %reg%)"),
@@ -188,7 +193,7 @@ async def search_aircraft(
     return {"success": True, "data": results, "count": len(results)}
 
 
-@router.get("/api/aircraft/tracks/{registration}", name="aircraft_tracks")
+@api_router.get("/aircraft/tracks/{registration}", name="aircraft_tracks")
 async def get_aircraft_tracks(
     registration: str,
     start_time: str | None = Query(None, description="Beijing time or epoch seconds"),
@@ -246,7 +251,7 @@ async def get_aircraft_tracks(
     }
 
 
-@router.get("/api/flight/trail/{fr24_id}", name="flight_trail")
+@api_router.get("/flight/trail/{fr24_id}", name="flight_trail")
 async def get_fr24_flight_trail(fr24_id: str) -> dict[str, Any]:
     """FR24 clickhandler pass-through — returns the same trail + flight_info shape.
 
@@ -342,7 +347,7 @@ def _extract_ai_flags(ai_analysis: Any) -> dict[str, Any]:
     }
 
 
-@router.get("/api/aircraft/types", name="aircraft_types")
+@api_router.get("/aircraft/types", name="aircraft_types")
 async def get_aircraft_types() -> dict[str, Any]:
     """Top 50 aircraft types by snapshot count over the last 7 days.
 
@@ -382,7 +387,7 @@ async def get_aircraft_types() -> dict[str, Any]:
         session.close()
 
 
-@router.get("/api/aircraft/types/{type_code}", name="aircraft_type_info")
+@api_router.get("/aircraft/types/{type_code}", name="aircraft_type_info")
 async def get_aircraft_type_info(
     type_code: str,
     _user: dict[str, Any] = Depends(require_login),
@@ -421,7 +426,7 @@ async def get_aircraft_type_info(
         session.close()
 
 
-@router.get("/api/aircraft/types/{type_code}/instances", name="aircraft_type_instances")
+@api_router.get("/aircraft/types/{type_code}/instances", name="aircraft_type_instances")
 async def get_aircraft_type_instances(
     type_code: str,
     offset: int = Query(0, ge=0),
@@ -486,7 +491,7 @@ async def get_aircraft_type_instances(
         session.close()
 
 
-@router.get("/api/aircraft/unique", name="aircraft_unique")
+@api_router.get("/aircraft/unique", name="aircraft_unique")
 async def get_unique_aircraft(days: int = Query(7, ge=1, le=365)) -> dict[str, Any]:
     """Distinct aircraft seen in the last ``days`` days.
 
@@ -561,7 +566,7 @@ def _static_info_row_to_dict(row: Any) -> dict[str, Any]:
     }
 
 
-@router.get("/api/aircraft/static", name="aircraft_static_list")
+@api_router.get("/aircraft/static", name="aircraft_static_list")
 async def get_all_static_info() -> dict[str, Any]:
     """List up to 1000 static-info rows, most-recently-updated first.
 
@@ -591,7 +596,7 @@ async def get_all_static_info() -> dict[str, Any]:
         session.close()
 
 
-@router.post("/api/aircraft/static/batch", name="aircraft_static_batch")
+@api_router.post("/aircraft/static/batch", name="aircraft_static_batch")
 async def get_batch_static_info(
     payload: dict[str, Any] = Body(...),
 ) -> dict[str, Any]:
@@ -641,7 +646,7 @@ async def get_batch_static_info(
         session.close()
 
 
-@router.get("/api/aircraft/static/stats", name="aircraft_static_stats")
+@api_router.get("/aircraft/static/stats", name="aircraft_static_stats")
 async def get_static_info_stats() -> dict[str, Any]:
     """Rollup: total, military, government, vip, by_country, by_manufacturer.
 
@@ -709,7 +714,7 @@ async def get_static_info_stats() -> dict[str, Any]:
         session.close()
 
 
-@router.get("/api/aircraft/static/{registration}", name="aircraft_static_one")
+@api_router.get("/aircraft/static/{registration}", name="aircraft_static_one")
 async def get_static_info(registration: str) -> dict[str, Any]:
     """Full static-info row for one registration, superset of the list shape.
 
@@ -831,7 +836,7 @@ async def get_static_info(registration: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/api/aircraft/{identifier}/live", name="aircraft_live")
+@api_router.get("/aircraft/{identifier}/live", name="aircraft_live")
 async def get_aircraft_live(identifier: str) -> dict[str, Any]:
     """Latest snapshot for one aircraft. Same as ``web_app.py:2263``.
 
@@ -861,7 +866,7 @@ async def get_aircraft_live(identifier: str) -> dict[str, Any]:
         session.close()
 
 
-@router.get("/api/aircraft/{identifier}/details", name="aircraft_details_api")
+@api_router.get("/aircraft/{identifier}/details", name="aircraft_details_api")
 async def get_aircraft_details_api(identifier: str) -> dict[str, Any]:
     """Full detail row for one aircraft. Same as ``web_app.py:2292``."""
     from src.services.aircraft_service import AircraftService
@@ -886,7 +891,7 @@ async def get_aircraft_details_api(identifier: str) -> dict[str, Any]:
         session.close()
 
 
-@router.get("/api/aircraft/{identifier}/history", name="aircraft_history_api")
+@api_router.get("/aircraft/{identifier}/history", name="aircraft_history_api")
 async def get_aircraft_history_api(
     identifier: str,
     date: str | None = Query(None, description="Beijing-date YYYY-MM-DD"),
@@ -932,7 +937,7 @@ async def get_aircraft_history_api(
         session.close()
 
 
-@router.get("/api/aircraft/{identifier}/flight-dates", name="aircraft_flight_dates")
+@api_router.get("/aircraft/{identifier}/flight-dates", name="aircraft_flight_dates")
 async def get_aircraft_flight_dates(
     identifier: str,
     days_back: int = Query(30, ge=1, le=365),
@@ -958,7 +963,7 @@ async def get_aircraft_flight_dates(
         session.close()
 
 
-@router.get("/api/aircraft/{registration}/recent-flights", name="aircraft_recent_flights")
+@api_router.get("/aircraft/{registration}/recent-flights", name="aircraft_recent_flights")
 async def get_aircraft_recent_flights(registration: str) -> dict[str, Any]:
     """Last 10 arrival/departure rows from flight_schedules for this aircraft.
 
@@ -1012,7 +1017,7 @@ async def get_aircraft_recent_flights(registration: str) -> dict[str, Any]:
         session.close()
 
 
-@router.get("/api/aircraft/{identifier}/images", name="aircraft_images_api")
+@api_router.get("/aircraft/{identifier}/images", name="aircraft_images_api")
 async def get_aircraft_images_api(identifier: str) -> dict[str, Any]:
     """Image list for one aircraft — bare-URL list + richer metadata list.
 
@@ -1094,7 +1099,7 @@ async def get_aircraft_images_api(identifier: str) -> dict[str, Any]:
         session.close()
 
 
-@router.get("/api/aircraft/{identifier}/static-info", name="aircraft_static_info_api")
+@api_router.get("/aircraft/{identifier}/static-info", name="aircraft_static_info_api")
 async def get_aircraft_static_info_api(identifier: str) -> dict[str, Any]:
     """Static info by registration OR hex — narrower shape than
     ``/api/aircraft/static/{registration}``.

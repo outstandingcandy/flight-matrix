@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 from sqlalchemy import text
 
-URL = "/api/airports/PEK/type-photos"
+URL = "/api/v1/airports/PEK/type-photos"
 
 
 @pytest.fixture
@@ -107,7 +107,7 @@ class TestWhatIsReturned:
         assert body["airport_icao"] == "ZBAA"
 
     def test_the_icao_code_works_too(self, photos: Any) -> None:
-        result = types_of(photos.get("/api/airports/ZBAA/type-photos?types=B738"))
+        result = types_of(photos.get("/api/v1/airports/ZBAA/type-photos?types=B738"))
 
         assert len(result["B738"]) == 3
 
@@ -176,7 +176,7 @@ class TestBadRequests:
         assert photos.get(f"{URL}?types=,,").status_code == 400
 
     def test_an_unknown_airport_is_not_found(self, photos: Any) -> None:
-        assert photos.get("/api/airports/XXX/type-photos?types=B738").status_code == 404
+        assert photos.get("/api/v1/airports/XXX/type-photos?types=B738").status_code == 404
 
 
 class TestCaching:

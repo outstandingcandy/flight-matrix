@@ -1,4 +1,4 @@
-"""Integration coverage for the ``/api/admin/users*`` FastAPI routes.
+"""Integration coverage for the ``/api/v1/admin/users*`` FastAPI routes.
 
 Two things this file is really checking:
 
@@ -31,13 +31,13 @@ import pytest
 @pytest.mark.parametrize(
     ("method", "path"),
     [
-        ("GET", "/api/admin/users"),
-        ("GET", "/api/admin/users/stats"),
-        ("GET", "/api/admin/users/1"),
-        ("POST", "/api/admin/users"),
-        ("PUT", "/api/admin/users/1"),
-        ("DELETE", "/api/admin/users/1"),
-        ("POST", "/api/admin/users/1/api-key"),
+        ("GET", "/api/v1/admin/users"),
+        ("GET", "/api/v1/admin/users/stats"),
+        ("GET", "/api/v1/admin/users/1"),
+        ("POST", "/api/v1/admin/users"),
+        ("PUT", "/api/v1/admin/users/1"),
+        ("DELETE", "/api/v1/admin/users/1"),
+        ("POST", "/api/v1/admin/users/1/api-key"),
     ],
 )
 def test_non_admin_gets_403(
@@ -68,7 +68,7 @@ class TestAdminUsersHappyPath:
     def test_create_list_and_get(self, app_client_fastapi: Any) -> None:
         # Create.
         r_create = app_client_fastapi.post(
-            "/api/admin/users",
+            "/api/v1/admin/users",
             json={
                 "email": "alice@example.com",
                 "name": "Alice",
@@ -85,7 +85,7 @@ class TestAdminUsersHappyPath:
         user_id = body_create["user"]["id"]
 
         # List — the just-created row must appear.
-        r_list = app_client_fastapi.get("/api/admin/users")
+        r_list = app_client_fastapi.get("/api/v1/admin/users")
         assert r_list.status_code == 200
         listing = r_list.json()
         assert listing["success"] is True
@@ -93,7 +93,7 @@ class TestAdminUsersHappyPath:
         assert any(u["id"] == user_id for u in listing["users"])
 
         # Get one.
-        r_one = app_client_fastapi.get(f"/api/admin/users/{user_id}")
+        r_one = app_client_fastapi.get(f"/api/v1/admin/users/{user_id}")
         assert r_one.status_code == 200
         body_one = r_one.json()
         assert body_one["user"]["email"] == "alice@example.com"
@@ -101,29 +101,29 @@ class TestAdminUsersHappyPath:
         assert "subscriptions" in body_one["user"]
 
     def test_create_rejects_missing_email(self, app_client_fastapi: Any) -> None:
-        r = app_client_fastapi.post("/api/admin/users", json={"name": "no-email"})
+        r = app_client_fastapi.post("/api/v1/admin/users", json={"name": "no-email"})
         assert r.status_code == 400
         assert r.json() == {"success": False, "error": "Email is required"}
 
     def test_create_rejects_duplicate_email(self, app_client_fastapi: Any) -> None:
         payload = {"email": "dup@example.com", "tier": "basic"}
-        r1 = app_client_fastapi.post("/api/admin/users", json=payload)
+        r1 = app_client_fastapi.post("/api/v1/admin/users", json=payload)
         assert r1.status_code == 200
 
-        r2 = app_client_fastapi.post("/api/admin/users", json=payload)
+        r2 = app_client_fastapi.post("/api/v1/admin/users", json=payload)
         assert r2.status_code == 400
         assert r2.json()["success"] is False
 
     def test_stats_reports_counts(self, app_client_fastapi: Any) -> None:
         # Seed two users of different tiers so the counts are meaningful.
         app_client_fastapi.post(
-            "/api/admin/users", json={"email": "s1@example.com", "tier": "basic"}
+            "/api/v1/admin/users", json={"email": "s1@example.com", "tier": "basic"}
         )
         app_client_fastapi.post(
-            "/api/admin/users", json={"email": "s2@example.com", "tier": "premium"}
+            "/api/v1/admin/users", json={"email": "s2@example.com", "tier": "premium"}
         )
 
-        r = app_client_fastapi.get("/api/admin/users/stats")
+        r = app_client_fastapi.get("/api/v1/admin/users/stats")
         assert r.status_code == 200
         stats = r.json()["stats"]
         assert stats["total"] >= 2
@@ -133,13 +133,13 @@ class TestAdminUsersHappyPath:
 
     def test_search_filter(self, app_client_fastapi: Any) -> None:
         app_client_fastapi.post(
-            "/api/admin/users", json={"email": "findme@example.com", "name": "Findable"}
+            "/api/v1/admin/users", json={"email": "findme@example.com", "name": "Findable"}
         )
         app_client_fastapi.post(
-            "/api/admin/users", json={"email": "other@example.com", "name": "Other"}
+            "/api/v1/admin/users", json={"email": "other@example.com", "name": "Other"}
         )
 
-        r = app_client_fastapi.get("/api/admin/users", params={"search": "findme"})
+        r = app_client_fastapi.get("/api/v1/admin/users", params={"search": "findme"})
         assert r.status_code == 200
         emails = [u["email"] for u in r.json()["users"]]
         assert "findme@example.com" in emails
@@ -147,13 +147,13 @@ class TestAdminUsersHappyPath:
 
     def test_update_name_and_tier(self, app_client_fastapi: Any) -> None:
         r_create = app_client_fastapi.post(
-            "/api/admin/users",
+            "/api/v1/admin/users",
             json={"email": "upd@example.com", "name": "Old", "tier": "basic"},
         )
         user_id = r_create.json()["user"]["id"]
 
         r_upd = app_client_fastapi.put(
-            f"/api/admin/users/{user_id}",
+            f"/api/v1/admin/users/{user_id}",
             json={
                 "name": "New",
                 "subscription": {
@@ -166,7 +166,7 @@ class TestAdminUsersHappyPath:
         assert r_upd.status_code == 200
         assert r_upd.json() == {"success": True}
 
-        r_check = app_client_fastapi.get(f"/api/admin/users/{user_id}")
+        r_check = app_client_fastapi.get(f"/api/v1/admin/users/{user_id}")
         assert r_check.status_code == 200
         checked = r_check.json()["user"]
         assert checked["name"] == "New"
@@ -175,27 +175,27 @@ class TestAdminUsersHappyPath:
         assert active["tier"] == "premium"
 
     def test_delete_soft_removes(self, app_client_fastapi: Any) -> None:
-        r_create = app_client_fastapi.post("/api/admin/users", json={"email": "gone@example.com"})
+        r_create = app_client_fastapi.post("/api/v1/admin/users", json={"email": "gone@example.com"})
         user_id = r_create.json()["user"]["id"]
 
-        r_del = app_client_fastapi.delete(f"/api/admin/users/{user_id}")
+        r_del = app_client_fastapi.delete(f"/api/v1/admin/users/{user_id}")
         assert r_del.status_code == 200
         assert r_del.json() == {"success": True}
 
         # Soft delete: row still exists (get returns 200) but status="deleted".
-        r_get = app_client_fastapi.get(f"/api/admin/users/{user_id}")
+        r_get = app_client_fastapi.get(f"/api/v1/admin/users/{user_id}")
         assert r_get.status_code == 200
         assert r_get.json()["user"]["status"] == "deleted"
 
     def test_regenerate_api_key(self, app_client_fastapi: Any) -> None:
         r_create = app_client_fastapi.post(
-            "/api/admin/users",
+            "/api/v1/admin/users",
             json={"email": "key@example.com", "generate_api_key": True},
         )
         user_id = r_create.json()["user"]["id"]
         old_key = r_create.json()["user"]["api_key"]
 
-        r_new = app_client_fastapi.post(f"/api/admin/users/{user_id}/api-key")
+        r_new = app_client_fastapi.post(f"/api/v1/admin/users/{user_id}/api-key")
         assert r_new.status_code == 200
         new_key = r_new.json()["api_key"]
         assert new_key
@@ -204,6 +204,6 @@ class TestAdminUsersHappyPath:
     def test_regenerate_api_key_404_for_missing_user(self, app_client_fastapi: Any) -> None:
         # 99999 doesn't exist. UserService.regenerate_api_key returns None
         # → handler raises 400 (same as Flask, for parity).
-        r = app_client_fastapi.post("/api/admin/users/99999/api-key")
+        r = app_client_fastapi.post("/api/v1/admin/users/99999/api-key")
         assert r.status_code == 400
         assert r.json()["success"] is False

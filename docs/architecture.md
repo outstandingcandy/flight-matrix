@@ -79,7 +79,7 @@ TaskScheduler ─► scraper_tasks (Postgres) ─► AsyncTaskQueue ─► Worke
 - Heartbeat every 30 s; stale tasks re-queued after 60 min.
 - Sinks (`src/scraper/sinks/`) are bound onto each scraper at registration
   time so scrapers stay persistence-agnostic. `fr24_airport_api_sink` posts
-  to the web app's `/api/ingest/*` route when the scraper runs off-host
+  to the web app's `/api/v1/ingest/*` route when the scraper runs off-host
   (workstation Chromium, no direct database access).
 
 Local mode uses `LocalTaskQueue` (backed by `src/scraper/sources/*`) instead
@@ -169,7 +169,7 @@ by separate code paths — see `src/llm/` and `src/storage/`.
   certs). See `docker-compose.web.yml`; provisioning and cutover scripts
   live in `scripts/gcp/`. A separate `docker-compose.scraper.yml` runs the
   scraper on the same or a different host; workstation-run Cloudflare-heavy
-  scrapers post rows back via `/api/ingest/*`.
+  scrapers post rows back via `/api/v1/ingest/*`.
 - **AWS Lambda + ASG.** Historical path, still fully in the repo.
   `lambda_handler.py` uses the Mangum ASGI adapter wrapping Flask via
   `asgiref.wsgi.WsgiToAsgi`; static assets served from CloudFront (URL

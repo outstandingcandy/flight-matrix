@@ -31,10 +31,10 @@ from src.auth.dependencies import require_admin
 
 logger = logging.getLogger("web.admin.users")
 
-router = APIRouter(tags=["admin-users"], dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/api/v1", tags=["admin-users"], dependencies=[Depends(require_admin)])
 
 
-@router.get("/api/admin/users", name="api_admin_list_users")
+@router.get("/admin/users", name="api_admin_list_users")
 async def api_admin_list_users(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=500),
@@ -76,7 +76,7 @@ async def api_admin_list_users(
     }
 
 
-@router.get("/api/admin/users/stats", name="api_admin_user_stats")
+@router.get("/admin/users/stats", name="api_admin_user_stats")
 async def api_admin_user_stats() -> dict[str, Any]:
     """Users total / active / premium / enterprise counts.
 
@@ -108,7 +108,7 @@ async def api_admin_user_stats() -> dict[str, Any]:
     }
 
 
-@router.post("/api/admin/users", name="api_admin_create_user")
+@router.post("/admin/users", name="api_admin_create_user")
 async def api_admin_create_user(data: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """Create a new user. Same as ``web_app.py:3253``."""
     from src.web.service_factory import get_multi_user_services
@@ -137,7 +137,7 @@ async def api_admin_create_user(data: dict[str, Any] = Body(...)) -> dict[str, A
     )
 
 
-@router.get("/api/admin/users/{user_id}", name="api_admin_get_user")
+@router.get("/admin/users/{user_id}", name="api_admin_get_user")
 async def api_admin_get_user(user_id: int) -> dict[str, Any]:
     """Get a user's full profile + subscription. Same as ``web_app.py:3280``."""
     from src.web.service_factory import get_multi_user_services
@@ -149,7 +149,7 @@ async def api_admin_get_user(user_id: int) -> dict[str, Any]:
     raise HTTPException(status_code=404, detail={"success": False, "error": "User not found"})
 
 
-@router.put("/api/admin/users/{user_id}", name="api_admin_update_user")
+@router.put("/admin/users/{user_id}", name="api_admin_update_user")
 async def api_admin_update_user(
     user_id: int,
     data: dict[str, Any] = Body(...),
@@ -210,7 +210,7 @@ async def api_admin_update_user(
     return {"success": True}
 
 
-@router.delete("/api/admin/users/{user_id}", name="api_admin_delete_user")
+@router.delete("/admin/users/{user_id}", name="api_admin_delete_user")
 async def api_admin_delete_user(user_id: int) -> dict[str, Any]:
     """Soft-delete a user. Same as ``web_app.py:3359`` (``hard_delete=False``)."""
     from src.web.service_factory import get_multi_user_services
@@ -223,7 +223,7 @@ async def api_admin_delete_user(user_id: int) -> dict[str, Any]:
     )
 
 
-@router.post("/api/admin/users/{user_id}/api-key", name="api_admin_regenerate_api_key")
+@router.post("/admin/users/{user_id}/api-key", name="api_admin_regenerate_api_key")
 async def api_admin_regenerate_api_key(user_id: int) -> dict[str, Any]:
     """Regenerate a user's API key. Same as ``web_app.py:3375``."""
     from src.web.service_factory import get_multi_user_services

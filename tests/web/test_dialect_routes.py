@@ -123,10 +123,10 @@ def _payload(response: Any, path: str) -> dict[str, Any]:
 
 
 class TestRealtimeAircraft:
-    """`/api/airports/<code>/realtime-aircraft` — `DISTINCT ON`, `= ANY()`, `NOW() - INTERVAL`."""
+    """`/api/v1/airports/<code>/realtime-aircraft` — `DISTINCT ON`, `= ANY()`, `NOW() - INTERVAL`."""
 
     def test_returns_only_the_newest_position_per_aircraft(self, seeded_client: Any) -> None:
-        path = "/api/airports/JFK/realtime-aircraft"
+        path = "/api/v1/airports/JFK/realtime-aircraft"
         body = _payload(seeded_client.get(path), path)
 
         aircraft = body["aircraft"]
@@ -135,20 +135,20 @@ class TestRealtimeAircraft:
 
     def test_flight_number_filter_uses_an_expanding_bind(self, seeded_client: Any) -> None:
         """The filter replaced PostgreSQL's `= ANY(:param)`, which SQLite rejects."""
-        path = "/api/airports/JFK/realtime-aircraft?flight_numbers=AA100"
+        path = "/api/v1/airports/JFK/realtime-aircraft?flight_numbers=AA100"
         body = _payload(seeded_client.get(path), path)
         assert [a["flight_number"] for a in body["aircraft"]] == ["AA100"]
 
-        path = "/api/airports/JFK/realtime-aircraft?flight_numbers=ZZ999"
+        path = "/api/v1/airports/JFK/realtime-aircraft?flight_numbers=ZZ999"
         body = _payload(seeded_client.get(path), path)
         assert body["aircraft"] == []
 
 
 class TestFlightSchedules:
-    """`/api/flight-schedules` — `DISTINCT ON` plus four `scheduled_time::date`."""
+    """`/api/v1/flight-schedules` — `DISTINCT ON` plus four `scheduled_time::date`."""
 
     def test_deduplicates_one_flight_per_day(self, seeded_client: Any) -> None:
-        path = "/api/flight-schedules?airport=JFK"
+        path = "/api/v1/flight-schedules?airport=JFK"
         body = _payload(seeded_client.get(path), path)
 
         flights = [s["flight_number"] for s in body["schedules"]]
@@ -159,13 +159,13 @@ class TestFlightSchedules:
         )
 
     def test_icao_code_is_normalised_to_iata(self, seeded_client: Any) -> None:
-        path = "/api/flight-schedules?airport=KJFK"
+        path = "/api/v1/flight-schedules?airport=KJFK"
         body = _payload(seeded_client.get(path), path)
         assert len(body["schedules"]) == 2
 
     def test_flight_type_filter_runs_the_separate_count_query(self, seeded_client: Any) -> None:
         """`flight_type` is the only way into the second `DISTINCT ON` query."""
-        path = "/api/flight-schedules?airport=JFK&flight_type=arrival"
+        path = "/api/v1/flight-schedules?airport=JFK&flight_type=arrival"
         body = _payload(seeded_client.get(path), path)
 
         assert [s["flight_number"] for s in body["schedules"]] == ["AA100"]
@@ -175,12 +175,12 @@ class TestFlightSchedules:
 
     def test_has_livery_filter_runs(self, seeded_client: Any) -> None:
         """Guards the predicate that replaced the nonexistent `has_special_livery`."""
-        path = "/api/flight-schedules?airport=JFK&has_livery=true"
+        path = "/api/v1/flight-schedules?airport=JFK&has_livery=true"
         body = _payload(seeded_client.get(path), path)
         assert [s["flight_number"] for s in body["schedules"]] == ["AA100"]
 
     def test_livery_filter_runs(self, seeded_client: Any) -> None:
-        path = "/api/flight-schedules?airport=JFK&livery=special+livery&flight_type=arrival"
+        path = "/api/v1/flight-schedules?airport=JFK&livery=special+livery&flight_type=arrival"
         body = _payload(seeded_client.get(path), path)
         assert [s["flight_number"] for s in body["schedules"]] == ["AA100"]
 
@@ -271,7 +271,7 @@ class TestOwnPhotoPriority:
     def test_a_photo_at_this_airport_wins_over_one_taken_elsewhere(
         self, photo_priority_client: Any
     ) -> None:
-        path = "/api/flight-schedules?airport=PEK"
+        path = "/api/v1/flight-schedules?airport=PEK"
         body = _payload(photo_priority_client.get(path), path)
 
         flight = next(s for s in body["schedules"] if s["flight_number"] == "CA100")
@@ -281,7 +281,7 @@ class TestOwnPhotoPriority:
     def test_a_photo_from_elsewhere_is_used_when_none_exists_here(
         self, photo_priority_client: Any
     ) -> None:
-        path = "/api/flight-schedules?airport=PEK"
+        path = "/api/v1/flight-schedules?airport=PEK"
         body = _payload(photo_priority_client.get(path), path)
 
         flight = next(s for s in body["schedules"] if s["flight_number"] == "CA200")
@@ -290,7 +290,7 @@ class TestOwnPhotoPriority:
 
     def test_no_own_photo_leaves_both_fields_empty(self, photo_priority_client: Any) -> None:
         """The frontend's same-type fallback only kicks in when both are empty."""
-        path = "/api/flight-schedules?airport=PEK"
+        path = "/api/v1/flight-schedules?airport=PEK"
         body = _payload(photo_priority_client.get(path), path)
 
         flight = next(s for s in body["schedules"] if s["flight_number"] == "CA300")
@@ -298,7 +298,7 @@ class TestOwnPhotoPriority:
         assert flight["image_source"] is None
 
     def test_the_icao_code_resolves_the_same_way(self, photo_priority_client: Any) -> None:
-        path = "/api/flight-schedules?airport=ZBAA"
+        path = "/api/v1/flight-schedules?airport=ZBAA"
         body = _payload(photo_priority_client.get(path), path)
 
         flight = next(s for s in body["schedules"] if s["flight_number"] == "CA100")
@@ -306,10 +306,10 @@ class TestOwnPhotoPriority:
 
 
 class TestFilterOptions:
-    """`/api/flight-schedules/filter-options` — `::text`, `TO_CHAR`, `AT TIME ZONE`."""
+    """`/api/v1/flight-schedules/filter-options` — `::text`, `TO_CHAR`, `AT TIME ZONE`."""
 
     def test_returns_types_liveries_and_beijing_dates(self, seeded_client: Any) -> None:
-        path = "/api/flight-schedules/filter-options?airport=JFK"
+        path = "/api/v1/flight-schedules/filter-options?airport=JFK"
         body = _payload(seeded_client.get(path), path)
 
         assert {t["code"] for t in body["aircraft_types"]} == {"B738", "A320"}
@@ -333,7 +333,7 @@ class TestFilterOptions:
 
 
 class TestAdminReportsMultiUser:
-    """The default `user_cooldowns` branch of `/api/admin/reports`.
+    """The default `user_cooldowns` branch of `/api/v1/admin/reports`.
 
     Multi-user mode is on by default, so this is the branch that actually runs.
     It used to carry its own `INNER JOIN (SELECT MAX(snapshot_time) GROUP BY hex)`
@@ -370,7 +370,7 @@ class TestAdminReportsMultiUser:
             session.close()
 
     def test_returns_one_row_per_cooldown_despite_tied_snapshots(self, seeded_client: Any) -> None:
-        path = "/api/admin/reports"
+        path = "/api/v1/admin/reports"
         body = _payload(seeded_client.get(path), path)
 
         assert body["multi_user_mode"] is True
@@ -380,7 +380,7 @@ class TestAdminReportsMultiUser:
 
 
 class TestAdminReports:
-    """`/api/admin/reports` and `/stats` — `DISTINCT ON` and the date comparison.
+    """`/api/v1/admin/reports` and `/stats` — `DISTINCT ON` and the date comparison.
 
     The default config enables multi-user mode, which reads `user_cooldowns`.
     These tests cover the single-user branch over `report_cooldowns`, so they
@@ -395,7 +395,7 @@ class TestAdminReports:
         )
 
     def test_joins_the_newest_snapshot_per_hex(self, seeded_client: Any) -> None:
-        path = "/api/admin/reports"
+        path = "/api/v1/admin/reports"
         body = _payload(seeded_client.get(path), path)
 
         assert len(body["reports"]) == 1
@@ -404,7 +404,7 @@ class TestAdminReports:
         assert report["registration"] == "N12345", "the stale snapshot must not win"
 
     def test_stats_counts_today(self, seeded_client: Any) -> None:
-        path = "/api/admin/reports/stats"
+        path = "/api/v1/admin/reports/stats"
         body = _payload(seeded_client.get(path), path)
 
         assert body["stats"]["total_tracked"] == 1
@@ -427,7 +427,7 @@ class TestAdminReports:
         finally:
             session.close()
 
-        path = "/api/admin/reports/stats"
+        path = "/api/v1/admin/reports/stats"
         body = _payload(seeded_client.get(path), path)
 
         assert body["stats"]["total_tracked"] == 2

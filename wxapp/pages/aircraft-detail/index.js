@@ -28,9 +28,9 @@ Page({
     this.setData({ loading: true, error: null });
     try {
       const [details, history, images] = await Promise.all([
-        apiFetch(`/api/aircraft/${this.data.identifier}/details`),
-        apiFetch(`/api/aircraft/${this.data.identifier}/history?limit=500`),
-        apiFetch(`/api/aircraft/${this.data.identifier}/images`),
+        apiFetch(`/api/v1/aircraft/${this.data.identifier}/details`),
+        apiFetch(`/api/v1/aircraft/${this.data.identifier}/history?limit=500`),
+        apiFetch(`/api/v1/aircraft/${this.data.identifier}/images`),
       ]);
       this.setData({
         details: details.aircraft || details.data || details,

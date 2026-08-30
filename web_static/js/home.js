@@ -143,7 +143,7 @@ class HomeSearch {
         this.aircraftTypesResultSection.classList.add('d-none');
 
         try {
-            const response = await fetch(`/api/search/unified?q=${encodeURIComponent(query)}&limit=10`);
+            const response = await fetch(`/api/v1/search/unified?q=${encodeURIComponent(query)}&limit=10`);
             const data = await response.json();
 
             this.dropdownLoading.classList.add('d-none');
@@ -369,7 +369,7 @@ class PopularCards {
 
     async loadPopularItems() {
         try {
-            const response = await fetch('/api/search/suggestions');
+            const response = await fetch('/api/v1/search/suggestions');
             const data = await response.json();
 
             if (data.success) {

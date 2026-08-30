@@ -1,6 +1,6 @@
 """Tests for the OpenSearch-backed admin aircraft endpoints.
 
-`/api/admin/aircraft` used to be pure SQL, with OpenSearch bolted on to widen the
+`/api/v1/admin/aircraft` used to be pure SQL, with OpenSearch bolted on to widen the
 `search` parameter. It now asks the index for the whole query — text, the type /
 livery / category filters, the sort, the page window and the total — including the
 first page load, where nothing is filtered at all. Its header counts and its two
@@ -33,11 +33,11 @@ from sqlalchemy import text
 
 from tests.search.fake_opensearch import FakeOpenSearch
 
-LIST_PATH = "/api/admin/aircraft"
-STATS_PATH = "/api/admin/aircraft/stats"
-TYPES_PATH = "/api/admin/aircraft/types"
-LIVERIES_PATH = "/api/admin/aircraft/liveries"
-REGISTRATIONS_PATH = "/api/admin/aircraft/registrations"
+LIST_PATH = "/api/v1/admin/aircraft"
+STATS_PATH = "/api/v1/admin/aircraft/stats"
+TYPES_PATH = "/api/v1/admin/aircraft/types"
+LIVERIES_PATH = "/api/v1/admin/aircraft/liveries"
+REGISTRATIONS_PATH = "/api/v1/admin/aircraft/registrations"
 
 # Naive UTC, which is what every writer in this project stores.
 NOW = datetime.now(UTC).replace(tzinfo=None, microsecond=0)

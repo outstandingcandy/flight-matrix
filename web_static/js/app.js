@@ -230,7 +230,7 @@ class AircraftTracker {
 
         try {
             this.showLoading('正在搜索...');
-            const response = await fetch(`/api/aircraft/search?${params}`);
+            const response = await fetch(`/api/v1/aircraft/search?${params}`);
             const data = await response.json();
 
             if (data.success) {
@@ -253,7 +253,7 @@ class AircraftTracker {
     async getRecentAircraft() {
         try {
             this.showLoading('加载最近飞机数据...');
-            const response = await fetch('/api/aircraft/recent?hours=1&limit=100');
+            const response = await fetch('/api/v1/aircraft/recent?hours=1&limit=100');
             const data = await response.json();
 
             if (data.success) {
@@ -276,7 +276,7 @@ class AircraftTracker {
     async getMilitaryAircraft() {
         try {
             this.showLoading('加载军用飞机数据...');
-            const response = await fetch('/api/aircraft/search?is_military=true&limit=200');
+            const response = await fetch('/api/v1/aircraft/search?is_military=true&limit=200');
             const data = await response.json();
 
             if (data.success) {
@@ -299,7 +299,7 @@ class AircraftTracker {
     async getUniqueAircraft() {
         try {
             this.showLoading('加载唯一飞机列表...');
-            const response = await fetch('/api/aircraft/unique?days=7');
+            const response = await fetch('/api/v1/aircraft/unique?days=7');
             const data = await response.json();
 
             if (data.success) {
@@ -639,7 +639,7 @@ class AircraftTracker {
             const startDate = document.getElementById('trackStartDate').value;
             const limit = document.getElementById('trackLimit').value;
             
-            let url = `/api/aircraft/tracks/${this.currentRegistration}?limit=${limit}`;
+            let url = `/api/v1/aircraft/tracks/${this.currentRegistration}?limit=${limit}`;
             if (startDate) {
                 url += `&start_time=${startDate}`;
             }
@@ -840,7 +840,7 @@ class AircraftTracker {
      */
     async loadStatistics() {
         try {
-            const response = await fetch('/api/statistics');
+            const response = await fetch('/api/v1/statistics');
             const data = await response.json();
 
             if (data.success) {
@@ -1130,7 +1130,7 @@ class AircraftTracker {
 
         try {
             // 使用批量接口获取指定注册号的静态信息
-            const response = await fetch('/api/aircraft/static/batch', {
+            const response = await fetch('/api/v1/aircraft/static/batch', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -1210,8 +1210,8 @@ class AircraftTracker {
         try {
             // 并行获取静态信息和飞机图片
             const [staticResponse, imagesResponse] = await Promise.all([
-                fetch(`/api/aircraft/static/${registration}`),
-                fetch(`/api/aircraft/${registration}/images`)
+                fetch(`/api/v1/aircraft/static/${registration}`),
+                fetch(`/api/v1/aircraft/${registration}/images`)
             ]);
 
             const staticData = await staticResponse.json();

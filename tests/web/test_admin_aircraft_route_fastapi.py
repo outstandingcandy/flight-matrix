@@ -1,4 +1,4 @@
-"""Semantic + regression coverage for ``/api/admin/aircraft*`` (FastAPI).
+"""Semantic + regression coverage for ``/api/v1/admin/aircraft*`` (FastAPI).
 
 The smoke sweep in :mod:`tests.web.test_route_smoke_fastapi` already
 asserts these routes don't 5xx on an empty DB. This file adds:
@@ -21,12 +21,12 @@ from typing import Any
 import pytest
 
 ROUTES = [
-    ("GET", "/api/admin/aircraft"),
-    ("GET", "/api/admin/aircraft/stats"),
-    ("GET", "/api/admin/aircraft/types"),
-    ("GET", "/api/admin/aircraft/liveries"),
-    ("GET", "/api/admin/aircraft/registrations"),
-    ("GET", "/api/admin/aircraft-query/N703PA"),
+    ("GET", "/api/v1/admin/aircraft"),
+    ("GET", "/api/v1/admin/aircraft/stats"),
+    ("GET", "/api/v1/admin/aircraft/types"),
+    ("GET", "/api/v1/admin/aircraft/liveries"),
+    ("GET", "/api/v1/admin/aircraft/registrations"),
+    ("GET", "/api/v1/admin/aircraft-query/N703PA"),
 ]
 
 
@@ -49,7 +49,7 @@ def test_non_admin_gets_403(
 
 class TestAdminAircraftShape:
     def test_list_returns_pagination_envelope(self, app_client_fastapi: Any) -> None:
-        r = app_client_fastapi.get("/api/admin/aircraft")
+        r = app_client_fastapi.get("/api/v1/admin/aircraft")
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["success"] is True
@@ -59,7 +59,7 @@ class TestAdminAircraftShape:
         assert isinstance(body["aircraft"], list)
 
     def test_stats_returns_expected_keys(self, app_client_fastapi: Any) -> None:
-        r = app_client_fastapi.get("/api/admin/aircraft/stats")
+        r = app_client_fastapi.get("/api/v1/admin/aircraft/stats")
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["success"] is True
@@ -74,18 +74,18 @@ class TestAdminAircraftShape:
         the full top-200 slice. Empty DB → 0 items either way, but
         the shape mustn't change (frontend distinguishes an empty
         autocomplete from a broken one)."""
-        r_short = app_client_fastapi.get("/api/admin/aircraft/types?search=a")
+        r_short = app_client_fastapi.get("/api/v1/admin/aircraft/types?search=a")
         assert r_short.status_code == 200
         assert isinstance(r_short.json()["types"], list)
 
-        r_full = app_client_fastapi.get("/api/admin/aircraft/types?search=A320")
+        r_full = app_client_fastapi.get("/api/v1/admin/aircraft/types?search=A320")
         assert r_full.status_code == 200
         assert isinstance(r_full.json()["types"], list)
 
     def test_liveries_and_registrations_shape(self, app_client_fastapi: Any) -> None:
         for path, key in (
-            ("/api/admin/aircraft/liveries", "liveries"),
-            ("/api/admin/aircraft/registrations", "registrations"),
+            ("/api/v1/admin/aircraft/liveries", "liveries"),
+            ("/api/v1/admin/aircraft/registrations", "registrations"),
         ):
             r = app_client_fastapi.get(path)
             assert r.status_code == 200, (path, r.text)
@@ -95,10 +95,10 @@ class TestAdminAircraftShape:
             assert isinstance(body[key], list)
 
     def test_aircraft_query_missing_returns_204_or_404_body(self, app_client_fastapi: Any) -> None:
-        """``/api/admin/aircraft-query/{registration}`` is the drill-
+        """``/api/v1/admin/aircraft-query/{registration}`` is the drill-
         down for an admin. On an empty DB every joined table is empty,
         so the endpoint returns 200 with an empty body — not 404. The
         assertion here is only "no 5xx", not the exact status.
         """
-        r = app_client_fastapi.get("/api/admin/aircraft-query/NONEXISTENT")
+        r = app_client_fastapi.get("/api/v1/admin/aircraft-query/NONEXISTENT")
         assert r.status_code < 500, r.text

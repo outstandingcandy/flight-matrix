@@ -23,8 +23,8 @@ Page({
     this.setData({ loading: true, error: null });
     try {
       const [stats, recent] = await Promise.all([
-        apiFetch("/api/statistics"),
-        apiFetch("/api/aircraft/recent?limit=10"),
+        apiFetch("/api/v1/statistics"),
+        apiFetch("/api/v1/aircraft/recent?limit=10"),
       ]);
       this.setData({
         stats: stats.statistics || stats,

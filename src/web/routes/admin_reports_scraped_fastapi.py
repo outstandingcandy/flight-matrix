@@ -38,7 +38,7 @@ from src.auth.dependencies import require_admin
 
 logger = logging.getLogger("web.admin.reports_scraped")
 
-router = APIRouter(tags=["admin-reports-scraped"], dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/api/v1", tags=["admin-reports-scraped"], dependencies=[Depends(require_admin)])
 
 
 # ---------------------------------------------------------------------------
@@ -46,7 +46,7 @@ router = APIRouter(tags=["admin-reports-scraped"], dependencies=[Depends(require
 # ---------------------------------------------------------------------------
 
 
-@router.get("/api/admin/reports", name="api_admin_list_reports")
+@router.get("/admin/reports", name="api_admin_list_reports")
 async def api_admin_list_reports(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=500),
@@ -256,7 +256,7 @@ async def api_admin_list_reports(
         session.close()
 
 
-@router.get("/api/admin/reports/stats", name="api_admin_report_stats")
+@router.get("/admin/reports/stats", name="api_admin_report_stats")
 async def api_admin_report_stats() -> dict[str, Any]:
     """Report table rollup. Same as ``web_app.py:4141``.
 
@@ -306,7 +306,7 @@ async def api_admin_report_stats() -> dict[str, Any]:
 
 
 @router.get(
-    "/api/admin/reports/{aircraft_hex}/detail",
+    "/admin/reports/{aircraft_hex}/detail",
     name="api_admin_report_detail",
 )
 async def api_admin_report_detail(
@@ -471,7 +471,7 @@ def _count_json_list(raw: Any) -> int:
     return 0
 
 
-@router.get("/api/admin/scraped-data/xiaohongshu/stats", name="api_admin_xhs_stats")
+@router.get("/admin/scraped-data/xiaohongshu/stats", name="api_admin_xhs_stats")
 async def api_admin_xhs_stats() -> dict[str, Any]:
     """XHS scraped-data rollup. Same as ``web_app.py:4352``."""
     from src.web.helpers import table_exists as _table_exists
@@ -516,7 +516,7 @@ async def api_admin_xhs_stats() -> dict[str, Any]:
         session.close()
 
 
-@router.get("/api/admin/scraped-data/xiaohongshu/notes", name="api_admin_xhs_notes")
+@router.get("/admin/scraped-data/xiaohongshu/notes", name="api_admin_xhs_notes")
 async def api_admin_xhs_notes(
     author: str = Query(""),
     title: str = Query(""),
@@ -601,7 +601,7 @@ async def api_admin_xhs_notes(
 
 
 @router.get(
-    "/api/admin/scraped-data/xiaohongshu/notes/{note_id}",
+    "/admin/scraped-data/xiaohongshu/notes/{note_id}",
     name="api_admin_xhs_note_detail",
 )
 async def api_admin_xhs_note_detail(note_id: str) -> dict[str, Any]:
@@ -679,7 +679,7 @@ async def api_admin_xhs_note_detail(note_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/api/admin/scraped-data/fr24/stats", name="api_admin_fr24_stats")
+@router.get("/admin/scraped-data/fr24/stats", name="api_admin_fr24_stats")
 async def api_admin_fr24_stats() -> dict[str, Any]:
     """FR24 flight-schedules rollup. Same as ``web_app.py:4591``."""
     from src.web.runtime import db_manager
@@ -719,7 +719,7 @@ async def api_admin_fr24_stats() -> dict[str, Any]:
         session.close()
 
 
-@router.get("/api/admin/scraped-data/fr24/flights", name="api_admin_fr24_flights")
+@router.get("/admin/scraped-data/fr24/flights", name="api_admin_fr24_flights")
 async def api_admin_fr24_flights(
     airport: str = Query(""),
     registration: str = Query(""),
@@ -791,7 +791,7 @@ async def api_admin_fr24_flights(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/api/admin/scraped-data/jetphotos/stats", name="api_admin_jetphotos_stats")
+@router.get("/admin/scraped-data/jetphotos/stats", name="api_admin_jetphotos_stats")
 async def api_admin_jetphotos_stats() -> dict[str, Any]:
     """JetPhotos scraped-data rollup. Same as ``web_app.py:4708``."""
     from src.web.runtime import db_manager
@@ -837,7 +837,7 @@ async def api_admin_jetphotos_stats() -> dict[str, Any]:
         session.close()
 
 
-@router.get("/api/admin/scraped-data/jetphotos/images", name="api_admin_jetphotos_images")
+@router.get("/admin/scraped-data/jetphotos/images", name="api_admin_jetphotos_images")
 async def api_admin_jetphotos_images(
     registration: str = Query(""),
     photographer: str = Query(""),

@@ -15,10 +15,10 @@ from sqlalchemy import text
 
 logger = logging.getLogger("web.search")
 
-router = APIRouter(tags=["search"])
+router = APIRouter(prefix="/api/v1", tags=["search"])
 
 
-@router.get("/api/search/unified", name="unified_search")
+@router.get("/search/unified", name="unified_search")
 async def unified_search(
     q: str = Query("", description="Search text"),
     limit: int = Query(10, ge=1, le=100),
@@ -99,7 +99,7 @@ async def unified_search(
         db_session.close()
 
 
-@router.get("/api/search/suggestions", name="search_suggestions")
+@router.get("/search/suggestions", name="search_suggestions")
 async def search_suggestions() -> dict[str, Any]:
     """Curated popular items for the home page, sourced from
     ``config.home_popular``. Cached for 1 h on the shared ``api_cache``
@@ -185,7 +185,7 @@ async def search_suggestions() -> dict[str, Any]:
         db_session.close()
 
 
-@router.get("/api/search/aircraft", name="super_search_aircraft")
+@router.get("/search/aircraft", name="super_search_aircraft")
 async def super_search_aircraft(
     registration: str = Query("", description="Registration filter"),
     flight_number: str = Query("", description="Flight number filter"),

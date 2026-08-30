@@ -10,7 +10,7 @@ for the frontend if it requires a specific query param that the generic
 smoke test doesn't provide. e.g. a page issues
 `GET /api/aircraft/recent?hours=1&limit=100` and the handler 500s
 when `hours` is missing. The route smoke test uses bare
-`/api/aircraft/recent` and wouldn't catch it.
+`/api/v1/aircraft/recent` and wouldn't catch it.
 
 All fetch() URLs were enumerated from web_templates/ and web_static/js/
 on 2026-05-09 and checked in below. If you add a new fetch() call,
@@ -44,60 +44,60 @@ EMAIL = "test@example.com"
 # Shape: (method, path, expected_query_params_or_body).
 FRONTEND_GET_CALLS = [
     # Page data — hit from home.html, dashboard, airport-board etc.
-    "/api/statistics",
-    "/api/aircraft/recent?hours=1&limit=100",
-    "/api/aircraft/search?is_military=true&limit=200",
-    "/api/aircraft/unique?days=7",
-    "/api/aircraft/tracks/N703PA",
-    "/api/search/unified?q=test&limit=10",
-    "/api/search/suggestions?q=test",
+    "/api/v1/statistics",
+    "/api/v1/aircraft/recent?hours=1&limit=100",
+    "/api/v1/aircraft/search?is_military=true&limit=200",
+    "/api/v1/aircraft/unique?days=7",
+    "/api/v1/aircraft/tracks/N703PA",
+    "/api/v1/search/unified?q=test&limit=10",
+    "/api/v1/search/suggestions?q=test",
     # Airport pages
-    "/api/airports/search?q=JFK&limit=10",
-    "/api/airports/JFK",
-    "/api/airports/JFK/realtime-aircraft?radius_km=50",
+    "/api/v1/airports/search?q=JFK&limit=10",
+    "/api/v1/airports/JFK",
+    "/api/v1/airports/JFK/realtime-aircraft?radius_km=50",
     # Aircraft detail page
-    "/api/aircraft/N703PA/details",
-    "/api/aircraft/N703PA/history?limit=500",
-    "/api/aircraft/N703PA/images",
-    "/api/aircraft/N703PA/recent-flights",
-    "/api/aircraft/static/N703PA",
+    "/api/v1/aircraft/N703PA/details",
+    "/api/v1/aircraft/N703PA/history?limit=500",
+    "/api/v1/aircraft/N703PA/images",
+    "/api/v1/aircraft/N703PA/recent-flights",
+    "/api/v1/aircraft/static/N703PA",
     # Aircraft-type page
-    "/api/aircraft/types/A380",
-    "/api/aircraft/types/A380/instances?offset=0&limit=20",
+    "/api/v1/aircraft/types/A380",
+    "/api/v1/aircraft/types/A380/instances?offset=0&limit=20",
     # Flight schedules page
-    "/api/flight-schedules",
-    "/api/flight-schedules/filter-options?search=test",
-    # `/api/flight/trail/<fr24_id>` intentionally omitted — proxy to
+    "/api/v1/flight-schedules",
+    "/api/v1/flight-schedules/filter-options?search=test",
+    # `/api/v1/flight/trail/<fr24_id>` intentionally omitted — proxy to
     # FR24's clickhandler, whose 403 for bogus IDs the handler correctly
     # returns as 502. See the identical note in test_route_smoke.py.
     # User dashboard + filter pages
-    f"/api/user/{EMAIL}/profile",
-    f"/api/user/{EMAIL}/usage",
-    f"/api/user/{EMAIL}/cooldowns",
-    f"/api/user/{EMAIL}/filters",
-    f"/api/user/{EMAIL}/filters/1",
+    f"/api/v1/user/{EMAIL}/profile",
+    f"/api/v1/user/{EMAIL}/usage",
+    f"/api/v1/user/{EMAIL}/cooldowns",
+    f"/api/v1/user/{EMAIL}/filters",
+    f"/api/v1/user/{EMAIL}/filters/1",
     # Admin dashboard + subpages
-    "/api/admin/users",
-    "/api/admin/users/stats",
-    "/api/admin/users/999",
-    "/api/admin/users?limit=20&offset=0",
-    "/api/admin/aircraft",
-    "/api/admin/aircraft/stats",
-    "/api/admin/aircraft/types?search=A",
-    "/api/admin/aircraft/liveries?search=test",
-    "/api/admin/aircraft/registrations?search=N",
-    "/api/admin/aircraft-query/N703PA",
-    "/api/admin/reports/stats",
-    "/api/admin/reports/abc123/detail",
-    "/api/admin/scraped-data/xiaohongshu/stats",
-    "/api/admin/scraped-data/xiaohongshu/notes",
-    "/api/admin/scraped-data/xiaohongshu/notes/note123",
-    "/api/admin/scraped-data/fr24/stats",
-    "/api/admin/scraped-data/fr24/flights",
-    "/api/admin/scraped-data/jetphotos/stats",
-    "/api/admin/scraped-data/jetphotos/images",
-    "/api/admin/scraper/stats",
-    "/api/admin/scraper/workers",
+    "/api/v1/admin/users",
+    "/api/v1/admin/users/stats",
+    "/api/v1/admin/users/999",
+    "/api/v1/admin/users?limit=20&offset=0",
+    "/api/v1/admin/aircraft",
+    "/api/v1/admin/aircraft/stats",
+    "/api/v1/admin/aircraft/types?search=A",
+    "/api/v1/admin/aircraft/liveries?search=test",
+    "/api/v1/admin/aircraft/registrations?search=N",
+    "/api/v1/admin/aircraft-query/N703PA",
+    "/api/v1/admin/reports/stats",
+    "/api/v1/admin/reports/abc123/detail",
+    "/api/v1/admin/scraped-data/xiaohongshu/stats",
+    "/api/v1/admin/scraped-data/xiaohongshu/notes",
+    "/api/v1/admin/scraped-data/xiaohongshu/notes/note123",
+    "/api/v1/admin/scraped-data/fr24/stats",
+    "/api/v1/admin/scraped-data/fr24/flights",
+    "/api/v1/admin/scraped-data/jetphotos/stats",
+    "/api/v1/admin/scraped-data/jetphotos/images",
+    "/api/v1/admin/scraper/stats",
+    "/api/v1/admin/scraper/workers",
 ]
 
 
@@ -113,11 +113,11 @@ def test_frontend_get_endpoint(app_client, path: str) -> None:
 
 def test_frontend_batch_static_info(app_client) -> None:
     r = app_client.post(
-        "/api/aircraft/static/batch",
+        "/api/v1/aircraft/static/batch",
         json={"registrations": ["N703PA"]},
         follow_redirects=False,
     )
-    _assert_not_5xx(r, "POST", "/api/aircraft/static/batch")
+    _assert_not_5xx(r, "POST", "/api/v1/aircraft/static/batch")
 
 
 def test_frontend_set_session(app_client) -> None:
@@ -133,7 +133,7 @@ def test_frontend_set_session(app_client) -> None:
 
 def test_frontend_create_user_filter(app_client) -> None:
     r = app_client.post(
-        f"/api/user/{EMAIL}/filters",
+        f"/api/v1/user/{EMAIL}/filters",
         json={
             "name": "test-filter",
             "filter_sql": "is_military = 1",
@@ -141,30 +141,30 @@ def test_frontend_create_user_filter(app_client) -> None:
         },
         follow_redirects=False,
     )
-    _assert_not_5xx(r, "POST", f"/api/user/{EMAIL}/filters")
+    _assert_not_5xx(r, "POST", f"/api/v1/user/{EMAIL}/filters")
 
 
 def test_frontend_test_user_filter(app_client) -> None:
     r = app_client.post(
-        f"/api/user/{EMAIL}/filters/test",
+        f"/api/v1/user/{EMAIL}/filters/test",
         json={"filter_sql": "is_military = 1"},
         follow_redirects=False,
     )
-    _assert_not_5xx(r, "POST", f"/api/user/{EMAIL}/filters/test")
+    _assert_not_5xx(r, "POST", f"/api/v1/user/{EMAIL}/filters/test")
 
 
 def test_frontend_admin_create_user(app_client) -> None:
     r = app_client.post(
-        "/api/admin/users",
+        "/api/v1/admin/users",
         json={"email": "newuser@example.com", "name": "New User"},
         follow_redirects=False,
     )
-    _assert_not_5xx(r, "POST", "/api/admin/users")
+    _assert_not_5xx(r, "POST", "/api/v1/admin/users")
 
 
 def test_frontend_admin_regenerate_api_key(app_client) -> None:
-    r = app_client.post("/api/admin/users/999/api-key", follow_redirects=False)
-    _assert_not_5xx(r, "POST", "/api/admin/users/999/api-key")
+    r = app_client.post("/api/v1/admin/users/999/api-key", follow_redirects=False)
+    _assert_not_5xx(r, "POST", "/api/v1/admin/users/999/api-key")
 
 
 # PUT endpoints.
@@ -172,39 +172,39 @@ def test_frontend_admin_regenerate_api_key(app_client) -> None:
 
 def test_frontend_update_settings(app_client) -> None:
     r = app_client.put(
-        f"/api/user/{EMAIL}/settings",
+        f"/api/v1/user/{EMAIL}/settings",
         json={"name": "Test", "email_notifications": True},
         follow_redirects=False,
     )
-    _assert_not_5xx(r, "PUT", f"/api/user/{EMAIL}/settings")
+    _assert_not_5xx(r, "PUT", f"/api/v1/user/{EMAIL}/settings")
 
 
 def test_frontend_update_user_filter(app_client) -> None:
     r = app_client.put(
-        f"/api/user/{EMAIL}/filters/1",
+        f"/api/v1/user/{EMAIL}/filters/1",
         json={"name": "renamed"},
         follow_redirects=False,
     )
-    _assert_not_5xx(r, "PUT", f"/api/user/{EMAIL}/filters/1")
+    _assert_not_5xx(r, "PUT", f"/api/v1/user/{EMAIL}/filters/1")
 
 
 def test_frontend_admin_update_user(app_client) -> None:
     r = app_client.put(
-        "/api/admin/users/999",
+        "/api/v1/admin/users/999",
         json={"name": "Updated"},
         follow_redirects=False,
     )
-    _assert_not_5xx(r, "PUT", "/api/admin/users/999")
+    _assert_not_5xx(r, "PUT", "/api/v1/admin/users/999")
 
 
 # DELETE endpoints.
 
 
 def test_frontend_delete_user_filter(app_client) -> None:
-    r = app_client.delete(f"/api/user/{EMAIL}/filters/1", follow_redirects=False)
-    _assert_not_5xx(r, "DELETE", f"/api/user/{EMAIL}/filters/1")
+    r = app_client.delete(f"/api/v1/user/{EMAIL}/filters/1", follow_redirects=False)
+    _assert_not_5xx(r, "DELETE", f"/api/v1/user/{EMAIL}/filters/1")
 
 
 def test_frontend_admin_delete_user(app_client) -> None:
-    r = app_client.delete("/api/admin/users/999", follow_redirects=False)
-    _assert_not_5xx(r, "DELETE", "/api/admin/users/999")
+    r = app_client.delete("/api/v1/admin/users/999", follow_redirects=False)
+    _assert_not_5xx(r, "DELETE", "/api/v1/admin/users/999")

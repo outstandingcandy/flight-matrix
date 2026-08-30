@@ -27,10 +27,10 @@ from sqlalchemy import text
 
 logger = logging.getLogger("web.flight_schedules")
 
-router = APIRouter(tags=["flight-schedules"])
+router = APIRouter(prefix="/api/v1", tags=["flight-schedules"])
 
 
-@router.get("/api/flight-schedules", name="get_flight_schedules")
+@router.get("/flight-schedules", name="get_flight_schedules")
 async def get_flight_schedules(
     airport: str = Query("", description="Airport IATA (3) or ICAO (4) — required"),
     flight_type: str = Query("", description="'arrival' | 'departure' | ''"),
@@ -357,7 +357,7 @@ async def get_flight_schedules(
         session.close()
 
 
-@router.get("/api/flight-schedules/filter-options", name="get_flight_schedule_filter_options")
+@router.get("/flight-schedules/filter-options", name="get_flight_schedule_filter_options")
 async def get_flight_schedule_filter_options(
     airport: str = Query("", description="Airport IATA / ICAO — narrows types+liveries+dates"),
     date: str = Query("", description="YYYY-MM-DD (Beijing)"),
