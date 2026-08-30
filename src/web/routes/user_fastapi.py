@@ -4,6 +4,12 @@ Stage 0 lift-and-shift. Same delegation pattern as the sibling modules
 — ``get_multi_user_services`` and the helper functions stay on
 ``web_app``, this file only owns the framework layer.
 
+Auth model: every route is gated by ``_require_self_or_admin`` — the
+authenticated caller must either be an admin OR own the ``{email}``
+being read/written. The Flask original had none of that; a public
+network could hit any user's filters. See ``_require_self_or_admin``
+below for the exact check.
+
 Ten endpoints across seven URL paths (some have GET/POST/PUT/DELETE
 variants):
 
@@ -25,12 +31,47 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Body, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from sqlalchemy import text
+
+from src.auth.dependencies import require_login
 
 logger = logging.getLogger("web.user")
 
-router = APIRouter(tags=["user"])
+
+async def _require_self_or_admin(
+    email: str,
+    user: dict[str, Any] = Depends(require_login),
+) -> dict[str, Any]:
+    """Gate every ``/api/v1/user/{email}/*`` route on self-or-admin.
+
+    Every handler in this file scopes to a single user identified by
+    the ``{email}`` path parameter. Two callers may legitimately hit
+    those handlers:
+
+    - the user themselves (their own email matches ``{email}``); or
+    - an admin (member of the ``admins`` group).
+
+    Any other authenticated caller gets a JSON 403. Unauthenticated
+    callers never make it here — ``require_login`` upstream converts
+    them into a 401 (or the browser-redirect equivalent) first.
+
+    Attach as a router-level dependency so the check applies uniformly;
+    every handler in this module already takes ``email`` as its first
+    path parameter, so FastAPI resolves it into the dependency without
+    per-handler wiring.
+    """
+    if user.get("role") == "admin" or "admins" in user.get("groups", []):
+        return user
+    if user.get("email") == email:
+        return user
+    raise HTTPException(
+        status_code=403,
+        detail={"success": False, "error": "forbidden"},
+    )
+
+
+router = APIRouter(tags=["user"], dependencies=[Depends(_require_self_or_admin)])
 
 
 def _user_or_404(email: str) -> tuple[Any, Any, Any, Any]:
