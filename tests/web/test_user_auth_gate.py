@@ -45,16 +45,16 @@ NON_ADMIN_EMAIL = "test@example.com"
 # One tuple per (method, path template, body). ``{email}`` is replaced
 # with an email the non-admin caller does NOT own.
 CROSS_USER_CASES: list[tuple[str, str, dict[str, Any] | None]] = [
-    ("GET", "/api/user/other@example.com/profile", None),
-    ("GET", "/api/user/other@example.com/usage", None),
-    ("PUT", "/api/user/other@example.com/settings", {"name": "X"}),
-    ("GET", "/api/user/other@example.com/cooldowns", None),
-    ("GET", "/api/user/other@example.com/filters", None),
-    ("POST", "/api/user/other@example.com/filters", {"name": "n"}),
-    ("GET", "/api/user/other@example.com/filters/1", None),
-    ("PUT", "/api/user/other@example.com/filters/1", {"name": "n"}),
-    ("DELETE", "/api/user/other@example.com/filters/1", None),
-    ("POST", "/api/user/other@example.com/filters/test", {"criteria": {}}),
+    ("GET", "/api/v1/user/other@example.com/profile", None),
+    ("GET", "/api/v1/user/other@example.com/usage", None),
+    ("PUT", "/api/v1/user/other@example.com/settings", {"name": "X"}),
+    ("GET", "/api/v1/user/other@example.com/cooldowns", None),
+    ("GET", "/api/v1/user/other@example.com/filters", None),
+    ("POST", "/api/v1/user/other@example.com/filters", {"name": "n"}),
+    ("GET", "/api/v1/user/other@example.com/filters/1", None),
+    ("PUT", "/api/v1/user/other@example.com/filters/1", {"name": "n"}),
+    ("DELETE", "/api/v1/user/other@example.com/filters/1", None),
+    ("POST", "/api/v1/user/other@example.com/filters/test", {"criteria": {}}),
 ]
 
 
@@ -90,10 +90,10 @@ def test_cross_user_returns_403(
 
 
 SELF_CASES: list[tuple[str, str, dict[str, Any] | None]] = [
-    ("GET", f"/api/user/{NON_ADMIN_EMAIL}/profile", None),
-    ("GET", f"/api/user/{NON_ADMIN_EMAIL}/usage", None),
-    ("GET", f"/api/user/{NON_ADMIN_EMAIL}/cooldowns", None),
-    ("GET", f"/api/user/{NON_ADMIN_EMAIL}/filters", None),
+    ("GET", f"/api/v1/user/{NON_ADMIN_EMAIL}/profile", None),
+    ("GET", f"/api/v1/user/{NON_ADMIN_EMAIL}/usage", None),
+    ("GET", f"/api/v1/user/{NON_ADMIN_EMAIL}/cooldowns", None),
+    ("GET", f"/api/v1/user/{NON_ADMIN_EMAIL}/filters", None),
 ]
 
 

@@ -214,7 +214,9 @@ def test_api_user_get(app_client, path: str) -> None:
 
 
 def test_api_user_settings_put(app_client) -> None:
-    r = app_client.put(f"/api/v1/user/{EMAIL}/settings", json={"name": "Test"}, follow_redirects=False)
+    r = app_client.put(
+        f"/api/v1/user/{EMAIL}/settings", json={"name": "Test"}, follow_redirects=False
+    )
     _assert_not_5xx(r, "PUT", f"/api/v1/user/{EMAIL}/settings")
 
 

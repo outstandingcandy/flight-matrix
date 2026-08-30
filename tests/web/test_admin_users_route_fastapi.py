@@ -175,7 +175,9 @@ class TestAdminUsersHappyPath:
         assert active["tier"] == "premium"
 
     def test_delete_soft_removes(self, app_client_fastapi: Any) -> None:
-        r_create = app_client_fastapi.post("/api/v1/admin/users", json={"email": "gone@example.com"})
+        r_create = app_client_fastapi.post(
+            "/api/v1/admin/users", json={"email": "gone@example.com"}
+        )
         user_id = r_create.json()["user"]["id"]
 
         r_del = app_client_fastapi.delete(f"/api/v1/admin/users/{user_id}")

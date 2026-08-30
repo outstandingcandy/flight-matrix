@@ -38,7 +38,9 @@ from src.auth.dependencies import require_admin
 
 logger = logging.getLogger("web.admin.reports_scraped")
 
-router = APIRouter(prefix="/api/v1", tags=["admin-reports-scraped"], dependencies=[Depends(require_admin)])
+router = APIRouter(
+    prefix="/api/v1", tags=["admin-reports-scraped"], dependencies=[Depends(require_admin)]
+)
 
 
 # ---------------------------------------------------------------------------

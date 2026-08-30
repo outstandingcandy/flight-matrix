@@ -273,7 +273,9 @@ class TestMeAndRotate:
             "_apple_auth",
             _FakeAppleAuth(sub="asub-me-1", email="me@example.com"),
         )
-        r = app_client_fastapi.post("/api/v1/auth/apple/native", json={"identity_token": "good-apple"})
+        r = app_client_fastapi.post(
+            "/api/v1/auth/apple/native", json={"identity_token": "good-apple"}
+        )
         assert r.status_code == 200, r.text
         body = r.json()
         return body["api_key"], body["user"]

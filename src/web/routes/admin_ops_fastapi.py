@@ -35,7 +35,9 @@ logger = logging.getLogger("web.admin.ops")
 
 # Two routers because two gates. Session-based admin gate for the
 # scraper-monitoring endpoints, header-token gate for bulk import.
-scraper_router = APIRouter(prefix="/api/v1", tags=["admin-scraper"], dependencies=[Depends(require_admin)])
+scraper_router = APIRouter(
+    prefix="/api/v1", tags=["admin-scraper"], dependencies=[Depends(require_admin)]
+)
 import_router = APIRouter(prefix="/api/v1", tags=["admin-import"])
 
 
