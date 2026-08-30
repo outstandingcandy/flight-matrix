@@ -43,11 +43,9 @@ import os
 import socketserver
 import subprocess
 import sys
-import tempfile
 import urllib.parse
 import urllib.request
 import webbrowser
-from pathlib import Path
 
 REPO = os.environ.get("GITHUB_REPOSITORY", "outstandingcandy/flight-matrix")
 PORT = 8964
@@ -60,7 +58,9 @@ APP_NAME = "flight-matrix-ci-bot"
 MANIFEST = {
     "name": APP_NAME,
     "url": f"https://github.com/{REPO}",
-    "hook_attributes": {"active": False},
+    # No ``hook_attributes`` key at all — the field is optional, but if
+    # you include it GitHub requires a nested ``url``. We don't want
+    # webhooks (this App only pushes via API), so omit it entirely.
     "redirect_url": f"http://127.0.0.1:{PORT}/callback",
     "public": False,
     "default_permissions": {
@@ -73,7 +73,13 @@ MANIFEST = {
 
 
 class CallbackHandler(http.server.BaseHTTPRequestHandler):
-    """Catches the post-creation redirect from GitHub."""
+    """Serves the manifest form and catches the post-creation redirect.
+
+    The form is served from ``GET /`` so its origin is
+    ``http://127.0.0.1:8964`` — a ``file://`` origin gets its POST
+    body stripped by modern browsers, which is why the same manifest
+    submitted from a local file arrives at GitHub as an empty request.
+    """
 
     # Silence the default access log — it clutters the terminal.
     def log_message(self, format, *args):
@@ -81,8 +87,12 @@ class CallbackHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
-        params = urllib.parse.parse_qs(parsed.query)
 
+        if parsed.path == "/" or parsed.path == "":
+            self._serve_form()
+            return
+
+        params = urllib.parse.parse_qs(parsed.query)
         if parsed.path != "/callback" or "code" not in params:
             self._respond(400, "Missing ?code — did GitHub redirect here?")
             return
@@ -133,10 +143,15 @@ class CallbackHandler(http.server.BaseHTTPRequestHandler):
     @staticmethod
     def _push_secrets(app_id: int, private_key: str) -> None:
         """``gh secret set`` for both values. Streams the key via stdin so
-        it never lands on the process argv (visible to ``ps``)."""
+        it never lands on the process argv (visible to ``ps``).
+
+        Note: ``gh secret set NAME`` reads from stdin *only when
+        ``--body`` is omitted entirely*. Passing ``--body -`` stores
+        the literal one-character string ``"-"`` — a subtle footgun
+        we hit on the first run of this script."""
         for name, value in (("APP_ID", str(app_id)), ("APP_PRIVATE_KEY", private_key)):
             subprocess.run(
-                ["gh", "secret", "set", name, "--repo", REPO, "--body", "-"],
+                ["gh", "secret", "set", name, "--repo", REPO],
                 input=value,
                 text=True,
                 check=True,
@@ -151,17 +166,8 @@ class CallbackHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body.encode("utf-8"))
 
-
-def main() -> int:
-    # Sanity checks — surface obvious problems before opening the browser.
-    result = subprocess.run(
-        ["gh", "auth", "status"], capture_output=True, text=True, check=False
-    )
-    if result.returncode != 0:
-        print("gh CLI not authenticated. Run: gh auth login", file=sys.stderr)
-        return 1
-
-    html_body = f"""<!doctype html>
+    def _serve_form(self) -> None:
+        html_body = f"""<!doctype html>
 <html>
 <head><title>Create {APP_NAME}</title></head>
 <body onload="document.forms[0].submit()">
@@ -172,22 +178,36 @@ def main() -> int:
   </form>
 </body>
 </html>"""
-    html_path = Path(tempfile.gettempdir()) / "gh_app_setup.html"
-    html_path.write_text(html_body, encoding="utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(html_body.encode("utf-8"))
 
-    print(f"[1/3] Opening browser: file://{html_path}")
-    print(f"      Server listening on http://127.0.0.1:{PORT}/callback")
+
+def main() -> int:
+    # Sanity checks — surface obvious problems before opening the browser.
+    result = subprocess.run(
+        ["gh", "auth", "status"], capture_output=True, text=True, check=False
+    )
+    if result.returncode != 0:
+        print("gh CLI not authenticated. Run: gh auth login", file=sys.stderr)
+        return 1
+
+    landing_url = f"http://127.0.0.1:{PORT}/"
+    print(f"[1/3] Opening browser: {landing_url}")
+    print(f"      Server also catches the redirect at {landing_url}callback")
     print()
     print("[2/3] In the browser, GitHub will show a review page with all")
     print(f'      fields pre-filled for the "{APP_NAME}" App. Click the')
     print("      big green **Create GitHub App** button.")
     print()
 
-    webbrowser.open(f"file://{html_path}")
-
     # Reuse address for a clean re-run if a prior attempt crashed.
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("127.0.0.1", PORT), CallbackHandler) as httpd:
+        # Open only after the server is listening — otherwise the first
+        # ``GET /`` from the browser can race the bind and 404.
+        webbrowser.open(landing_url)
         httpd.result = None  # type: ignore[attr-defined]
         httpd.error = None  # type: ignore[attr-defined]
         # Handle one request — GitHub only redirects once. Any errored
