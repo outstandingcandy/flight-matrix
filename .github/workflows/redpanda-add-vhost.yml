@@ -12,11 +12,6 @@ name: Add flightmatrix.top vhost to collecdex Caddy
 #   4. ``caddy validate`` inside the container — fail fast on typos.
 #   5. ``caddy reload`` — zero-downtime for both projects.
 #   6. Verify: curl https://flightmatrix.top/ over public :443.
-#
-# Two dispatch inputs:
-#   dry_run  — if true, prints what would change and stops before writing.
-#   rollback — if true, ignores everything else and restores the most
-#              recent .bak file (also disconnects the shared network).
 
 on:
   workflow_dispatch:
@@ -54,75 +49,70 @@ jobs:
           VM_USER: ${{ vars.GCP_VM_USER }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
           ROLLBACK: ${{ github.event.inputs.rollback }}
+        # Remote script is packed into a single line via a bash-quoted
+        # here-doc — putting bare "{" / "}" on their own YAML lines
+        # trips the parser (it thinks the "}" is a new key), so keep the
+        # payload as one long escaped string. The Caddyfile append uses
+        # printf inside the remote shell to reinsert real newlines.
         run: |
-          gcloud compute ssh "${VM_USER}@${VM_NAME}" \
-            --zone="$VM_ZONE" --project="$PROJECT_ID" \
-            --ssh-key-expire-after=5m \
-            --command="
-              set -euo pipefail
-              CFG=/home/tangjiee/collecdex/deploy/Caddyfile
-              CONTAINER=deploy-caddy-1
-              NETWORK=flight-matrix_default
-              DRY_RUN='${DRY_RUN}'
-              ROLLBACK='${ROLLBACK}'
+          REMOTE_CMD='
+            set -euo pipefail
+            CFG=/home/tangjiee/collecdex/deploy/Caddyfile
+            CONTAINER=deploy-caddy-1
+            NETWORK=flight-matrix_default
+            DRY_RUN="'"$DRY_RUN"'"
+            ROLLBACK="'"$ROLLBACK"'"
 
-              if [ \"\$ROLLBACK\" = 'true' ]; then
-                LAST_BAK=\$(sudo ls -t \${CFG}.bak-* 2>/dev/null | head -1)
-                if [ -z \"\$LAST_BAK\" ]; then
-                  echo 'no backup to restore'; exit 1
-                fi
-                echo \"restoring from \$LAST_BAK\"
-                sudo cp \"\$LAST_BAK\" \"\$CFG\"
-                docker network disconnect \"\$NETWORK\" \"\$CONTAINER\" 2>&1 || true
-                docker exec \"\$CONTAINER\" caddy reload --config /etc/caddy/Caddyfile
-                echo 'rollback done'
+            if [ "$ROLLBACK" = "true" ]; then
+              LAST_BAK=$(sudo ls -t ${CFG}.bak-* 2>/dev/null | head -1)
+              if [ -z "$LAST_BAK" ]; then echo "no backup to restore"; exit 1; fi
+              echo "restoring from $LAST_BAK"
+              sudo cp "$LAST_BAK" "$CFG"
+              docker network disconnect "$NETWORK" "$CONTAINER" 2>&1 || true
+              docker exec "$CONTAINER" caddy reload --config /etc/caddy/Caddyfile
+              echo "rollback done"
+              exit 0
+            fi
+
+            if sudo grep -qE "^flightmatrix\.top" "$CFG"; then
+              echo "flightmatrix.top block already present, skipping append"
+            else
+              TS=$(date +%Y%m%d-%H%M%S)
+              sudo cp "$CFG" "${CFG}.bak-${TS}"
+              echo "backed up to ${CFG}.bak-${TS}"
+
+              BLOCK=$(printf "\nflightmatrix.top {\n    reverse_proxy flight-matrix-web:8000\n}\n")
+
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "===== would append ====="
+                printf "%s\n" "$BLOCK"
                 exit 0
               fi
 
-              if sudo grep -qE '^flightmatrix\\\\.top' \"\$CFG\"; then
-                echo 'flightmatrix.top block already present, nothing to do'
-              else
-                TS=\$(date +%Y%m%d-%H%M%S)
-                sudo cp \"\$CFG\" \"\${CFG}.bak-\${TS}\"
-                echo \"backed up to \${CFG}.bak-\${TS}\"
+              printf "%s\n" "$BLOCK" | sudo tee -a "$CFG" >/dev/null
+              echo "appended vhost"
+            fi
 
-                # ``flightmatrix.top`` proxies to the flight-matrix-web container
-                # on port 8000 by name. That name resolves because we join
-                # deploy-caddy-1 to flight-matrix_default (see below).
-                BLOCK='
-flightmatrix.top {
-    reverse_proxy flight-matrix-web:8000
-}
-'
-                if [ \"\$DRY_RUN\" = 'true' ]; then
-                  echo '===== would append ====='
-                  echo \"\$BLOCK\"
-                  exit 0
-                fi
+            docker network connect "$NETWORK" "$CONTAINER" 2>&1 || echo "(already connected or connect failed — validate + reload will tell us)"
 
-                echo \"\$BLOCK\" | sudo tee -a \"\$CFG\" >/dev/null
-                echo 'appended vhost'
+            echo "===== caddy validate ====="
+            docker exec "$CONTAINER" caddy validate --config /etc/caddy/Caddyfile
+
+            echo "===== caddy reload ====="
+            docker exec "$CONTAINER" caddy reload --config /etc/caddy/Caddyfile
+
+            echo "===== smoke test ====="
+            for i in $(seq 1 15); do
+              CODE=$(curl -sk --max-time 5 -o /dev/null -w "%{http_code}" https://flightmatrix.top/ || echo 000)
+              echo "try $i: https://flightmatrix.top/ = $CODE"
+              if [ "$CODE" != "000" ] && [ "$CODE" != "502" ] && [ "$CODE" != "503" ]; then
+                break
               fi
-
-              # Connect (idempotent — the CLI returns non-zero if already
-              # attached, hence the || true).
-              docker network connect \"\$NETWORK\" \"\$CONTAINER\" 2>&1 || echo '(already connected or connect failed — validate + reload will tell us)'
-
-              echo '===== caddy validate ====='
-              docker exec \"\$CONTAINER\" caddy validate --config /etc/caddy/Caddyfile
-
-              echo '===== caddy reload ====='
-              docker exec \"\$CONTAINER\" caddy reload --config /etc/caddy/Caddyfile
-
-              echo '===== smoke test ====='
-              # ACME may take 15-30 s to issue a fresh cert on first hit.
-              for i in \$(seq 1 15); do
-                CODE=\$(curl -sk --max-time 5 -o /dev/null -w '%{http_code}' https://flightmatrix.top/ || echo 000)
-                echo \"try \$i: https://flightmatrix.top/ = \$CODE\"
-                if [ \"\$CODE\" != '000' ] && [ \"\$CODE\" != '502' ] && [ \"\$CODE\" != '503' ]; then
-                  break
-                fi
-                sleep 3
-              done
-              echo 'done'
-            "
+              sleep 3
+            done
+            echo done
+          '
+          gcloud compute ssh "${VM_USER}@${VM_NAME}" \
+            --zone="$VM_ZONE" --project="$PROJECT_ID" \
+            --ssh-key-expire-after=5m \
+            --command="$REMOTE_CMD"
