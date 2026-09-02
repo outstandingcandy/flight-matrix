@@ -77,5 +77,20 @@ jobs:
               find /home /opt /srv -maxdepth 4 -name "docker-compose*.yml" 2>/dev/null | head
               echo "-- Caddyfiles on host --"
               sudo find /etc /home /opt /srv -maxdepth 4 -iname "caddyfile*" 2>/dev/null | head
+              echo
+              echo "===== /etc/caddy/Caddyfile (host-level) ====="
+              sudo cat /etc/caddy/Caddyfile 2>&1
+              echo
+              echo "===== collecdex Caddyfile ====="
+              sudo cat /home/tangjiee/collecdex/deploy/Caddyfile 2>&1
+              echo
+              echo "===== collecdex compose (ports/networks) ====="
+              sudo grep -E "ports:|networks:|image:|container_name:|volumes:" /home/tangjiee/collecdex/deploy/docker-compose.yml 2>&1 | head -40
+              echo
+              echo "===== docker networks ====="
+              docker network ls 2>&1
+              echo "-- flight-matrix-caddy connected to --"
+              docker inspect flight-matrix-caddy -f "{{range \$k, \$v := .NetworkSettings.Networks}}{{\$k}} ip={{\$v.IPAddress}}{{println}}{{end}}" 2>&1
+              docker inspect deploy-caddy-1 -f "{{range \$k, \$v := .NetworkSettings.Networks}}{{\$k}} ip={{\$v.IPAddress}}{{println}}{{end}}" 2>&1
               echo "===== END ====="
             '
