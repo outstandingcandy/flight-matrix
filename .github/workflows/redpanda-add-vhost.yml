@@ -89,18 +89,15 @@ jobs:
                 # ``flightmatrix.top`` proxies to the flight-matrix-web container
                 # on port 8000 by name. That name resolves because we join
                 # deploy-caddy-1 to flight-matrix_default (see below).
-                BLOCK='
-flightmatrix.top {
-    reverse_proxy flight-matrix-web:8000
-}
-'
+                BLOCK=\$(printf '\\nflightmatrix.top {\\n    reverse_proxy flight-matrix-web:8000\\n}\\n')
+
                 if [ \"\$DRY_RUN\" = 'true' ]; then
                   echo '===== would append ====='
-                  echo \"\$BLOCK\"
+                  printf '%s\\n' \"\$BLOCK\"
                   exit 0
                 fi
 
-                echo \"\$BLOCK\" | sudo tee -a \"\$CFG\" >/dev/null
+                printf '%s\\n' \"\$BLOCK\" | sudo tee -a \"\$CFG\" >/dev/null
                 echo 'appended vhost'
               fi
 
