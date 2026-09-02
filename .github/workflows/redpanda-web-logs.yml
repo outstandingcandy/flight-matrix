@@ -28,6 +28,6 @@ jobs:
             --zone="$VM_ZONE" --project="$PROJECT_ID" \
             --ssh-key-expire-after=5m \
             --command='
-              echo "===== flight-matrix-web logs (last 200) — filtered for auth events =====";
-              sudo docker logs --tail=400 flight-matrix-web 2>&1 | grep -iE "auth|reject|forbid|token|group|email|signin|permit|verify|error" | tail -80
+              echo "===== flight-matrix-web logs — all lines, last 150 =====";
+              sudo docker logs --tail=150 flight-matrix-web 2>&1 | tail -80
             '
