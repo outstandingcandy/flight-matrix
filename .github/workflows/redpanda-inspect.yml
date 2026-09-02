@@ -92,5 +92,14 @@ jobs:
               echo "-- flight-matrix-caddy connected to --"
               docker inspect flight-matrix-caddy -f "{{range \$k, \$v := .NetworkSettings.Networks}}{{\$k}} ip={{\$v.IPAddress}}{{println}}{{end}}" 2>&1
               docker inspect deploy-caddy-1 -f "{{range \$k, \$v := .NetworkSettings.Networks}}{{\$k}} ip={{\$v.IPAddress}}{{println}}{{end}}" 2>&1
+              echo
+              echo "===== deploy-caddy-1 logs — ACME / flightmatrix / errors ====="
+              docker logs --tail=400 deploy-caddy-1 2>&1 | grep -iE "flightmatrix|acme|challenge|obtain|error|tls.issuance|cert" | tail -40
+              echo
+              echo "===== caddy data (cert store) ====="
+              docker exec deploy-caddy-1 sh -c "ls -la /data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/ 2>&1" | head
+              echo
+              echo "===== HTTP-01 challenge path reachable from outside? ====="
+              curl -sk --max-time 5 -w "\nstatus=%{http_code} host=%{remote_ip}\n" http://flightmatrix.top/.well-known/acme-challenge/test 2>&1 | tail -8
               echo "===== END ====="
             '
