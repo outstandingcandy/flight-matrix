@@ -1,0 +1,62 @@
+name: Restart collecdex Caddy
+
+# Full container restart of ``deploy-caddy-1``. Sometimes Caddy's hot
+# ``caddy reload`` accepts a new site block but doesn't kick off the
+# ACME cert obtain — a full restart forces fresh cert acquisition for
+# every site in the current Caddyfile.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  restart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+      - env:
+          VM_NAME: ${{ vars.GCP_VM_NAME }}
+          VM_ZONE: ${{ vars.GCP_VM_ZONE }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          VM_USER: ${{ vars.GCP_VM_USER }}
+        run: |
+          gcloud compute ssh "${VM_USER}@${VM_NAME}" \
+            --zone="$VM_ZONE" --project="$PROJECT_ID" \
+            --ssh-key-expire-after=5m \
+            --command='
+              set -euo pipefail
+              echo "===== before ====="
+              docker ps --format "{{.Names}} {{.Status}}" | grep -E "deploy-caddy|flight-matrix"
+
+              echo "===== restart ====="
+              docker restart deploy-caddy-1
+
+              echo "===== wait 20s for boot + ACME kickoff ====="
+              sleep 20
+
+              echo "===== after ====="
+              docker ps --format "{{.Names}} {{.Status}}" | grep -E "deploy-caddy|flight-matrix"
+
+              echo "===== recent caddy logs (grep flightmatrix|acme|error) ====="
+              docker logs --tail=200 deploy-caddy-1 2>&1 | grep -iE "flightmatrix|acme|obtain|challenge|error" | tail -30
+
+              echo "===== smoke test loop ====="
+              for i in $(seq 1 20); do
+                CODE=$(curl -sk --max-time 5 -o /dev/null -w "%{http_code}" https://flightmatrix.top/)
+                echo "try $i: https://flightmatrix.top/ = $CODE"
+                if [ "$CODE" = "200" ] || [ "$CODE" = "302" ] || [ "$CODE" = "301" ] || [ "$CODE" = "404" ]; then
+                  echo "reachable — done"
+                  break
+                fi
+                sleep 3
+              done
+            '
