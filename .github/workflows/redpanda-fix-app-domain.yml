@@ -1,0 +1,92 @@
+name: Fix APP_DOMAIN on redpanda
+
+# Rewrites ``APP_DOMAIN`` in ``/etc/flight-matrix/env.docker`` to
+# ``flightmatrix.top`` and force-recreates the flight-matrix-web
+# container so it picks up the new value. Fixes the /login redirect
+# stashing a ``next_url`` that points at the raw-IP nip.io host —
+# ``CustomDomainMiddleware`` (src/web/middleware.py) overrides
+# X-Forwarded-Host with whatever APP_DOMAIN holds, so the app's own
+# URL construction ignores what Caddy sent.
+#
+# NOT touching ``GOOGLE_OAUTH_CALLBACK_URL`` — that value is
+# registered in Google Cloud Console and changing it in the env
+# alone would break the OAuth handshake with ``redirect_uri_mismatch``.
+# Update Google Console first, then a follow-up workflow can flip
+# the env var.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+      - env:
+          VM_NAME: ${{ vars.GCP_VM_NAME }}
+          VM_ZONE: ${{ vars.GCP_VM_ZONE }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          VM_USER: ${{ vars.GCP_VM_USER }}
+        run: |
+          gcloud compute ssh "${VM_USER}@${VM_NAME}" \
+            --zone="$VM_ZONE" --project="$PROJECT_ID" \
+            --ssh-key-expire-after=5m \
+            --command='
+              set -euo pipefail
+              ENV=/etc/flight-matrix/env.docker
+              COMPOSE=/home/tangjiee/flight-matrix/docker-compose.web.yml
+              NEW_DOMAIN=flightmatrix.top
+
+              echo "===== before ====="
+              sudo grep -E "^APP_DOMAIN|^GOOGLE_OAUTH" "$ENV" || true
+
+              CURRENT=$(sudo grep -E "^APP_DOMAIN=" "$ENV" | head -1 | cut -d= -f2)
+              if [ "$CURRENT" = "$NEW_DOMAIN" ]; then
+                echo "APP_DOMAIN is already $NEW_DOMAIN, skipping edit"
+              else
+                TS=$(date +%Y%m%d-%H%M%S)
+                sudo cp "$ENV" "${ENV}.bak-${TS}"
+                echo "backed up to ${ENV}.bak-${TS}"
+                sudo sed -i "s|^APP_DOMAIN=.*|APP_DOMAIN=${NEW_DOMAIN}|" "$ENV"
+                echo "APP_DOMAIN set to $NEW_DOMAIN"
+              fi
+
+              echo "===== after ====="
+              sudo grep -E "^APP_DOMAIN|^GOOGLE_OAUTH" "$ENV" || true
+
+              echo "===== recreate flight-matrix-web ====="
+              # sudo because env.docker is root-only readable and the
+              # compose file lives under tangjiee. Docker CLI itself
+              # only needs the docker group but the file reads need
+              # elevation.
+              sudo docker compose -f "$COMPOSE" up -d --force-recreate web
+
+              echo "===== wait for /healthz to answer ====="
+              for i in $(seq 1 30); do
+                if sudo docker compose -f "$COMPOSE" exec -T web curl -fsS http://127.0.0.1:8000/ -o /dev/null 2>/dev/null; then
+                  echo "web is up after ${i}x 2 s"
+                  break
+                fi
+                sleep 2
+              done
+
+              echo "===== smoke test via public URL ====="
+              curl -sk --max-time 10 -o /tmp/body.txt -w "https=%{http_code}\n" https://flightmatrix.top/
+              echo "-- response headers --"
+              curl -skI --max-time 10 https://flightmatrix.top/ | grep -iE "^HTTP/|^location:|^set-cookie:" | head
+              echo "-- session cookie (base64-decoded next_url) --"
+              curl -skI --max-time 10 https://flightmatrix.top/ | grep -i "^set-cookie" | \
+                grep -oE "session=[^;]+" | head -1 | \
+                cut -d= -f2 | cut -d. -f1 | base64 -d 2>/dev/null || echo "(no cookie / decode failed)"
+              echo done
+            '
