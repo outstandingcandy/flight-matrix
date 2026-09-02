@@ -1,0 +1,69 @@
+name: Fix stale GOOGLE_JWKS
+
+# The GCP host has network egress, so the offline-JWKS optimisation
+# used on Lambda isn't needed here. Comment out any pre-loaded
+# ``GOOGLE_JWKS=…`` line in ``/etc/flight-matrix/env.docker`` so
+# GoogleAuth falls through to fetching the current keys from
+# ``https://www.googleapis.com/oauth2/v3/certs`` at startup. That
+# fixes the "This account is not permitted to sign in" 403 that
+# happens when Google rotates a signing key the cached JWKS
+# doesn't know about.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+      - env:
+          VM_NAME: ${{ vars.GCP_VM_NAME }}
+          VM_ZONE: ${{ vars.GCP_VM_ZONE }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          VM_USER: ${{ vars.GCP_VM_USER }}
+        run: |
+          gcloud compute ssh "${VM_USER}@${VM_NAME}" \
+            --zone="$VM_ZONE" --project="$PROJECT_ID" \
+            --ssh-key-expire-after=5m \
+            --command='
+              set -euo pipefail
+              ENV=/etc/flight-matrix/env.docker
+              COMPOSE=/home/tangjiee/flight-matrix/docker-compose.web.yml
+
+              echo "===== is GOOGLE_JWKS set? (yes/no only) ====="
+              if sudo grep -qE "^GOOGLE_JWKS=" "$ENV"; then
+                echo "yes — commenting it out"
+                TS=$(date +%Y%m%d-%H%M%S)
+                sudo cp "$ENV" "${ENV}.bak-jwks-${TS}"
+                sudo sed -i "s|^GOOGLE_JWKS=|# GOOGLE_JWKS (commented out — force runtime fetch) =|" "$ENV"
+                echo "backed up to ${ENV}.bak-jwks-${TS}"
+              else
+                echo "no — env already fetches at runtime; nothing to comment out"
+              fi
+
+              echo "===== recreate flight-matrix-web ====="
+              sudo docker compose -f "$COMPOSE" up -d --force-recreate web
+
+              echo "===== wait for web container to be Running ====="
+              for i in $(seq 1 15); do
+                if sudo docker ps --format "{{.Names}} {{.Status}}" | grep -q "flight-matrix-web.*Up"; then
+                  echo "web is up after ${i}x 2 s"
+                  break
+                fi
+                sleep 2
+              done
+
+              echo "===== recent web logs (grep JWKS / auth) ====="
+              sudo docker logs --tail=100 flight-matrix-web 2>&1 | grep -iE "jwks|jwt|verify|auth|google|offline" | tail -20
+            '
