@@ -48,7 +48,7 @@ jobs:
               NEW_DOMAIN=flightmatrix.top
 
               echo "===== before ====="
-              sudo grep -E "^APP_DOMAIN|^GOOGLE_OAUTH" "$ENV" || true
+              sudo grep -E "^APP_DOMAIN=|^GOOGLE_OAUTH_(CALLBACK|LOGOUT)_URL=" "$ENV" || true
 
               CURRENT=$(sudo grep -E "^APP_DOMAIN=" "$ENV" | head -1 | cut -d= -f2)
               if [ "$CURRENT" = "$NEW_DOMAIN" ]; then
@@ -62,7 +62,7 @@ jobs:
               fi
 
               echo "===== after ====="
-              sudo grep -E "^APP_DOMAIN|^GOOGLE_OAUTH" "$ENV" || true
+              sudo grep -E "^APP_DOMAIN=|^GOOGLE_OAUTH_(CALLBACK|LOGOUT)_URL=" "$ENV" || true
 
               echo "===== recreate flight-matrix-web ====="
               # sudo because env.docker is root-only readable and the
