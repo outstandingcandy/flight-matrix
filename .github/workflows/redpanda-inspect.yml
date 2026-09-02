@@ -101,5 +101,12 @@ jobs:
               echo
               echo "===== HTTP-01 challenge path reachable from outside? ====="
               curl -sk --max-time 5 -w "\nstatus=%{http_code} host=%{remote_ip}\n" http://flightmatrix.top/.well-known/acme-challenge/test 2>&1 | tail -8
+              echo
+              echo "===== which flight-matrix repo is currently serving? ====="
+              for c in flight-matrix-web flight-matrix-caddy flight-matrix-db flight-matrix-opensearch; do
+                echo "-- $c --"
+                docker inspect "$c" \
+                  -f "project={{index .Config.Labels \"com.docker.compose.project\"}} working_dir={{index .Config.Labels \"com.docker.compose.project.working_dir\"}} config={{index .Config.Labels \"com.docker.compose.project.config_files\"}}" 2>&1
+              done
               echo "===== END ====="
             '
