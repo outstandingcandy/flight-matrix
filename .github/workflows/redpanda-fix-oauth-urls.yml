@@ -1,0 +1,81 @@
+name: Fix OAuth callback and logout URLs
+
+# GOOGLE_OAUTH_CALLBACK_URL still has :8444 from the pre-Caddy era;
+# GOOGLE_OAUTH_LOGOUT_URL still points at the nip.io host. Both must
+# match the public https://flightmatrix.top origin that Caddy serves.
+#
+# Prerequisites (manual, one-time):
+#   Google Cloud Console → Credentials → OAuth client →
+#   add https://flightmatrix.top/auth/callback to Authorized redirect URIs.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+      - env:
+          VM_NAME: ${{ vars.GCP_VM_NAME }}
+          VM_ZONE: ${{ vars.GCP_VM_ZONE }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          VM_USER: ${{ vars.GCP_VM_USER }}
+        run: |
+          gcloud compute ssh "${VM_USER}@${VM_NAME}" \
+            --zone="$VM_ZONE" --project="$PROJECT_ID" \
+            --ssh-key-expire-after=5m \
+            --command='
+              set -euo pipefail
+              ENV=/etc/flight-matrix/env.docker
+              COMPOSE=/home/tangjiee/flight-matrix/docker-compose.web.yml
+
+              echo "===== before ====="
+              sudo grep -E "^GOOGLE_OAUTH_(CALLBACK|LOGOUT)_URL=" "$ENV" || true
+
+              TS=$(date +%Y%m%d-%H%M%S)
+              sudo cp "$ENV" "${ENV}.bak-oauth-${TS}"
+              echo "backed up to ${ENV}.bak-oauth-${TS}"
+
+              # Fix callback URL: remove port, use flightmatrix.top
+              sudo sed -i "s|^GOOGLE_OAUTH_CALLBACK_URL=.*|GOOGLE_OAUTH_CALLBACK_URL=https://flightmatrix.top/auth/callback|" "$ENV"
+
+              # Fix logout URL: use flightmatrix.top
+              sudo sed -i "s|^GOOGLE_OAUTH_LOGOUT_URL=.*|GOOGLE_OAUTH_LOGOUT_URL=https://flightmatrix.top/|" "$ENV"
+
+              echo "===== after ====="
+              sudo grep -E "^GOOGLE_OAUTH_(CALLBACK|LOGOUT)_URL=" "$ENV" || true
+
+              echo "===== recreate flight-matrix-web ====="
+              sudo docker compose -f "$COMPOSE" up -d --force-recreate web
+
+              echo "===== wait for web to be Running ====="
+              for i in $(seq 1 15); do
+                if sudo docker ps --format "{{.Names}} {{.Status}}" | grep -q "flight-matrix-web.*Up"; then
+                  echo "web is up after ${i}x 2 s"
+                  break
+                fi
+                sleep 2
+              done
+
+              echo "===== verify env inside container ====="
+              sudo docker exec flight-matrix-web env | grep -E "^GOOGLE_OAUTH_(CALLBACK|LOGOUT)_URL=" || echo "(not found in container env)"
+
+              echo "===== smoke: login redirect target ====="
+              LOCATION=$(curl -sk --max-time 10 -o /dev/null -w "%{redirect_url}" https://flightmatrix.top/login 2>/dev/null || true)
+              echo "login redirects to: $LOCATION"
+              if echo "$LOCATION" | grep -q "redirect_uri="; then
+                echo "$LOCATION" | grep -oE "redirect_uri=[^&]+" | head -1
+              fi
+              echo done
+            '
