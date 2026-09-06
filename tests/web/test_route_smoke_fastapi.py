@@ -135,6 +135,7 @@ PAGE_GET = [
     "/flight-schedules",
     "/aircraft/N703PA",
     "/aircraft-type/A380",
+    "/airport/PEK",
     "/search-track",
     "/user/test@example.com/dashboard",
     "/user/test@example.com/filters",

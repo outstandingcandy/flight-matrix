@@ -15,6 +15,7 @@ User pages
 - GET /                       — home_required → home.html
 - GET /dashboard              — login_required → index.html
 - GET /airport-board          — login_required → airport_board.html
+- GET /airport/{airport_code} — optional_login → flight_schedules.html
 - GET /search-track           — login_required → search_track.html
 - GET /flight-schedules       — 302 to /  (legacy URL)
 - GET /user/{email}/dashboard — login_required → user_dashboard.html
@@ -98,6 +99,22 @@ async def airport_board(
 ) -> Response:
     """Airport intel board. Same as ``web_app.py:1506``."""
     return _render(request, "airport_board.html")
+
+
+@router.get("/airport/{airport_code}", name="airport_detail_page")
+async def airport_detail_page(
+    request: Request,
+    airport_code: str,
+    user: dict[str, Any] | None = Depends(get_current_user_optional),
+) -> Response:
+    """Airport detail page shell (shows flight schedules for this airport).
+    Same as ``web_app.py:5169``.
+    """
+    return _render(
+        request,
+        "flight_schedules.html",
+        {"airport_code": airport_code.upper(), "current_user": user, "is_admin": _is_admin},
+    )
 
 
 @router.get("/search-track", name="search_track")
