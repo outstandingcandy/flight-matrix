@@ -103,21 +103,23 @@ jobs:
             --command='
               set -euo pipefail
 
+              DEPLOY_DIR=/home/tangjiee/flight-matrix
+
               # Self-heal: if the repo directory does not exist, clone
               # it from origin. Fresh-VM or wiped-home paths land here.
               # Public repo, so no auth needed for the clone itself.
-              if [ ! -d "$HOME/flight-matrix" ]; then
-                echo "==> ~/flight-matrix missing; cloning from origin"
-                git clone --recurse-submodules \
+              if [ ! -d "$DEPLOY_DIR" ]; then
+                echo "==> $DEPLOY_DIR missing; cloning from origin"
+                sudo git clone --recurse-submodules \
                   https://github.com/outstandingcandy/flight-matrix.git \
-                  "$HOME/flight-matrix"
+                  "$DEPLOY_DIR"
               fi
 
-              cd ~/flight-matrix
+              cd "$DEPLOY_DIR"
               echo "==> git fetch + reset to origin/main"
-              git fetch origin main
-              git reset --hard origin/main
-              git submodule update --init --recursive
+              sudo git fetch origin main
+              sudo git reset --hard origin/main
+              sudo git submodule update --init --recursive
 
               echo "==> docker compose build web"
               sudo docker compose -f docker-compose.web.yml build web
