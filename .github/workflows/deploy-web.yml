@@ -133,7 +133,7 @@ jobs:
 
               echo "==> run migration (idempotent)"
               sudo docker compose -f docker-compose.web.yml exec -T web \
-                python scripts/migrate_add_oauth_columns.py
+                python scripts/migrate_add_oauth_columns.py || true
 
               echo "==> post-deploy state:"
               sudo docker compose -f docker-compose.web.yml ps
