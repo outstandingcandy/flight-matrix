@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -192,6 +193,8 @@ def main() -> None:
 
     if args.database_url:
         db_url = args.database_url
+    elif os.environ.get("DATABASE_URL"):
+        db_url = os.environ["DATABASE_URL"]
     else:
         cfg = YAMLConfig(args.config)
         db_url = cfg.get_database_config()["url"]
