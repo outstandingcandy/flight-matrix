@@ -288,3 +288,16 @@ def test_legacy_api_prefix_transparent_routing(app_client_fastapi: Any) -> None:
     r_legacy = app_client_fastapi.get("/api/search/suggestions")
     assert r_legacy.status_code == 200
     assert r_legacy.json().get("success") is True
+
+
+def test_public_aircraft_and_type_pages(app_client_fastapi: Any) -> None:
+    """Ensure /aircraft/{reg} and /aircraft-type/{type} pages render HTTP 200
+    directly without requiring login redirect.
+    """
+    resp_ac = app_client_fastapi.get("/aircraft/CU-T1250", follow_redirects=False)
+    assert resp_ac.status_code == 200
+    assert "CU-T1250" in resp_ac.text
+
+    resp_type = app_client_fastapi.get("/aircraft-type/A380", follow_redirects=False)
+    assert resp_type.status_code == 200
+    assert "A380" in resp_type.text

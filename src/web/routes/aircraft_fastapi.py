@@ -35,7 +35,7 @@ import requests
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from sqlalchemy import text
 
-from src.auth.dependencies import require_login
+from src.auth.dependencies import get_current_user_optional, require_login
 
 logger = logging.getLogger("web.aircraft")
 
@@ -390,12 +390,9 @@ async def get_aircraft_types() -> dict[str, Any]:
 @api_router.get("/aircraft/types/{type_code}", name="aircraft_type_info")
 async def get_aircraft_type_info(
     type_code: str,
-    _user: dict[str, Any] = Depends(require_login),
+    _user: dict[str, Any] | None = Depends(get_current_user_optional),
 ) -> dict[str, Any]:
-    """Stats for one aircraft type. Same shape as ``web_app.py:989``.
-
-    Login-gated on the Flask side (``@login_required``) and here.
-    """
+    """Stats for one aircraft type. Same shape as ``web_app.py:989``."""
     from src.web.helpers import get_aircraft_type_name
     from src.web.runtime import db_manager
 
@@ -431,12 +428,12 @@ async def get_aircraft_type_instances(
     type_code: str,
     offset: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=200),
-    _user: dict[str, Any] = Depends(require_login),
+    _user: dict[str, Any] | None = Depends(get_current_user_optional),
 ) -> dict[str, Any]:
     """Paginated aircraft-of-this-type list, photo-bearing rows first.
 
     Same query (correlated subquery for cross-dialect portability) as
-    ``web_app.py:1030``. Login-gated.
+    ``web_app.py:1030``.
     """
     from src.web.image_helpers import get_image_url
     from src.web.runtime import db_manager
@@ -1177,12 +1174,12 @@ async def get_aircraft_static_info_api(identifier: str) -> dict[str, Any]:
 async def aircraft_detail(
     request: Request,
     registration: str,
-    _user: dict[str, Any] = Depends(require_login),
+    user: dict[str, Any] | None = Depends(get_current_user_optional),
 ):
     """Aircraft detail page shell. Same as ``web_app.py:1520``."""
     templates = request.app.state.templates
     return templates.TemplateResponse(
-        request, "aircraft_detail.html", {"registration": registration}
+        request, "aircraft_detail.html", {"registration": registration, "current_user": user}
     )
 
 
@@ -1190,10 +1187,10 @@ async def aircraft_detail(
 async def aircraft_type_detail(
     request: Request,
     type_code: str,
-    _user: dict[str, Any] = Depends(require_login),
+    user: dict[str, Any] | None = Depends(get_current_user_optional),
 ):
     """Aircraft-type detail page shell. Same as ``web_app.py:1527``."""
     templates = request.app.state.templates
     return templates.TemplateResponse(
-        request, "aircraft_type_detail.html", {"type_code": type_code}
+        request, "aircraft_type_detail.html", {"type_code": type_code, "current_user": user}
     )

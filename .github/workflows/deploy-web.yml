@@ -156,23 +156,32 @@ jobs:
         # - /healthz (liveness probe)
         # - / (homepage rendering)
         # - /airport/PEK (airport detail page)
+        # - /aircraft/CU-T1250 (aircraft detail page)
         # - /api/v1/search/suggestions (API endpoint)
         # - /static/css/home.css (static asset delivery)
         run: |
-          set -e
+          set -euo pipefail
           echo "==> 1. Check HTTPS /healthz (:443)"
           curl -fsS --max-time 10 https://flightmatrix.top/healthz
 
           echo "==> 2. Check public homepage"
-          curl -fsS --max-time 10 https://flightmatrix.top/ | grep -q "FlightMatrix"
+          RESP_HOME=$(curl -fsS --max-time 10 https://flightmatrix.top/)
+          echo "$RESP_HOME" | grep -F "FlightMatrix" >/dev/null
 
           echo "==> 3. Check airport detail page (/airport/PEK)"
-          curl -fsS --max-time 10 https://flightmatrix.top/airport/PEK | grep -q "PEK"
+          RESP_PEK=$(curl -fsS --max-time 10 https://flightmatrix.top/airport/PEK)
+          echo "$RESP_PEK" | grep -F "PEK" >/dev/null
 
-          echo "==> 4. Check search API (/api/v1/search/suggestions)"
-          curl -fsS --max-time 10 https://flightmatrix.top/api/v1/search/suggestions | grep -q '"success":true'
+          echo "==> 4. Check aircraft detail page (/aircraft/CU-T1250)"
+          RESP_AC=$(curl -fsS --max-time 10 https://flightmatrix.top/aircraft/CU-T1250)
+          echo "$RESP_AC" | grep -F "CU-T1250" >/dev/null
 
-          echo "==> 5. Check static assets (/static/css/home.css)"
-          curl -fsS --max-time 10 https://flightmatrix.top/static/css/home.css | grep -q "home"
+          echo "==> 5. Check search API (/api/v1/search/suggestions)"
+          RESP_API=$(curl -fsS --max-time 10 https://flightmatrix.top/api/v1/search/suggestions)
+          echo "$RESP_API" | grep -F '"success":true' >/dev/null
+
+          echo "==> 6. Check static assets (/static/css/home.css)"
+          RESP_CSS=$(curl -fsS --max-time 10 https://flightmatrix.top/static/css/home.css)
+          echo "$RESP_CSS" | grep -F "home" >/dev/null
 
           echo "==> All port & endpoint checks passed!"
