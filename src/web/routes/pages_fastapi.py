@@ -50,11 +50,17 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, RedirectResponse
 from starlette.responses import Response
 
-from src.auth.dependencies import require_admin, require_login
+from src.auth.dependencies import get_current_user_optional, require_admin, require_login
 
 logger = logging.getLogger("web.pages")
 
 router = APIRouter(tags=["pages"])
+
+
+def _is_admin(user: dict[str, Any] | None) -> bool:
+    if not user:
+        return False
+    return user.get("role") == "admin" or "admins" in user.get("groups", [])
 
 
 def _render(request: Request, template: str, ctx: dict[str, Any] | None = None) -> Response:
@@ -71,9 +77,13 @@ def _render(request: Request, template: str, ctx: dict[str, Any] | None = None) 
 
 
 @router.get("/", name="home")
-async def home(request: Request, _user: dict[str, Any] = Depends(require_login)) -> Response:
-    """Google-style search home. Same as ``web_app.py:574``."""
-    return _render(request, "home.html")
+async def home(
+    request: Request,
+    user: dict[str, Any] | None = Depends(get_current_user_optional),
+) -> Response:
+    """Google-style search home. Visible to everyone; logged-in users
+    see their email and admin links."""
+    return _render(request, "home.html", {"current_user": user, "is_admin": _is_admin})
 
 
 @router.get("/dashboard", name="dashboard")
