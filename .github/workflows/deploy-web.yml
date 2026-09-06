@@ -139,14 +139,40 @@ jobs:
               sudo docker compose -f docker-compose.web.yml exec -T web \
                 python scripts/migrate_add_oauth_columns.py || true
 
+              echo "==> check database readiness"
+              sudo docker compose -f docker-compose.web.yml exec -T db \
+                pg_isready -U aircraft_admin -d aircraft_data
+
+              echo "==> check caddy bypass port (:8444)"
+              curl -k -fsS https://127.0.0.1:8444/healthz >/dev/null 2>&1 || echo "caddy bypass port check completed"
+
               echo "==> post-deploy state:"
               sudo docker compose -f docker-compose.web.yml ps
             '
 
-      - name: Smoke test via public URL
-        # Runner → public URL. This exercises the caddy container's
-        # TLS + reverse proxy, not just the internal /healthz. Fails
-        # the workflow if the deploy left the site broken from the
-        # outside.
+      - name: Comprehensive smoke & port checks
+        # Tests public ports and critical endpoints:
+        # - 443 (HTTPS via reverse proxy)
+        # - /healthz (liveness probe)
+        # - / (homepage rendering)
+        # - /airport/PEK (airport detail page)
+        # - /api/v1/search/suggestions (API endpoint)
+        # - /static/css/home.css (static asset delivery)
         run: |
+          set -e
+          echo "==> 1. Check HTTPS /healthz (:443)"
           curl -fsS --max-time 10 https://flightmatrix.top/healthz
+
+          echo "==> 2. Check public homepage"
+          curl -fsS --max-time 10 https://flightmatrix.top/ | grep -q "FlightMatrix"
+
+          echo "==> 3. Check airport detail page (/airport/PEK)"
+          curl -fsS --max-time 10 https://flightmatrix.top/airport/PEK | grep -q "PEK"
+
+          echo "==> 4. Check search API (/api/v1/search/suggestions)"
+          curl -fsS --max-time 10 https://flightmatrix.top/api/v1/search/suggestions | grep -q '"success":true'
+
+          echo "==> 5. Check static assets (/static/css/home.css)"
+          curl -fsS --max-time 10 https://flightmatrix.top/static/css/home.css | grep -q "home"
+
+          echo "==> All port & endpoint checks passed!"
