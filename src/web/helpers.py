@@ -108,6 +108,7 @@ _AIRCRAFT_TYPE_NAMES: dict[str, str] = {
     "A35K": "空客A350-1000",
     "A333": "空客A330-300",
     "A339": "空客A330-900neo",
+    "A380": "空客A380",
     "A388": "空客A380-800",
     "E190": "Embraer E190",
     "E195": "Embraer E195",
@@ -118,6 +119,23 @@ _AIRCRAFT_TYPE_NAMES: dict[str, str] = {
     "MA60": "MA60",
 }
 
+# Commercial/informal designation → canonical ICAO type code map.
+TYPE_ALIASES: dict[str, str] = {
+    "A380": "A388",
+    "A350": "A359",
+    "A330": "A333",
+    "B787": "B789",
+    "B777": "B77W",
+    "B747": "B748",
+    "B737": "B738",
+}
+
+
+def resolve_aircraft_type_code(code: str) -> str:
+    """Resolve an informal or commercial aircraft type alias to its canonical ICAO code."""
+    upper = code.upper()
+    return TYPE_ALIASES.get(upper, upper)
+
 
 def get_aircraft_type_name(code: str) -> str:
     """Return the display name for an ICAO type code.
@@ -125,7 +143,8 @@ def get_aircraft_type_name(code: str) -> str:
     Falls back to the raw code when unknown, so the caller never has
     to check for None.
     """
-    return _AIRCRAFT_TYPE_NAMES.get(code, code)
+    canonical = resolve_aircraft_type_code(code)
+    return _AIRCRAFT_TYPE_NAMES.get(canonical, _AIRCRAFT_TYPE_NAMES.get(code, code))
 
 
 _LIVERY_INDICATOR_PATTERN = re.compile(

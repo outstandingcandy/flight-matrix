@@ -360,6 +360,7 @@ async def get_aircraft_types() -> dict[str, Any]:
 
     session = db_manager.get_session()
     try:
+        cutoff = datetime.now() - timedelta(days=7)
         result = session.execute(
             text(
                 """
@@ -367,12 +368,13 @@ async def get_aircraft_types() -> dict[str, Any]:
                 FROM aircraft_snapshots
                 WHERE aircraft_type IS NOT NULL
                   AND aircraft_type != ''
-                  AND snapshot_time >= datetime('now', '-7 days')
+                  AND snapshot_time >= :cutoff
                 GROUP BY aircraft_type
                 ORDER BY count DESC
                 LIMIT 50
                 """
-            )
+            ),
+            {"cutoff": cutoff},
         )
         aircraft_types = [
             {
@@ -393,10 +395,10 @@ async def get_aircraft_type_info(
     _user: dict[str, Any] | None = Depends(get_current_user_optional),
 ) -> dict[str, Any]:
     """Stats for one aircraft type. Same shape as ``web_app.py:989``."""
-    from src.web.helpers import get_aircraft_type_name
+    from src.web.helpers import get_aircraft_type_name, resolve_aircraft_type_code
     from src.web.runtime import db_manager
 
-    type_code_upper = type_code.upper()
+    type_code_upper = resolve_aircraft_type_code(type_code)
     session = db_manager.get_session()
     try:
         stats_row = session.execute(
@@ -435,10 +437,11 @@ async def get_aircraft_type_instances(
     Same query (correlated subquery for cross-dialect portability) as
     ``web_app.py:1030``.
     """
+    from src.web.helpers import resolve_aircraft_type_code
     from src.web.image_helpers import get_image_url
     from src.web.runtime import db_manager
 
-    type_code_upper = type_code.upper()
+    type_code_upper = resolve_aircraft_type_code(type_code)
     session = db_manager.get_session()
     try:
         aircraft_result = session.execute(
@@ -1190,7 +1193,16 @@ async def aircraft_type_detail(
     user: dict[str, Any] | None = Depends(get_current_user_optional),
 ):
     """Aircraft-type detail page shell. Same as ``web_app.py:1527``."""
+    from fastapi.responses import RedirectResponse
+    from starlette import status
+
+    from src.web.helpers import resolve_aircraft_type_code
+
+    canonical = resolve_aircraft_type_code(type_code)
+    if canonical != type_code.upper():
+        return RedirectResponse(f"/aircraft-type/{canonical}", status_code=status.HTTP_302_FOUND)
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
-        request, "aircraft_type_detail.html", {"type_code": type_code, "current_user": user}
+        request, "aircraft_type_detail.html", {"type_code": canonical, "current_user": user}
     )

@@ -298,6 +298,29 @@ def test_public_aircraft_and_type_pages(app_client_fastapi: Any) -> None:
     assert resp_ac.status_code == 200
     assert "CU-T1250" in resp_ac.text
 
-    resp_type = app_client_fastapi.get("/aircraft-type/A380", follow_redirects=False)
-    assert resp_type.status_code == 200
-    assert "A380" in resp_type.text
+    # Direct canonical ICAO type
+    resp_type_direct = app_client_fastapi.get("/aircraft-type/A388", follow_redirects=False)
+    assert resp_type_direct.status_code == 200
+    assert "A388" in resp_type_direct.text
+
+    # Commercial alias (A380) redirects to canonical ICAO type (A388)
+    resp_type_alias = app_client_fastapi.get("/aircraft-type/A380", follow_redirects=False)
+    assert resp_type_alias.status_code == 302
+    assert resp_type_alias.headers.get("location") == "/aircraft-type/A388"
+
+    # Following redirects lands on 200
+    resp_type_followed = app_client_fastapi.get("/aircraft-type/A380", follow_redirects=True)
+    assert resp_type_followed.status_code == 200
+    assert "A388" in resp_type_followed.text
+
+
+def test_aircraft_types_endpoint_runs_cleanly(app_client_fastapi: Any) -> None:
+    """Ensure /api/v1/aircraft/types and alias lookup work without 5xx."""
+    r = app_client_fastapi.get("/api/v1/aircraft/types")
+    assert r.status_code == 200
+    assert r.json().get("success") is True
+
+    # Check alias resolution in type info
+    r_alias = app_client_fastapi.get("/api/v1/aircraft/types/A380")
+    assert r_alias.status_code == 200
+    assert r_alias.json().get("type_code") == "A388"
