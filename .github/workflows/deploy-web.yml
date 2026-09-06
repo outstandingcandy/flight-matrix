@@ -120,14 +120,14 @@ jobs:
               git submodule update --init --recursive
 
               echo "==> docker compose build web"
-              docker compose -f docker-compose.web.yml build web
+              sudo docker compose -f docker-compose.web.yml build web
 
               echo "==> docker compose up -d"
-              docker compose -f docker-compose.web.yml up -d
+              sudo docker compose -f docker-compose.web.yml up -d
 
               echo "==> waiting for web container to answer /healthz"
               for i in $(seq 1 30); do
-                if docker compose -f docker-compose.web.yml exec -T web \
+                if sudo docker compose -f docker-compose.web.yml exec -T web \
                      curl -fsS http://127.0.0.1:8000/healthz >/dev/null 2>&1; then
                   echo "    ready after ${i}x 2 s"
                   break
@@ -136,11 +136,11 @@ jobs:
               done
 
               echo "==> run migration (idempotent)"
-              docker compose -f docker-compose.web.yml exec -T web \
+              sudo docker compose -f docker-compose.web.yml exec -T web \
                 python scripts/migrate_add_oauth_columns.py
 
               echo "==> post-deploy state:"
-              docker compose -f docker-compose.web.yml ps
+              sudo docker compose -f docker-compose.web.yml ps
             '
 
       - name: Smoke test via public URL
