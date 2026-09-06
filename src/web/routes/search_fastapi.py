@@ -29,7 +29,7 @@ async def unified_search(
     400 when ``q`` is shorter than 2 characters, matching Flask.
     """
     from src.services.airport_service import AirportService
-    from src.web.helpers import get_aircraft_type_name
+    from src.web.helpers import TYPE_ALIASES, get_aircraft_type_name
     from src.web.runtime import config, db_manager
 
     query = q.strip()
@@ -71,8 +71,23 @@ async def unified_search(
                 }
             )
 
-        type_result = db_session.execute(
-            text(
+        # 3. Aircraft Types (search by type code + commercial aliases)
+        alias_target = TYPE_ALIASES.get(query_upper)
+        if alias_target:
+            type_query = text(
+                """
+                SELECT aircraft_type, COUNT(*) as aircraft_count
+                FROM aircraft_static_info
+                WHERE aircraft_type IS NOT NULL AND aircraft_type != ''
+                  AND (LOWER(aircraft_type) LIKE LOWER(:pattern) OR UPPER(aircraft_type) = :alias)
+                GROUP BY aircraft_type
+                ORDER BY aircraft_count DESC
+                LIMIT :limit
+                """
+            )
+            type_params = {"pattern": f"{query_upper}%", "alias": alias_target, "limit": limit}
+        else:
+            type_query = text(
                 """
                 SELECT aircraft_type, COUNT(*) as aircraft_count
                 FROM aircraft_static_info
@@ -82,9 +97,10 @@ async def unified_search(
                 ORDER BY aircraft_count DESC
                 LIMIT :limit
                 """
-            ),
-            {"pattern": f"{query_upper}%", "limit": limit},
-        )
+            )
+            type_params = {"pattern": f"{query_upper}%", "limit": limit}
+
+        type_result = db_session.execute(type_query, type_params)
         for row in type_result:
             results["aircraft_types"].append(
                 {

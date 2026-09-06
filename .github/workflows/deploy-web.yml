@@ -157,6 +157,8 @@ jobs:
         # - / (homepage rendering)
         # - /airport/PEK (airport detail page)
         # - /aircraft/CU-T1250 (aircraft detail page)
+        # - /aircraft-type/A380 (aircraft type page with alias redirect)
+        # - /api/v1/aircraft/types (aircraft types list API)
         # - /api/v1/search/suggestions (API endpoint)
         # - /static/css/home.css (static asset delivery)
         run: |
@@ -176,11 +178,19 @@ jobs:
           RESP_AC=$(curl -fsS --max-time 10 https://flightmatrix.top/aircraft/CU-T1250)
           echo "$RESP_AC" | grep -F "CU-T1250" >/dev/null
 
-          echo "==> 5. Check search API (/api/v1/search/suggestions)"
+          echo "==> 5. Check aircraft type page (/aircraft-type/A380)"
+          RESP_TYPE=$(curl -fsSL --max-time 10 https://flightmatrix.top/aircraft-type/A380)
+          echo "$RESP_TYPE" | grep -F "A388" >/dev/null
+
+          echo "==> 6. Check aircraft types API (/api/v1/aircraft/types)"
+          RESP_TYPES=$(curl -fsS --max-time 10 https://flightmatrix.top/api/v1/aircraft/types)
+          echo "$RESP_TYPES" | grep -F '"success":true' >/dev/null
+
+          echo "==> 7. Check search API (/api/v1/search/suggestions)"
           RESP_API=$(curl -fsS --max-time 10 https://flightmatrix.top/api/v1/search/suggestions)
           echo "$RESP_API" | grep -F '"success":true' >/dev/null
 
-          echo "==> 6. Check static assets (/static/css/home.css)"
+          echo "==> 8. Check static assets (/static/css/home.css)"
           RESP_CSS=$(curl -fsS --max-time 10 https://flightmatrix.top/static/css/home.css)
           echo "$RESP_CSS" | grep -F "home" >/dev/null
 
