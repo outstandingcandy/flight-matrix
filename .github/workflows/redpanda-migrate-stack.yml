@@ -71,6 +71,28 @@ jobs:
               git reset --hard origin/main
               git submodule update --init --recursive
 
+              echo "===== 2.5. set up .env in new dir ====="
+              # docker-compose.web.yml reads CERT_DOMAIN and CADDY_HOST_PORT from .env.
+              # Host port 8443 is bound by xray, so CADDY_HOST_PORT must be 8444.
+              if [ -f "$OLD/.env" ]; then
+                echo "copying $OLD/.env to $NEW/.env"
+                cp "$OLD/.env" "$NEW/.env"
+              fi
+              if [ ! -f "$NEW/.env" ]; then
+                echo "creating $NEW/.env"
+                touch "$NEW/.env"
+              fi
+              if grep -q "^CADDY_HOST_PORT=" "$NEW/.env"; then
+                sed -i "s/^CADDY_HOST_PORT=.*/CADDY_HOST_PORT=8444/" "$NEW/.env"
+              else
+                echo "CADDY_HOST_PORT=8444" >> "$NEW/.env"
+              fi
+              if ! grep -q "^CERT_DOMAIN=" "$NEW/.env"; then
+                echo "CERT_DOMAIN=flightmatrix.top" >> "$NEW/.env"
+              fi
+              echo "===== $NEW/.env content ====="
+              cat "$NEW/.env"
+
               echo "===== 3. build and start full stack from new dir ====="
               sudo docker compose -f "$COMPOSE" build web
               sudo docker compose -f "$COMPOSE" up -d
@@ -85,8 +107,28 @@ jobs:
                 sleep 2
               done
 
+              echo "===== 4.5. run DB migrations ====="
+              sudo docker compose -f "$COMPOSE" exec -T web \
+                python scripts/migrate_add_oauth_columns.py || true
+
+              echo "===== 4.6. connect collecdex caddy to flight-matrix network ====="
+              sudo docker network connect flight-matrix_default deploy-caddy-1 2>&1 || true
+              sudo docker exec deploy-caddy-1 caddy reload --config /etc/caddy/Caddyfile 2>&1 || true
+
               echo "===== 5. smoke test ====="
-              curl -sk --max-time 10 -o /dev/null -w "https status: %{http_code}\n" https://flightmatrix.top/ || true
+              echo "Testing via public https://flightmatrix.top/..."
+              for i in $(seq 1 15); do
+                STATUS=$(curl -sk --max-time 5 -o /dev/null -w "%{http_code}" https://flightmatrix.top/ || echo "err")
+                echo "attempt $i: https status $STATUS"
+                if [ "$STATUS" = "200" ]; then
+                  echo "SUCCESS: https://flightmatrix.top/ returned 200"
+                  break
+                fi
+                sleep 2
+              done
+
+              echo "Testing /healthz..."
+              curl -sk --max-time 5 -o /dev/null -w "healthz status: %{http_code}\n" https://flightmatrix.top/healthz || true
 
               echo "===== 6. remove old directory ====="
               if [ -d "$OLD" ]; then
