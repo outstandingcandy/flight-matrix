@@ -82,14 +82,10 @@ jobs:
         #
         # ``outstandingcandy@…`` login — the VM is not on OS Login;
         # SSH keys live in project metadata scoped to the
-        # ``outstandingcandy`` Linux user (the one that owns
-        # ``~/flight-matrix``, the docker group, the certbot certs).
-        # The service account has ``compute.instanceAdmin.v1`` which
-        # lets it *add* SSH keys to VM metadata, but the actual login
-        # user must exist on the box; gcloud handles that when we
-        # pass the user in the ``user@instance`` form. Result: the
-        # deploy session behaves exactly like a human
-        # ``gcloud compute ssh redpanda`` from a workstation.
+        # ``outstandingcandy`` Linux user which owns
+        # ``~/flight-matrix`` and the docker compose stack.
+        # ``sudo`` is needed because ``/etc/flight-matrix/env.docker``
+        # is ``root:root 0640``.
         env:
           VM_NAME: ${{ vars.GCP_VM_NAME }}
           VM_ZONE: ${{ vars.GCP_VM_ZONE }}

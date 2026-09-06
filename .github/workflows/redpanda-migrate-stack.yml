@@ -1,0 +1,91 @@
+name: Migrate stack to outstandingcandy home
+
+# One-time migration: stop the container stack running from
+# /home/tangjiee/flight-matrix/, start a fresh stack from
+# /home/outstandingcandy/flight-matrix/, then remove the old directory.
+#
+# After this, all deploys use ~/flight-matrix under the outstandingcandy
+# user, which is where the CI SSH session lands.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+      - env:
+          VM_NAME: ${{ vars.GCP_VM_NAME }}
+          VM_ZONE: ${{ vars.GCP_VM_ZONE }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          VM_USER: ${{ vars.GCP_VM_USER }}
+        run: |
+          gcloud compute ssh "${VM_USER}@${VM_NAME}" \
+            --zone="$VM_ZONE" --project="$PROJECT_ID" \
+            --ssh-key-expire-after=5m \
+            --command='
+              set -euo pipefail
+              OLD=/home/tangjiee/flight-matrix
+              NEW="$HOME/flight-matrix"
+              COMPOSE=docker-compose.web.yml
+
+              echo "===== 1. stop old stack ====="
+              if [ -f "$OLD/$COMPOSE" ]; then
+                sudo docker compose -f "$OLD/$COMPOSE" down || true
+                echo "old stack stopped"
+              else
+                echo "no old compose file found, skipping"
+              fi
+
+              echo "===== 2. ensure new repo is up to date ====="
+              if [ ! -d "$NEW" ]; then
+                git clone --recurse-submodules \
+                  https://github.com/outstandingcandy/flight-matrix.git "$NEW"
+              fi
+              cd "$NEW"
+              git fetch origin main
+              git reset --hard origin/main
+              git submodule update --init --recursive
+
+              echo "===== 3. build and start full stack from new dir ====="
+              sudo docker compose -f "$COMPOSE" build web
+              sudo docker compose -f "$COMPOSE" up -d
+
+              echo "===== 4. wait for web to be healthy ====="
+              for i in $(seq 1 30); do
+                if sudo docker compose -f "$COMPOSE" exec -T web \
+                     curl -fsS http://127.0.0.1:8000/healthz >/dev/null 2>&1; then
+                  echo "web is up after ${i}x 2 s"
+                  break
+                fi
+                sleep 2
+              done
+
+              echo "===== 5. smoke test ====="
+              curl -sk --max-time 10 -o /dev/null -w "https status: %{http_code}\n" https://flightmatrix.top/ || true
+
+              echo "===== 6. remove old directory ====="
+              if [ -d "$OLD" ]; then
+                sudo rm -rf "$OLD"
+                echo "removed $OLD"
+              fi
+
+              echo "===== 7. verify ====="
+              sudo docker compose -f "$COMPOSE" ps
+              echo "migration complete"
+            '
