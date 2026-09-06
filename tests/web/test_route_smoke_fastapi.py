@@ -260,3 +260,23 @@ def test_data_path_redirects_when_configured(
     """
     r = app_client_fastapi.get("/data/anything.jpg", follow_redirects=False)
     _assert_not_5xx(r, "GET /data/anything.jpg")
+
+
+def test_static_assets_and_template_globals(app_client_fastapi: Any) -> None:
+    """Ensure templates resolve {{ static_url }} to /static, and static
+    files can be fetched both via /static/ and fallback /css/ & /js/ paths.
+    """
+    # 1. Homepage should render /static/css/home.css, not unexpanded /css/home.css
+    resp = app_client_fastapi.get("/")
+    assert resp.status_code == 200
+    assert "/static/css/home.css" in resp.text
+    assert "/static/js/home.js" in resp.text
+
+    # 2. Static files should be reachable
+    css_resp = app_client_fastapi.get("/static/css/home.css")
+    assert css_resp.status_code == 200
+    assert "text/css" in css_resp.headers.get("content-type", "")
+
+    # 3. Fallback direct /css/ and /js/ mounts should also respond
+    fallback_css = app_client_fastapi.get("/css/home.css")
+    assert fallback_css.status_code == 200
