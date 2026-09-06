@@ -135,8 +135,29 @@ def create_app() -> FastAPI:
 
     # Jinja2 + static assets. Both live at their existing paths so the
     # migrated HTML routes will find them without any rearrangement.
-    app.state.templates = Jinja2Templates(directory="web_templates")
+    from src.storage import resolve_static_base_url
+
+    base_url = resolve_static_base_url()
+    static_url = f"{base_url}/static" if base_url else "/static"
+
+    templates = Jinja2Templates(directory="web_templates")
+    templates.env.globals["static_url"] = static_url
+    templates.env.globals["static_base_url"] = base_url
+
+    def _is_admin_global(user: dict | None) -> bool:
+        if not user:
+            return False
+        user_role = user.get("role", "").lower()
+        user_groups = [grp.lower() for grp in user.get("groups", [])]
+        admin_groups = ["admin", "admins", "administrator", "superuser"]
+        return user_role in admin_groups or any(grp in admin_groups for grp in user_groups)
+
+    templates.env.globals["is_admin"] = _is_admin_global
+    app.state.templates = templates
+
     app.mount("/static", StaticFiles(directory="web_static"), name="static")
+    app.mount("/css", StaticFiles(directory="web_static/css"), name="css")
+    app.mount("/js", StaticFiles(directory="web_static/js"), name="js")
 
     # Routers ---
     app.include_router(auth_router)
