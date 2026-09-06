@@ -280,3 +280,10 @@ def test_static_assets_and_template_globals(app_client_fastapi: Any) -> None:
     # 3. Fallback direct /css/ and /js/ mounts should also respond
     fallback_css = app_client_fastapi.get("/css/home.css")
     assert fallback_css.status_code == 200
+
+
+def test_legacy_api_prefix_transparent_routing(app_client_fastapi: Any) -> None:
+    """Ensure /api/<path> (pre-v1) routes transparently to /api/v1/<path>."""
+    r_legacy = app_client_fastapi.get("/api/search/suggestions")
+    assert r_legacy.status_code == 200
+    assert r_legacy.json().get("success") is True
