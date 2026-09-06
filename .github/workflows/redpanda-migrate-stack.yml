@@ -44,13 +44,22 @@ jobs:
               NEW="$HOME/flight-matrix"
               COMPOSE=docker-compose.web.yml
 
-              echo "===== 1. stop old stack ====="
-              if [ -f "$OLD/$COMPOSE" ]; then
-                sudo docker compose -f "$OLD/$COMPOSE" down || true
-                echo "old stack stopped"
+              echo "===== 1. stop ALL flight-matrix containers ====="
+              # docker compose down fails when the project context differs
+              # from the one that started the containers. Force-stop every
+              # flight-matrix-* container regardless of which directory
+              # spawned it.
+              CONTAINERS=$(sudo docker ps -a --filter "name=flight-matrix-" --format "{{.Names}}" || true)
+              if [ -n "$CONTAINERS" ]; then
+                echo "stopping: $CONTAINERS"
+                echo "$CONTAINERS" | xargs sudo docker stop 2>/dev/null || true
+                echo "$CONTAINERS" | xargs sudo docker rm -f 2>/dev/null || true
+                echo "all flight-matrix containers removed"
               else
-                echo "no old compose file found, skipping"
+                echo "no flight-matrix containers found"
               fi
+              # Clean up stale docker networks from old compose projects
+              sudo docker network prune -f 2>/dev/null || true
 
               echo "===== 2. ensure new repo is up to date ====="
               if [ ! -d "$NEW" ]; then
