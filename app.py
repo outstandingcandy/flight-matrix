@@ -133,12 +133,26 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Transparently route legacy /api/<path> calls (pre-v1) to /api/v1/<path>
+    # so cached JS or legacy clients still succeed.
+    @app.middleware("http")
+    async def legacy_api_prefix_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+        path = request.url.path
+        if path.startswith("/api/") and not path.startswith("/api/v1/") and not path.startswith("/api/auth/"):
+            request.scope["path"] = "/api/v1/" + path[len("/api/") :]
+        return await call_next(request)
+
     # Jinja2 + static assets. Both live at their existing paths so the
     # migrated HTML routes will find them without any rearrangement.
     from src.storage import resolve_static_base_url
 
     base_url = resolve_static_base_url()
-    static_url = f"{base_url}/static" if base_url else "/static"
+    # On GCP container deployments, serve static assets directly from the container
+    # so that newly deployed assets take effect immediately without CDN cache delay.
+    if os.environ.get("DEPLOY_TARGET") == "gcp":
+        static_url = "/static"
+    else:
+        static_url = f"{base_url}/static" if base_url else "/static"
 
     templates = Jinja2Templates(directory="web_templates")
     templates.env.globals["static_url"] = static_url

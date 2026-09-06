@@ -71,6 +71,10 @@ jobs:
         with:
           project_id: ${{ vars.GCP_PROJECT_ID }}
 
+      - name: Sync static assets to GCS
+        run: |
+          gcloud storage rsync -r web_static/ gs://outstandingcandy-flight-matrix-assets/static/ || true
+
       - name: Deploy
         # Single ``gcloud compute ssh`` session — every command runs
         # on the VM. ``--command`` avoids a shell-escaping dance and
