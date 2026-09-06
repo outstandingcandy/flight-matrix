@@ -122,8 +122,8 @@ jobs:
               echo "==> docker compose build web"
               sudo docker compose -f docker-compose.web.yml build web
 
-              echo "==> docker compose up -d"
-              sudo docker compose -f docker-compose.web.yml up -d
+              echo "==> docker compose up -d web"
+              sudo docker compose -f docker-compose.web.yml up -d web
 
               echo "==> waiting for web container to answer /healthz"
               for i in $(seq 1 30); do
