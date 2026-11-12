@@ -14,7 +14,7 @@ psycopg2-binary>=2.9.9  # PostgreSQL adapter
 pyyaml>=6.0.1
 python-dotenv>=1.0.0
 pytz>=2024.1  # Timezone support
-asgiref>=3.12.1  # WSGI-to-ASGI adapter for Mangum
+asgiref>=3.13.0  # WSGI-to-ASGI adapter for Mangum
 
 # Authentication
 python-jose[cryptography]>=3.3.0  # JWT verification for Cognito
